@@ -1,0 +1,11 @@
+# Force Windows-style line endings for batch files.
+# Without this, .bat files committed from a Unix-style shell are LF-only
+# and cmd.exe parses them incorrectly (truncated commands, missing chars).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell scripts also prefer CRLF on Windows.
+*.ps1 text eol=crlf
+
+# Everything else: let core.autocrlf handle it.
+* text=auto
