@@ -1,0 +1,42 @@
+# Python
+.venv/
+.cache/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.env
+.DS_Store
+
+# Large data files (PIT database, model artifacts)
+data/*.duckdb
+data/*.parquet
+models_store/*.pkl
+models_store/*.parquet
+
+# Book image originals (large jpegs — keep transcripts/summaries/charts only)
+book_images/_dl_all/
+book_images/_ordered/
+book_images/_zip_check/
+book_images/_missing_pages/
+book_images/**/*.jpg
+book_images/**/*.jpeg
+book_images/**/*.png
+
+# Re-include curated artifacts
+!book_images/**/transcripts/
+!book_images/**/transcripts/**
+!book_images/**/charts/
+!book_images/**/charts/**
+!book_images/**/SUMMARY*.md
+!book_images/**/*.md
+!book_images/toc/*.md
+!book_images/toc/*.txt
+
+# Legacy v1 archives (not maintained)
+_archive_v1/
+_archive_v1_web/
+
+# IDE
+.vscode/
+.idea/

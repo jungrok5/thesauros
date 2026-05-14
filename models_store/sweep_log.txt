@@ -1,0 +1,17 @@
+Panel: (92383, 148)  (2010-01-04 00:00:00 → 2026-04-16 00:00:00)
+  baseline (no brake/cap)   dd=-1.00 sc=1.00 | CAGR=+14.77%  Sharpe=+0.44  MDD=-23.01%  alpha=+4.83%  (1351s)
+  v3 default                dd=-0.15 sc=0.25 | CAGR=+10.23%  Sharpe=+0.36  MDD=-20.15%  alpha=+0.29%  (731s)
+  looser brake              dd=-0.20 sc=0.25 | CAGR=+10.83%  Sharpe=+0.32  MDD=-22.81%  alpha=+0.89%  (152s)
+  tighter brake             dd=-0.10 sc=0.30 | CAGR=+11.92%  Sharpe=+0.49  MDD=-16.39%  alpha=+1.98%  (156s)
+  loose both                dd=-0.25 sc=0.35 | CAGR=+14.41%  Sharpe=+0.42  MDD=-23.58%  alpha=+4.47%  (149s)
+  cap only                  dd=-1.00 sc=0.30 | CAGR=+14.03%  Sharpe=+0.41  MDD=-23.35%  alpha=+4.10%  (137s)
+
+======================================================================
+ Top by Sharpe:
+======================================================================
+  tighter brake             | CAGR=+11.92%  Sharpe=+0.49  MDD=-16.39%  alpha=+1.98%
+  baseline (no brake/cap)   | CAGR=+14.77%  Sharpe=+0.44  MDD=-23.01%  alpha=+4.83%
+  loose both                | CAGR=+14.41%  Sharpe=+0.42  MDD=-23.58%  alpha=+4.47%
+  cap only                  | CAGR=+14.03%  Sharpe=+0.41  MDD=-23.35%  alpha=+4.10%
+  v3 default                | CAGR=+10.23%  Sharpe=+0.36  MDD=-20.15%  alpha=+0.29%
+  looser brake              | CAGR=+10.83%  Sharpe=+0.32  MDD=-22.81%  alpha=+0.89%
