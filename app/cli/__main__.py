@@ -66,84 +66,78 @@ def cmd_ingest_macro(years: int = 8):
 @app.command("analyze")
 def cmd_analyze(
     ticker: str = typer.Argument(..., help="e.g. AAPL or 005930.KS"),
-    years: int = typer.Option(3, help="Years of history to use."),
+    years: int = typer.Option(5, help="Years of history to use."),
     json_out: bool = typer.Option(False, "--json"),
 ):
-    """Run book's trend + candle analysis on a single ticker."""
-    import pandas as pd
-    from app.book.trend import analyze_multi_timeframe
-    from app.book.candles import latest_candle_summary, analyze_candles
-    from app.data.pit_db import cursor
+    """Run full book analysis (trend + candles + patterns + volume) on a ticker."""
+    from app.book.analyzer import analyze_ticker, load_ticker_data
 
-    with cursor() as con:
-        df = con.execute(
-            "SELECT date, open, high, low, close, adj_close, volume FROM prices "
-            "WHERE ticker = ? ORDER BY date",
-            [ticker],
-        ).df()
+    df = load_ticker_data(ticker, years=years)
+    if df is None or df.empty:
+        typer.echo(f"No data for {ticker}.", err=True)
+        raise typer.Exit(code=1)
 
-    if df.empty:
-        # Fall back to live yfinance fetch
-        from datetime import date, timedelta
-        import yfinance as yf
-        start = (date.today() - timedelta(days=years * 365 + 30)).isoformat()
-        t = yf.Ticker(ticker)
-        df = t.history(start=start, auto_adjust=False, actions=False)
-        if df is None or df.empty:
-            typer.echo(f"No data for {ticker}.", err=True)
-            raise typer.Exit(code=1)
-        df = df.reset_index().rename(columns={
-            "Date": "date", "Open": "open", "High": "high", "Low": "low",
-            "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
-        })
-        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").reset_index(drop=True)
-
-    mt = analyze_multi_timeframe(df)
-    last_candle = latest_candle_summary(df)
-    weekly_recent = analyze_candles(df.tail(120))
-    last_weekly_tags = []
-    # quick mini-summary of last 5 weekly candles (approx)
-    from app.book.trend import resample_to_period
-    weekly_df = resample_to_period(df, "W")
-    weekly_candles = analyze_candles(weekly_df) if not weekly_df.empty else []
-    weekly_recent_summary = [c.to_dict() for c in weekly_candles[-5:]] if weekly_candles else []
-
-    result = {
-        "ticker": ticker,
-        "rows": len(df),
-        "last_date": str(df["date"].iloc[-1].date()),
-        "last_close": round(float(df["close"].iloc[-1]), 4),
-        "trend": mt.to_dict(),
-        "last_daily_candle": last_candle,
-        "last_5_weekly_candles": weekly_recent_summary,
-    }
+    result = analyze_ticker(ticker, df)
 
     if json_out:
         sys.stdout.write(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
-    t = mt
-    print(f"\n=== {ticker} — 분석 ({result['last_date']}, close={result['last_close']}) ===\n")
-    print(f"  📊 책 시그널: {t.book_signal}")
-    print(f"  📝 사유:     {t.book_reason}\n")
-    for tf_name, tf in [("일봉", t.daily), ("주봉", t.weekly), ("월봉", t.monthly)]:
+    print(f"\n=== {result['ticker']} — 분석 ({result['as_of']}, "
+          f"close={result['last_close']}) ===\n")
+    print(f"  🎯 액션:      {result['action']}")
+    print(f"  📊 책 점수:    {result['book_score']:+.2f}  /  추세시그널: {result['trend']['book_signal']}")
+    print(f"  📝 추세 사유:  {result['trend']['book_reason']}\n")
+
+    for tf_name, tf in [("일봉", result["trend"]["daily"]),
+                        ("주봉", result["trend"]["weekly"]),
+                        ("월봉", result["trend"]["monthly"])]:
         if tf is None:
             print(f"  [{tf_name}] 데이터 부족")
             continue
-        ma240 = f"{tf.ma_240:.2f}" if tf.ma_240 else "—"
-        print(f"  [{tf_name}] {tf.label:4s}  score {tf.overall_score:+.2f}  "
-              f"price {tf.price:.2f} vs 10MA {tf.ma_10:.2f} ({'위' if tf.above_ma_10 else '아래'})  "
-              f"240MA {ma240}  정배열 {tf.alignment_score:+.2f}")
+        ma240 = f"{tf['ma_240']:.2f}" if tf.get("ma_240") else "—"
+        above10 = "위" if tf["above_ma_10"] else "아래"
+        print(f"  [{tf_name}] {tf['label']:4s}  score {tf['overall_score']:+.2f}  "
+              f"price {tf['price']:.2f} vs 10MA {tf['ma_10']:.2f} ({above10})  "
+              f"240MA {ma240}  정배열 {tf['alignment_score']:+.2f}")
 
-    if last_candle:
-        print(f"\n  최근 캔들 tags: {', '.join(last_candle['tags']) or '—'}")
-        if last_candle.get("in_safe_zone_75") is True:
+    lc = result.get("last_candle")
+    if lc:
+        print(f"\n  최근 캔들 tags: {', '.join(lc['tags']) or '—'}")
+        if lc.get("in_safe_zone_75") is True:
             print(f"  ✓ 4등분선 75% 안전지대 (책: 다음 봉 상승 확률 높음)")
-        elif last_candle.get("in_safe_zone_75") is False:
+        elif lc.get("in_safe_zone_75") is False:
             print(f"  ⚠ 4등분선 75% 아래 — 추세 약화 가능")
+
+    if result["patterns"]:
+        print(f"\n  📐 감지된 패턴 ({len(result['patterns'])}):")
+        for p in result["patterns"][:6]:
+            mark = "✓" if p["completed"] else "⋯"
+            print(f"    {mark} [{p.get('timeframe', '?'):7s}] {p['kind']:<25s} "
+                  f"({p['direction']:>7s}, conf {p['confidence']:.2f})")
+            print(f"        {p['reason']}")
+
+    if result["reversals"]:
+        print(f"\n  ⤴ 되돌림 패턴 ({len(result['reversals'])}):")
+        for r in result["reversals"][:3]:
+            print(f"    [{r['direction']}] {r['kind']:<30s} conf {r['confidence']:.2f}")
+            print(f"        {r['reason']}")
+
+    vc = result.get("volume_case")
+    if vc:
+        print(f"\n  📊 거래량 분류: 케이스 {vc['case']} — {vc['label_kr']} "
+              f"(conf {vc['confidence']:.2f}, {vc['direction']})")
+        print(f"     {vc['reason']}")
+
+    ra = result.get("reverse_accumulation")
+    if ra:
+        print(f"\n  ⭐ 역매집 감지: {ra['occurrences']}회 / {ra['reason']}")
+
+    plan = result.get("entry_plan")
+    if plan:
+        print(f"\n  💡 매매 플랜 ({plan['based_on']}):")
+        print(f"     진입: {plan['entry']}  손절: {plan['stop']}  "
+              f"목표: {plan['target']}")
     print()
 
 
