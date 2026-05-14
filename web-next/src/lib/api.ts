@@ -18,6 +18,20 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const url = `${BACKEND_URL}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Backend ${res.status}: ${url}`);
+  }
+  return (await res.json()) as T;
+}
+
 // ---------- types ----------
 export type IndicatorState = {
   key: string;
@@ -168,6 +182,48 @@ export type ScreenResponse = {
   items: ScreenItem[];
 };
 
+export type BacktestTrade = {
+  entry_date: string;
+  entry_price: number;
+  exit_date: string | null;
+  exit_price: number | null;
+  strategy: string;
+  return_pct: number | null;
+  bars_held: number;
+  exit_reason: string;
+};
+
+export type BacktestReport = {
+  ticker: string;
+  strategy: string;
+  period: string;
+  n_trades: number;
+  win_rate: number;
+  avg_gain_winners: number;
+  avg_loss_losers: number;
+  total_return_pct: number;
+  avg_return_pct: number;
+  max_drawdown_trade: number;
+  bars_in_market_pct: number;
+  buy_and_hold_return_pct: number;
+  trades: BacktestTrade[];
+};
+
+export type BookCase = {
+  ticker: string;
+  claim_period: string;
+  book_claim_pct: number | null;
+  n_trades?: number;
+  win_rate_pct?: number;
+  total_return_pct?: number;
+  buy_and_hold_return_pct?: number;
+  max_drawdown_trade_pct?: number;
+  bars_in_market_pct?: number;
+  error?: string;
+};
+
+export type BookCasesResponse = { items: BookCase[] };
+
 // ---------- API methods ----------
 export const api = {
   health: () => get<{ ok: boolean; today: string }>("/api/health"),
@@ -187,6 +243,11 @@ export const api = {
     get<ScreenResponse>(
       `/api/book/screen?market=${market}&min_score=${minScore}&top=${top}&require_completed=true`,
     ),
+  backtest: (
+    ticker: string,
+    strategy: "monthly_10ma" | "weekly_10ma" = "monthly_10ma",
+  ) => post<BacktestReport>("/api/book/backtest", { ticker, strategy }),
+  bookCases: () => get<BookCasesResponse>("/api/book/cases"),
 };
 
 export type { ScreenItem as ScreenItemType };
