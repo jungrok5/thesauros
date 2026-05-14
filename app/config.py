@@ -36,6 +36,22 @@ SEC_USER_AGENT = os.getenv(
 # FRED (Federal Reserve Economic Data) — register at https://fred.stlouisfed.org/
 FRED_API_KEY = os.getenv("FRED_API_KEY", "")
 
+# KIS — Korea Investment Securities OpenAPI
+# Register at https://apiportal.koreainvestment.com/
+KIS_APP_KEY = os.getenv("KIS_APP_KEY", "")
+KIS_APP_SECRET = os.getenv("KIS_APP_SECRET", "")
+KIS_ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO", "")
+KIS_ACCOUNT_PROD_CODE = os.getenv("KIS_ACCOUNT_PROD_CODE", "01")
+KIS_ENV = os.getenv("KIS_ENV", "real")  # "real" or "vts"
+
+
+def kis_base_url() -> str:
+    """KIS API base URL — production vs paper-trading."""
+    if KIS_ENV == "vts":
+        return "https://openapivts.koreainvestment.com:29443"
+    return "https://openapi.koreainvestment.com:9443"
+
+
 # Ticker conventions:
 #   US:  AAPL, MSFT     (yfinance native)
 #   KR:  005930.KS (KOSPI), 035420.KQ (KOSDAQ)
