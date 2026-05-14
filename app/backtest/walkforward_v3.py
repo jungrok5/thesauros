@@ -19,28 +19,65 @@ from app.config import (COST_BPS, EMBARGO_DAYS, FORWARD_HORIZON,
 from app.features.pipeline_v3 import ALL_V3, build_panel_v3, load_prices_wide
 
 
-def _sector_cap_weights(scores: pd.Series, sectors: pd.Series,
-                       top_k: int = 20, sector_cap: float = 0.25) -> Dict[str, float]:
-    """Equal-weight top-K but cap each sector's total weight at `sector_cap`.
+def _select_with_sector_cap(scores: pd.Series, sectors: pd.Series,
+                            top_k: int, sector_cap: float) -> List[str]:
+    """Sector-capped greedy top-K selection (returns ordered ticker list).
 
-    If the natural top-K has a sector >25%, replace overflow with next best
-    in other sectors.
+    Equal-weight assumption only used for cap check; actual weighting
+    is applied separately so we can plug in inverse-vol / risk-parity.
     """
     df = pd.DataFrame({"score": scores, "sector": sectors}).dropna()
     df = df.sort_values("score", ascending=False)
-    selected = []
+    selected: List[str] = []
     sector_weights: Dict[str, float] = {}
-    weight = 1.0 / top_k
-
+    equal_w = 1.0 / top_k
     for tk, row in df.iterrows():
         sec = row["sector"] or "UNKNOWN"
-        if sector_weights.get(sec, 0) + weight > sector_cap + 1e-9:
+        if sector_weights.get(sec, 0) + equal_w > sector_cap + 1e-9:
             continue
         selected.append(tk)
-        sector_weights[sec] = sector_weights.get(sec, 0) + weight
+        sector_weights[sec] = sector_weights.get(sec, 0) + equal_w
         if len(selected) == top_k:
             break
-    return {tk: weight for tk in selected}
+    return selected
+
+
+def _compute_weights(selected: List[str], vols: pd.Series,
+                     scheme: str = "equal") -> Dict[str, float]:
+    """Compute portfolio weights for the selected tickers.
+
+    Schemes:
+      - "equal"        : 1/N for each (book v3 baseline)
+      - "inverse_vol"  : weight ∝ 1/σ (book p304 weight by stability)
+      - "risk_parity"  : equal risk contribution ≈ inverse-vol when no
+                         correlation matrix (we use this approximation)
+    """
+    if not selected:
+        return {}
+    if scheme == "equal":
+        w = 1.0 / len(selected)
+        return {tk: w for tk in selected}
+
+    # inverse-vol — clamp very low / NaN vols so a tiny-vol ticker doesn't
+    # eat the portfolio.
+    sel_vols = vols.reindex(selected).copy()
+    sel_vols = sel_vols.replace([np.inf, -np.inf], np.nan)
+    median_vol = float(sel_vols.median()) if sel_vols.notna().any() else 1.0
+    sel_vols = sel_vols.fillna(median_vol).clip(lower=median_vol * 0.30)
+    inv = 1.0 / sel_vols
+    weights = inv / inv.sum()
+    return {tk: float(w) for tk, w in weights.items()}
+
+
+def _sector_cap_weights(scores: pd.Series, sectors: pd.Series,
+                        top_k: int = 20, sector_cap: float = 0.25,
+                        vols: Optional[pd.Series] = None,
+                        scheme: str = "equal") -> Dict[str, float]:
+    """Convenience wrapper — select + weight in one call."""
+    selected = _select_with_sector_cap(scores, sectors, top_k, sector_cap)
+    if vols is None:
+        vols = pd.Series(1.0, index=selected)
+    return _compute_weights(selected, vols, scheme=scheme)
 
 
 def _drawdown(equity: List[float]) -> float:
@@ -65,6 +102,21 @@ class WFv3Params:
     use_rank_target: bool = True
     feature_suffix: str = "_sn"     # use sector-neutral features
     boost_rounds: int = 300
+
+    # P2 — portfolio construction
+    weighting_scheme: str = "inverse_vol"  # equal | inverse_vol | risk_parity
+    vol_lookback: int = 60                  # days for portfolio-construction vol
+
+    # P7 — realistic tax / cost simulation
+    tax_long_term_pct: float = 0.0          # held >365d (e.g. 0.20 = 20%)
+    tax_short_term_pct: float = 0.0         # held <=365d
+    # Korean KRX: separately add 0.18% sell-side transaction tax via cost_bps
+    # US: ignore here (set short-term=0.37 if simulating retiree-class trader)
+
+    # P1 — regime conditioning
+    regime_cash_trigger: bool = False       # if True, go 100% cash on FEAR
+    regime_feature: bool = False            # if True, add regime as a feature
+
     lgb_params: dict = field(default_factory=lambda: {
         "objective": "regression",
         "metric": "rmse",
@@ -134,11 +186,19 @@ def run_wf_v3(params: WFv3Params,
     rets = prices.pct_change().fillna(0)
     cost = (params.cost_bps + params.slippage_bps) / 10_000.0
 
+    # Pre-compute rolling daily vol for the inverse-vol / risk-parity weighting.
+    daily_vol = rets.rolling(params.vol_lookback, min_periods=20).std()
+
+    # Tracks per-ticker entry timestamp + entry price for tax simulation.
+    entry_log: Dict[str, Dict] = {}
+
     equity = 1.0
     bench_eq = 1.0
     weights: Dict[str, float] = {}
     bench_weights: Optional[pd.Series] = None
     eq_curve: List = []
+    tax_paid_total = 0.0
+    tax_events: List[Dict] = []
     bench_curve: List = []
     holdings_log: List[Dict] = []
     ic_history: List[Dict] = []
@@ -191,19 +251,82 @@ def run_wf_v3(params: WFv3Params,
                 ic_history.append({"date": str(t.date()), "ic": ic,
                                    "n_train": len(train), "n_test": len(test)})
 
-                # Sector-capped equal-weight
+                # Sector-capped selection + chosen weighting scheme
                 test_idx = test.set_index("ticker")
+                # Vol snapshot up to (and including) rebalance date
+                if d in daily_vol.index:
+                    vol_today = daily_vol.loc[d]
+                else:
+                    vol_today = daily_vol.iloc[-1]
                 target_w = _sector_cap_weights(
                     test_idx["pred"], test_idx["sector"],
                     top_k=params.top_k, sector_cap=params.sector_cap,
+                    vols=vol_today, scheme=params.weighting_scheme,
                 )
                 # Apply exposure (drawdown brake)
                 target_w = {k: v * exposure for k, v in target_w.items()}
-                # Cash for the rest
-                # All other tickers → 0
+
+                # Regime cash trigger (P1)
+                if params.regime_cash_trigger:
+                    try:
+                        from app.macro.state import market_regime
+                        regime = market_regime().get("regime", "UNKNOWN")
+                        if regime == "FEAR":
+                            target_w = {}
+                    except Exception:
+                        pass
+
                 new_w = {tk: 0.0 for tk in prices.columns}
                 for tk, w in target_w.items():
                     new_w[tk] = w
+
+                # ---- Tax simulation on sells (P7) ----
+                if params.tax_short_term_pct > 0 or params.tax_long_term_pct > 0:
+                    for tk in list(weights.keys()):
+                        prev_w = weights.get(tk, 0.0)
+                        cur_w = new_w.get(tk, 0.0)
+                        if prev_w > 0 and cur_w < prev_w * 0.99:
+                            ent = entry_log.get(tk)
+                            if ent is None:
+                                continue
+                            # Realised return per share
+                            entry_price = ent["price"]
+                            if t in prices.index and tk in prices.columns:
+                                exit_price = float(prices.loc[t, tk])
+                            else:
+                                exit_price = entry_price
+                            if exit_price <= 0 or entry_price <= 0:
+                                continue
+                            holding_days = (t - ent["date"]).days
+                            rate = (params.tax_short_term_pct
+                                    if holding_days <= 365
+                                    else params.tax_long_term_pct)
+                            if rate > 0:
+                                realised_ret = (exit_price / entry_price) - 1.0
+                                if realised_ret > 0:
+                                    portion_sold = (prev_w - cur_w)
+                                    gain_amount = realised_ret * portion_sold
+                                    tax = rate * gain_amount
+                                    equity *= (1.0 - tax)
+                                    tax_paid_total += tax
+                                    tax_events.append({
+                                        "date": str(t.date()), "ticker": tk,
+                                        "held_days": holding_days,
+                                        "return_pct": realised_ret * 100,
+                                        "tax_pct_of_equity": tax * 100,
+                                    })
+
+                # Update entry log: new positions get entry, increased positions
+                # keep old entry (approximation; this is a backtest, not real fills).
+                for tk in prices.columns:
+                    prev_w = weights.get(tk, 0.0)
+                    cur_w = new_w.get(tk, 0.0)
+                    if cur_w > 0 and prev_w == 0:
+                        # new position
+                        if d in prices.index and tk in prices.columns:
+                            entry_log[tk] = {"date": t, "price": float(prices.loc[t, tk])}
+                    elif cur_w == 0 and prev_w > 0:
+                        entry_log.pop(tk, None)
 
                 turnover = sum(abs(new_w[tk] - weights.get(tk, 0.0)) for tk in prices.columns)
                 equity *= (1.0 - turnover * cost)
@@ -211,6 +334,7 @@ def run_wf_v3(params: WFv3Params,
                 holdings_log.append({
                     "date": str(t.date()),
                     "tickers": list(target_w.keys()),
+                    "weights": {tk: round(target_w[tk], 4) for tk in target_w},
                     "scores": [float(test_idx.loc[tk, "pred"]) for tk in target_w],
                     "exposure": exposure,
                 })
@@ -238,6 +362,8 @@ def run_wf_v3(params: WFv3Params,
         "metrics": _metrics(eq_s, bench_s),
         "holdings": holdings_log,
         "ic_history": ic_history,
+        "tax_paid_total_pct": round(tax_paid_total * 100, 3),
+        "tax_events": tax_events[-50:],   # tail sample
         "params": {
             "start": params.start, "end": params.end, "top_k": params.top_k,
             "rebalance_n": params.rebalance_n, "cost_bps": params.cost_bps,
@@ -245,5 +371,9 @@ def run_wf_v3(params: WFv3Params,
             "drawdown_brake": params.drawdown_brake,
             "use_rank_target": params.use_rank_target,
             "feature_suffix": suffix, "n_features": len(feature_cols),
+            "weighting_scheme": params.weighting_scheme,
+            "tax_short_term_pct": params.tax_short_term_pct,
+            "tax_long_term_pct": params.tax_long_term_pct,
+            "regime_cash_trigger": params.regime_cash_trigger,
         },
     }
