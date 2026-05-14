@@ -1,10 +1,23 @@
-"""Global config — paths, constants, knobs."""
+"""Global config — paths, constants, knobs.
+
+Loads project-local secrets from a `.env` file at repo root if present.
+The `.env` file is gitignored; copy `.env.example` to `.env` and fill in
+keys for FRED_API_KEY, etc.
+"""
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Auto-load .env from repo root (no-op if absent or python-dotenv missing).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR = ROOT / ".cache"
