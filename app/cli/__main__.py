@@ -196,5 +196,125 @@ def cmd_stats():
     print(f"macro: {df.iloc[0].to_dict()}")
 
 
+# ---------------------------------------------------------------------------
+# Backtest + screen
+# ---------------------------------------------------------------------------
+@app.command("backtest")
+def cmd_backtest(
+    ticker: str = typer.Argument(...),
+    strategy: str = typer.Option("monthly_10ma", help="monthly_10ma | weekly_10ma"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Backtest book's rules on a single ticker."""
+    from app.book.analyzer import load_ticker_data
+    from app.book.backtest import backtest_ticker
+
+    df = load_ticker_data(ticker, years=15)
+    if df is None or df.empty:
+        typer.echo(f"No data for {ticker}.", err=True)
+        raise typer.Exit(code=1)
+    report = backtest_ticker(ticker, df, strategy=strategy)
+    if json_out:
+        sys.stdout.write(json.dumps(report.to_dict(), ensure_ascii=False,
+                                    indent=2, default=str))
+        return
+    r = report
+    print(f"\n=== {r.ticker} 백테스트 ({r.strategy}) — {r.period} ===")
+    print(f"  거래 횟수:        {r.n_trades}")
+    print(f"  승률:             {r.win_rate:.1f}%")
+    print(f"  평균 수익(승리):   {r.avg_gain_winners:+.2f}%")
+    print(f"  평균 손실(패배):   {r.avg_loss_losers:+.2f}%")
+    print(f"  평균 거래 수익률:  {r.avg_return_pct:+.2f}%")
+    print(f"  총 누적 수익률:    {r.total_return_pct:+.2f}%")
+    print(f"  buy & hold 비교:  {r.buy_and_hold_return_pct:+.2f}%")
+    print(f"  시장 노출 비율:    {r.bars_in_market_pct:.1f}%")
+    print(f"  최악 단일 거래:    {r.max_drawdown_trade:+.2f}%")
+    if r.trades and len(r.trades) <= 30:
+        print(f"\n  거래 내역:")
+        for t in r.trades:
+            sign = "+" if (t["return_pct"] or 0) >= 0 else ""
+            print(f"    {t['entry_date']} → {t['exit_date']}  "
+                  f"{t['entry_price']:>10.2f} → {t['exit_price']:>10.2f}  "
+                  f"{sign}{t['return_pct']:6.2f}%   ({t['exit_reason']})")
+    print()
+
+
+@app.command("book-cases")
+def cmd_book_cases():
+    """Run backtest on the book's headline example tickers."""
+    from app.book.analyzer import load_ticker_data
+    from app.book.backtest import backtest_ticker, BOOK_CASES
+    print(f"\n=== 책 사례 검증 (월봉 10MA 룰) ===\n")
+    for ticker, claim, period, strat in BOOK_CASES:
+        df = load_ticker_data(ticker, years=15)
+        if df is None or df.empty:
+            print(f"  {ticker:<12} — 데이터 없음")
+            continue
+        r = backtest_ticker(ticker, df, strategy="monthly_10ma")
+        claim_str = f"책 주장 +{claim}%" if claim else ""
+        print(f"  {ticker:<12}  ({period})")
+        print(f"     n={r.n_trades:<3d}  승률 {r.win_rate:>5.1f}%  "
+              f"총수익 {r.total_return_pct:>+8.2f}%  vs B&H {r.buy_and_hold_return_pct:>+8.2f}%  "
+              f"{claim_str}")
+
+
+@app.command("screen")
+def cmd_screen(
+    market: str = typer.Option("us", help="us | kr | all"),
+    min_score: float = typer.Option(0.5, help="Min book score for inclusion"),
+    only_completed: bool = typer.Option(True, help="Require completed bullish pattern"),
+    top: int = typer.Option(20, help="Show top N"),
+):
+    """Scan all stored tickers and rank by book's combined criteria."""
+    from app.data.pit_db import cursor
+    from app.book.analyzer import analyze_ticker
+    import pandas as pd
+
+    with cursor() as con:
+        if market == "us":
+            where = "ticker NOT LIKE '%.KS' AND ticker NOT LIKE '%.KQ'"
+        elif market == "kr":
+            where = "ticker LIKE '%.KS' OR ticker LIKE '%.KQ'"
+        else:
+            where = "1=1"
+        tickers = [r[0] for r in con.execute(
+            f"SELECT DISTINCT ticker FROM prices WHERE {where} ORDER BY ticker"
+        ).fetchall()]
+
+    print(f"Scanning {len(tickers)} tickers...")
+    results = []
+    for i, t in enumerate(tickers, 1):
+        try:
+            with cursor() as con:
+                df = con.execute(
+                    "SELECT date, open, high, low, close, adj_close, volume FROM prices "
+                    "WHERE ticker = ? ORDER BY date", [t]
+                ).df()
+            if df.empty or len(df) < 250:
+                continue
+            df["date"] = pd.to_datetime(df["date"])
+            r = analyze_ticker(t, df)
+            if r["book_score"] < min_score:
+                continue
+            if only_completed:
+                has_bull = any(p["completed"] and p["direction"] == "bullish"
+                               and p["confidence"] >= 0.7 for p in r["patterns"])
+                if not has_bull:
+                    continue
+            results.append(r)
+            if i % 100 == 0:
+                print(f"  ... {i}/{len(tickers)}")
+        except Exception as e:
+            continue
+
+    results.sort(key=lambda x: -x["book_score"])
+    print(f"\nFound {len(results)} candidates; top {top}:\n")
+    for r in results[:top]:
+        top_pat = r["patterns"][0]["kind"] if r["patterns"] else "—"
+        print(f"  {r['ticker']:<14}  {r['action']:<11}  score {r['book_score']:+.2f}  "
+              f"close {r['last_close']:>10.2f}  patterns={len(r['patterns'])}  "
+              f"top={top_pat}")
+
+
 if __name__ == "__main__":
     app()
