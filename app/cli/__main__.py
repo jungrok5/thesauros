@@ -284,6 +284,115 @@ def cmd_backtest(
     print()
 
 
+@app.command("backtest-advanced")
+def cmd_backtest_advanced(
+    ticker: str = typer.Argument(..., help="e.g. AAPL or 005930.KS"),
+    years: int = typer.Option(15, help="Years of history to use."),
+    timeframe: str = typer.Option("all", help="all | daily | weekly | monthly"),
+    write_report: bool = typer.Option(True, "--write/--no-write",
+                                       help="Write .md + .json report files."),
+    json_out: bool = typer.Option(False, "--json", help="Print full JSON."),
+):
+    """Run the 4-tier state-machine backtest (책의 모든 신호 통합).
+
+    ENTER → 25% 진입, PYRAMID → 25% 추매(최대 4단), WARN+확정 → 25% 분할매도,
+    EXIT → 전량 청산. 일봉/주봉/월봉 별도 결과.
+    """
+    from datetime import datetime
+    from pathlib import Path
+    from app.book.analyzer import load_ticker_data
+    from app.book.backtest_advanced import (
+        backtest_advanced, backtest_advanced_all_timeframes,
+    )
+
+    df = load_ticker_data(ticker, years=years)
+    if df is None or df.empty:
+        typer.echo(f"No data for {ticker}.", err=True)
+        raise typer.Exit(code=1)
+
+    if timeframe == "all":
+        results = backtest_advanced_all_timeframes(df, ticker)
+    else:
+        results = {timeframe: backtest_advanced(df, ticker, timeframe)}
+
+    if json_out:
+        out = {
+            tf: {
+                "summary": r["summary"],
+                "trades": [t.to_dict() for t in r["trades"]],
+            }
+            for tf, r in results.items()
+        }
+        sys.stdout.write(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+        return
+
+    print(f"\n=== {ticker} Advanced Backtest (책의 모든 신호 통합) ===\n")
+    for tf, r in results.items():
+        s = r["summary"]
+        if not s:
+            continue
+        n = s.get("n_trades", 0)
+        print(f"[{tf.upper()}]")
+        if n == 0:
+            print(f"  거래 없음.  B&H CAGR {s.get('buy_and_hold_cagr', 0):+.2f}%\n")
+            continue
+        print(f"  거래 수:        {n}")
+        print(f"  추매 횟수:      {s.get('n_pyramid_adds', 0)}")
+        print(f"  분할매도 횟수:  {s.get('n_scale_outs', 0)}")
+        print(f"  승률:           {s.get('win_rate_pct', 0):.1f}%")
+        print(f"  평균 수익:      {s.get('avg_return_pct', 0):+.2f}%  "
+              f"(승 {s.get('avg_winner_pct', 0):+.2f}% / 패 {s.get('avg_loser_pct', 0):+.2f}%)")
+        print(f"  최고/최악:      {s.get('best_pct', 0):+.2f}% / {s.get('worst_pct', 0):+.2f}%")
+        print(f"  누적 복리:      {s.get('total_compound_pct', 0):+.2f}%")
+        print(f"  CAGR:           {s.get('cagr_pct', 0):+.2f}%")
+        print(f"  Buy & Hold:     {s.get('buy_and_hold_pct', 0):+.2f}% "
+              f"(CAGR {s.get('buy_and_hold_cagr', 0):+.2f}%)")
+        print(f"  Alpha (CAGR):   {s.get('alpha_cagr_pct', 0):+.2f}%\n")
+
+    if write_report:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path("reports")
+        out_dir.mkdir(exist_ok=True)
+        stem = f"backtest_advanced_{ticker}_{ts}"
+        # JSON
+        with open(out_dir / f"{stem}.json", "w", encoding="utf-8") as f:
+            json.dump({
+                tf: {
+                    "summary": r["summary"],
+                    "trades": [t.to_dict() for t in r["trades"]],
+                }
+                for tf, r in results.items()
+            }, f, ensure_ascii=False, indent=2, default=str)
+        # Markdown
+        with open(out_dir / f"{stem}.md", "w", encoding="utf-8") as f:
+            f.write(f"# {ticker} — Advanced Backtest\n\n")
+            f.write("책의 모든 신호 통합. 4단 진입/추매/분할매도/청산.\n\n")
+            for tf, r in results.items():
+                s = r["summary"]
+                if not s:
+                    continue
+                f.write(f"## [{tf.upper()}]\n\n")
+                f.write(f"- 거래 수: **{s.get('n_trades', 0)}**\n")
+                f.write(f"- 승률: **{s.get('win_rate_pct', 0):.1f}%**\n")
+                f.write(f"- CAGR: **{s.get('cagr_pct', 0):+.2f}%**  "
+                        f"vs B&H **{s.get('buy_and_hold_cagr', 0):+.2f}%**  "
+                        f"(α **{s.get('alpha_cagr_pct', 0):+.2f}%**)\n")
+                f.write(f"- 추매 {s.get('n_pyramid_adds', 0)}회 / 분할매도 "
+                        f"{s.get('n_scale_outs', 0)}회\n\n")
+                if r["trades"]:
+                    f.write("### 거래 내역\n\n")
+                    f.write("| 진입 | 청산 | 평균진입 | 평균청산 | 최대유닛 | 수익 | 사유 |\n")
+                    f.write("|---|---|---|---|---|---|---|\n")
+                    for t in r["trades"]:
+                        td = t.to_dict()
+                        f.write(f"| {td['open_date']} | {td['close_date']} "
+                                f"| {td['avg_entry']} | {td['avg_exit']} "
+                                f"| {td['max_units']} | {td['return_pct']:+.2f}% "
+                                f"| {td['close_reason']} |\n")
+                    f.write("\n")
+        print(f"리포트 저장: {out_dir / stem}.md / .json")
+
+
 @app.command("book-cases")
 def cmd_book_cases():
     """Run backtest on the book's headline example tickers."""
