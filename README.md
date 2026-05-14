@@ -1,13 +1,13 @@
-# AI 퀀트 v2 — PIT + LightGBM
+# Thesauros — 책 룰 × ML 퀀트
 
-S&P 500 대상 **진짜 PIT(point-in-time) ML 퀀트 시스템**. 무료 데이터만 사용:
+저자 『추세추종 매매 룰』(출판사, 2026)의 모든 룰을
+자동화하고, LightGBM 랭킹과 융합한 개인용 quant 시스템.
 
-- **SEC EDGAR Company Facts API** — 분기별 재무 데이터 with `filed_date` (진정한 PIT)
-- **yfinance** — 일별 OHLCV 10년치
-- **Wikipedia + SEC ticker→CIK** — S&P 500 종목 + 섹터 매핑
+**구성:**
+- **Python 백엔드** (`app/`) — DuckDB PIT + LightGBM v3 + 책 룰 엔진 (book + macro)
+- **Next.js 프론트** (`web-next/`) — Google OAuth + 거시 대시보드 + 추천/분석 UI
 
-학습: **LightGBM regressor + PurgedKFold + Embargo** (López de Prado AFML §7).
-백테스트: **워크포워드 재학습** with 거래비용/슬리피지.
+기존 v2 (PIT + LightGBM) 위에 책 1·2부 전체 로직을 얹어 만든 v3.
 
 > ⚠️ **면책**: 학습/연구 도구. 실거래 결과를 보장하지 않습니다.
 > 투자 판단과 손익은 본인 책임.
@@ -148,8 +148,61 @@ for t in rebalance_dates:
 ## 한계 및 다음 단계 (Phase 2)
 
 - **유니버스 = 현재 S&P 500** (생존자 편향): 과거 편입/제외 이력 필요
-- **한국 시장 미지원**: DART OpenAPI 통합 필요 (Phase 2)
+- **한국 시장**: pykrx EOD 적재 (KIS API는 TODO)
 - **Sector neutralization 미구현**: 섹터별 z-score 정규화 후 합치기
 - **포트폴리오 최적화**: 현재 동일가중 → CVXPY 평균-분산 / 위험 패리티
 - **레짐 감지**: 변동성/추세 강도로 모델 가중치 동적 조정
 - **실거래 연동**: Alpaca / KIS Developers API
+
+---
+
+## v3 — 책 룰 + 거시 + Next.js 웹
+
+### CLI (Python 백엔드 단독)
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli macro                # 거시 25지표 + 시장 레짐
+.\.venv\Scripts\python.exe -m app.cli analyze AAPL         # 추세+패턴+거래량 전체 분석
+.\.venv\Scripts\python.exe -m app.cli backtest AAPL        # 책 룰 백테스트
+.\.venv\Scripts\python.exe -m app.cli book-cases           # 책 사례 자동 검증
+.\.venv\Scripts\python.exe -m app.cli screen --market us   # 상위 추천 스캔
+```
+
+### 웹 (개발 모드)
+
+**1) FastAPI 백엔드 (port 8000):**
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.api.server:app --reload
+```
+
+**2) Next.js 프론트 (port 3000):**
+```powershell
+cd web-next
+cp .env.example .env.local      # AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET 등 채우기
+npm install
+npm run dev
+```
+
+브라우저 → http://localhost:3000
+
+### Google OAuth 설정 (선택)
+
+1. https://console.cloud.google.com/apis/credentials → "OAuth 2.0 Client ID"
+2. Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+3. `web-next/.env.local`:
+   ```
+   AUTH_SECRET=$(openssl rand -base64 32)
+   AUTH_GOOGLE_ID=...
+   AUTH_GOOGLE_SECRET=...
+   AUTH_ALLOWED_EMAILS=you@gmail.com
+   ```
+
+### 페이지 (구현 현황)
+
+| 경로 | 상태 | 내용 |
+|------|------|------|
+| `/dashboard` | ✅ M2 | 거시 25지표 + 시장 레짐 + 책 해석 narrative |
+| `/recommendations` | 🔧 M3 | ML 랭킹 + 책 룰 필터 융합 |
+| `/stocks` | 🔧 M3 | 임의 티커 전체 분석 (추세/패턴/거래량/매매플랜) |
+| `/backtest` | 🔧 M4 | 책 룰 백테스트 + 책 사례 검증 |
+| `/settings` | ✅ M2 | 계정 정보 |

@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.api.book_api import router as book_router
 from app.backtest.walkforward import WFParams, run_walkforward
 from app.backtest.walkforward_v3 import WFv3Params, run_wf_v3
 from app.config import COST_BPS, FORWARD_HORIZON, MODEL_DIR, SLIPPAGE_BPS
@@ -38,11 +39,12 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = ROOT / "web"
 
 
-app = FastAPI(title="AI Quant Finance v2", version="2.0.0")
+app = FastAPI(title="Thesauros — Book + ML Quant", version="3.0.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=False,
     allow_methods=["*"], allow_headers=["*"],
 )
+app.include_router(book_router)
 
 
 def _clean(o: Any) -> Any:
