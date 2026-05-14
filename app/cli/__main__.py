@@ -548,5 +548,85 @@ def cmd_screen_and_backtest(
     print(f"  - {csv_path}")
 
 
+# ---------------------------------------------------------------------------
+# Paper-trading (P4)
+# ---------------------------------------------------------------------------
+@app.command("paper-snapshot")
+def cmd_paper_snapshot(
+    market: str = typer.Option("us"),
+    min_score: float = typer.Option(0.7),
+    top: int = typer.Option(30),
+    source: str = typer.Option("book_rules"),
+):
+    """Run screen + record top recommendations as paper trades for today."""
+    import pandas as pd
+    from app.data.pit_db import cursor
+    from app.book.analyzer import analyze_ticker
+    from app.paper.trader import record_snapshot
+
+    with cursor() as con:
+        if market == "us":
+            where = "ticker NOT LIKE '%.KS' AND ticker NOT LIKE '%.KQ'"
+        elif market == "kr":
+            where = "ticker LIKE '%.KS' OR ticker LIKE '%.KQ'"
+        else:
+            where = "1=1"
+        tickers = [
+            r[0] for r in con.execute(
+                f"SELECT DISTINCT ticker FROM prices WHERE {where} ORDER BY ticker"
+            ).fetchall()
+        ]
+
+    print(f"[paper] scanning {len(tickers)} tickers for snapshot ...")
+    rows = []
+    for t in tickers:
+        try:
+            with cursor() as con:
+                df = con.execute(
+                    "SELECT date, open, high, low, close, adj_close, volume "
+                    "FROM prices WHERE ticker = ? ORDER BY date",
+                    [t],
+                ).df()
+            if df.empty or len(df) < 250:
+                continue
+            df["date"] = pd.to_datetime(df["date"])
+            r = analyze_ticker(t, df)
+            if r["book_score"] < min_score:
+                continue
+            has_bull = any(p["completed"] and p["direction"] == "bullish"
+                           and p["confidence"] >= 0.7 for p in r["patterns"])
+            if not has_bull:
+                continue
+            rows.append({
+                "ticker": r["ticker"],
+                "action": r["action"],
+                "book_score": r["book_score"],
+                "last_close": r["last_close"],
+                "entry_plan": r.get("entry_plan"),
+            })
+        except Exception:
+            continue
+    rows.sort(key=lambda x: -x["book_score"])
+    rows = rows[:top]
+    n = record_snapshot(rows, source=source)
+    print(f"[paper] recorded {n} new paper trades (source={source}).")
+
+
+@app.command("paper-evaluate")
+def cmd_paper_evaluate():
+    """Check open paper trades for stop/target/timeout hits."""
+    from app.paper.trader import evaluate_open_trades
+    result = evaluate_open_trades(verbose=True)
+    print(result)
+
+
+@app.command("paper-stats")
+def cmd_paper_stats(source: str = typer.Option(None)):
+    """Show paper-trading aggregate metrics."""
+    from app.paper.trader import paper_metrics
+    m = paper_metrics(source=source)
+    print(json.dumps(m, indent=2, ensure_ascii=False, default=str))
+
+
 if __name__ == "__main__":
     app()
