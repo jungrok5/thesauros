@@ -316,5 +316,212 @@ def cmd_screen(
               f"top={top_pat}")
 
 
+# ---------------------------------------------------------------------------
+# Screen + backtest the entire shortlist → consolidated report file
+# ---------------------------------------------------------------------------
+@app.command("screen-and-backtest")
+def cmd_screen_and_backtest(
+    market: str = typer.Option("us", help="us | kr | all"),
+    min_score: float = typer.Option(0.7, help="Min book score"),
+    top: int = typer.Option(50, help="How many top candidates"),
+    strategy: str = typer.Option("monthly_10ma"),
+    out_dir: str = typer.Option(
+        "models_store",
+        help="Where to write report files (markdown + json + csv).",
+    ),
+):
+    """Screen the universe, backtest every hit, write a consolidated report.
+
+    Outputs (in `<out_dir>/`):
+      screen_backtest_<market>_<timestamp>.md
+      screen_backtest_<market>_<timestamp>.json
+      screen_backtest_<market>_<timestamp>.csv
+    """
+    from datetime import datetime
+    from pathlib import Path
+    import pandas as pd
+    import json as _json
+    from app.data.pit_db import cursor
+    from app.book.analyzer import analyze_ticker
+    from app.book.backtest import backtest_ticker
+
+    with cursor() as con:
+        if market == "us":
+            where = "ticker NOT LIKE '%.KS' AND ticker NOT LIKE '%.KQ'"
+        elif market == "kr":
+            where = "ticker LIKE '%.KS' OR ticker LIKE '%.KQ'"
+        else:
+            where = "1=1"
+        tickers = [
+            r[0] for r in con.execute(
+                f"SELECT DISTINCT ticker FROM prices WHERE {where} ORDER BY ticker"
+            ).fetchall()
+        ]
+
+    print(f"[1/2] Scanning {len(tickers)} tickers (market={market}) ...")
+    candidates = []
+    for i, t in enumerate(tickers, 1):
+        try:
+            with cursor() as con:
+                df = con.execute(
+                    "SELECT date, open, high, low, close, adj_close, volume "
+                    "FROM prices WHERE ticker = ? ORDER BY date",
+                    [t],
+                ).df()
+            if df.empty or len(df) < 250:
+                continue
+            df["date"] = pd.to_datetime(df["date"])
+            r = analyze_ticker(t, df)
+            if r["book_score"] < min_score:
+                continue
+            has_bull = any(
+                p["completed"] and p["direction"] == "bullish"
+                and p["confidence"] >= 0.7
+                for p in r["patterns"]
+            )
+            if not has_bull:
+                continue
+            candidates.append({"ticker": t, "analysis": r, "df": df})
+            if i % 100 == 0:
+                print(f"  ... scanned {i}/{len(tickers)}, found {len(candidates)}")
+        except Exception:
+            continue
+
+    candidates.sort(key=lambda x: -x["analysis"]["book_score"])
+    candidates = candidates[:top]
+    print(f"  found {len(candidates)} candidates after filter")
+
+    print(f"[2/2] Backtesting top {len(candidates)} ({strategy}) ...")
+    rows = []
+    for i, c in enumerate(candidates, 1):
+        try:
+            rep = backtest_ticker(c["ticker"], c["df"], strategy=strategy)
+        except Exception as e:
+            rows.append({
+                "ticker": c["ticker"], "error": str(e),
+                "action": c["analysis"]["action"],
+                "book_score": c["analysis"]["book_score"],
+            })
+            continue
+        a = c["analysis"]
+        top_pat = a["patterns"][0] if a["patterns"] else {}
+        rows.append({
+            "ticker": c["ticker"],
+            "action": a["action"],
+            "book_score": a["book_score"],
+            "last_close": a["last_close"],
+            "as_of": a["as_of"],
+            "top_pattern": top_pat.get("kind"),
+            "top_pattern_tf": top_pat.get("timeframe"),
+            "top_pattern_conf": top_pat.get("confidence"),
+            "n_patterns": len(a["patterns"]),
+            "trend_signal": a["trend"]["book_signal"],
+            "bt_n_trades": rep.n_trades,
+            "bt_win_rate": rep.win_rate,
+            "bt_avg_gain_winners": rep.avg_gain_winners,
+            "bt_avg_loss_losers": rep.avg_loss_losers,
+            "bt_total_return": rep.total_return_pct,
+            "bt_avg_return": rep.avg_return_pct,
+            "bt_buy_and_hold": rep.buy_and_hold_return_pct,
+            "bt_max_drawdown": rep.max_drawdown_trade,
+            "bt_in_market_pct": rep.bars_in_market_pct,
+            "entry_plan": a.get("entry_plan"),
+        })
+        if i % 10 == 0:
+            print(f"  ... backtested {i}/{len(candidates)}")
+
+    # Write outputs
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    stem = f"screen_backtest_{market}_{ts}"
+
+    df_out = pd.DataFrame([{k: v for k, v in r.items() if k != "entry_plan"}
+                           for r in rows])
+    csv_path = out_path / f"{stem}.csv"
+    df_out.to_csv(csv_path, index=False)
+
+    json_path = out_path / f"{stem}.json"
+    json_path.write_text(_json.dumps({
+        "market": market,
+        "min_score": min_score,
+        "strategy": strategy,
+        "generated_at": datetime.now().isoformat(),
+        "n_candidates": len(rows),
+        "items": rows,
+    }, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+
+    md_lines = []
+    md_lines.append(f"# 추천 종목 일괄 백테스트 리포트")
+    md_lines.append("")
+    md_lines.append(f"- 시장: **{market.upper()}**")
+    md_lines.append(f"- 최소 점수: `{min_score}`")
+    md_lines.append(f"- 전략: `{strategy}`")
+    md_lines.append(f"- 생성: {datetime.now().isoformat()}")
+    md_lines.append(f"- 후보 수: **{len(rows)}**")
+    md_lines.append("")
+    valid = [r for r in rows if "error" not in r]
+    if valid:
+        avg_total = sum(r["bt_total_return"] for r in valid) / len(valid)
+        avg_bh = sum(r["bt_buy_and_hold"] for r in valid) / len(valid)
+        outperform = sum(1 for r in valid
+                         if r["bt_total_return"] > r["bt_buy_and_hold"])
+        avg_win_rate = sum(r["bt_win_rate"] for r in valid) / len(valid)
+        avg_mdd = sum(r["bt_max_drawdown"] for r in valid) / len(valid)
+        md_lines.append("## 요약 통계")
+        md_lines.append("")
+        md_lines.append(f"- 평균 총 수익률: **{avg_total:+.2f}%**")
+        md_lines.append(f"- 평균 B&H 수익률: **{avg_bh:+.2f}%**")
+        md_lines.append(f"- B&H 대비 우위: **{outperform}/{len(valid)}** "
+                        f"({outperform/len(valid)*100:.1f}%)")
+        md_lines.append(f"- 평균 승률: **{avg_win_rate:.1f}%**")
+        md_lines.append(f"- 평균 최악 거래(MDD): **{avg_mdd:.2f}%**")
+        md_lines.append("")
+
+    md_lines.append("## 종목별 결과")
+    md_lines.append("")
+    md_lines.append("| Ticker | Action | Score | Close | Top Pattern | TF | "
+                    "Trades | Win% | Total | B&H | MDD/거래 |")
+    md_lines.append("|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|")
+    for r in rows:
+        if "error" in r:
+            md_lines.append(
+                f"| **{r['ticker']}** | {r['action']} | {r['book_score']:+.2f} "
+                f"| — | — | — | — | — | — | — | — |"
+            )
+            continue
+        md_lines.append(
+            f"| **{r['ticker']}** | {r['action']} | {r['book_score']:+.2f} "
+            f"| {r['last_close']:.2f} | {r.get('top_pattern') or '—'} "
+            f"| {r.get('top_pattern_tf') or '—'} "
+            f"| {r['bt_n_trades']} | {r['bt_win_rate']:.0f}% "
+            f"| {r['bt_total_return']:+.1f}% "
+            f"| {r['bt_buy_and_hold']:+.1f}% | {r['bt_max_drawdown']:+.1f}% |"
+        )
+    md_lines.append("")
+    md_lines.append("## 진입/손절/목표 (상위 20개)")
+    md_lines.append("")
+    md_lines.append("| Ticker | Entry | Stop | Target | Based on |")
+    md_lines.append("|---|---:|---:|---:|---|")
+    for r in rows[:20]:
+        ep = r.get("entry_plan") or {}
+        if not ep:
+            md_lines.append(f"| {r['ticker']} | — | — | — | — |")
+            continue
+        md_lines.append(
+            f"| {r['ticker']} | {ep.get('entry')} | {ep.get('stop')} "
+            f"| {ep.get('target')} | {ep.get('based_on')} |"
+        )
+
+    md_path = out_path / f"{stem}.md"
+    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+    print()
+    print(f"✓ Report written:")
+    print(f"  - {md_path}")
+    print(f"  - {json_path}")
+    print(f"  - {csv_path}")
+
+
 if __name__ == "__main__":
     app()
