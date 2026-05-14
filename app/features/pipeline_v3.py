@@ -290,14 +290,21 @@ def build_panel_v3(start: str = "2014-01-01",
                           "liabilities", "fcf_ttm", "accruals")]
     panel = panel.drop(columns=drop_cols, errors="ignore")
 
-    # Forward target — both raw and decile rank
+    # Forward targets — raw + decile rank @ 5d / 21d / 63d horizons.
     if with_target:
         wide = prices.copy()
-        fwd = (wide.shift(-FORWARD_HORIZON) / wide) - 1.0
-        fwd_long = fwd.stack().rename("y_fwd").reset_index()
-        fwd_long["date"] = pd.to_datetime(fwd_long["date"])
-        panel = panel.merge(fwd_long, on=["date", "ticker"], how="left")
-        # Cross-sectional rank target (decile, 0..9)
-        panel["y_rank"] = panel.groupby("date")["y_fwd"].rank(pct=True, method="average")
+        for h in (5, FORWARD_HORIZON, 63):
+            fwd = (wide.shift(-h) / wide) - 1.0
+            col = f"y_fwd_{h}d" if h != FORWARD_HORIZON else "y_fwd"
+            fwd_long = fwd.stack().rename(col).reset_index()
+            fwd_long["date"] = pd.to_datetime(fwd_long["date"])
+            panel = panel.merge(fwd_long, on=["date", "ticker"], how="left")
+        # Cross-sectional rank targets (percentile within each date)
+        for h in (5, FORWARD_HORIZON, 63):
+            src = "y_fwd" if h == FORWARD_HORIZON else f"y_fwd_{h}d"
+            tgt = "y_rank" if h == FORWARD_HORIZON else f"y_rank_{h}d"
+            panel[tgt] = panel.groupby("date")[src].rank(
+                pct=True, method="average"
+            )
 
     return panel
