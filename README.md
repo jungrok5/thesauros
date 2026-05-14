@@ -191,11 +191,13 @@ US 30개 종목 첫 실행 결과:
 
 | 모듈 | 역할 |
 |---|---|
-| `pit_db.py` | DuckDB 스키마: `universe`, `prices`, `fundamentals`, `macro`, `meta` |
+| `pit_db.py` | DuckDB 스키마: `universe`, `prices`, `fundamentals`, `macro`, `insider_transactions`, `paper_trades`, `meta` |
 | `universe.py` | S&P 500 동적 (Wikipedia + SEC ticker→CIK 매핑) |
 | `ingest_sec.py` | SEC EDGAR Company Facts (분기/연간 + `filed_date` 보존) |
+| `ingest_insiders.py` | SEC Form 4 인사이더 거래 XML 파싱 (P3) |
 | `ingest_prices.py` | yfinance 일별 OHLCV bulk |
-| `ingest_krx.py` | pykrx 한국 종목 (KOSPI200/KOSDAQ150) |
+| `ingest_krx.py` | **FinanceDataReader + pykrx fallback** (KOSPI 923 + KOSDAQ 1778) |
+| `ingest_dart.py` | DART OpenAPI — 한국 펀더멘탈 (corpCode + fnlttSinglAcnt) |
 | `kis.py` | KIS OpenAPI 클라이언트 (실시간 시세, 잔고; 자동매매는 미구현) |
 
 **PIT (Point-in-Time)** — SEC 데이터는 `filed_date` 그대로 저장. "as-of t" 쿼리는
@@ -221,6 +223,18 @@ US 30개 종목 첫 실행 결과:
 - **Beneish M-score** 프록시 — 회계 조작 위험
 - **Asness Quality** — Profitability + Growth + Safety + Payout
 - **Value composite** — P/E, P/B, P/S, EV/EBITDA, FCF yield 통합
+
+**거시 피처 (P1, `features/macro_features.py`)** — 레짐 조건부 학습용:
+- `macro_vix`, `macro_yield_curve`, `macro_real_rate`, `macro_credit_spread`,
+  `macro_fed_funds`, `macro_dxy_yoy`, `macro_copper_yoy`, `macro_m2_yoy`
+- 같은 날짜면 모든 종목에 동일 값 (sector neutralization 안 함)
+- LightGBM 이 "VIX 30+ 환경에서는 가치주, VIX 15 환경에서는 모멘텀" 같은
+  레짐 조건부 패턴을 자동 학습
+
+**인사이더 피처 (P3, `features/insider_features.py`)** — Form 4 기반:
+- `insider_buy_value_90d`, `insider_sell_value_90d`, `insider_net_buy_90d`,
+  `insider_n_buyers_90d`, `insider_ceo_buy_30d`, `insider_cluster`
+- 학계 근거: Cohen-Malloy-Pomorski (2012) cluster buy → +6%/yr alpha
 
 **기술적 (가격 기반):**
 - 모멘텀: 1M, 3M, 6M, **12-1M** (모멘텀 reversal 제외), 12M, **Chande(14)**
@@ -274,12 +288,25 @@ fold k:
 
 **포트폴리오 구성** — `_sector_cap_weights()`:
 - 스코어 내림차순으로 top-K 채우되, 섹터 weight 합이 cap 초과시 skip & 다음 후보
-- 1/top_k 동일가중 (CVXPY mean-variance 는 옵션, 기본 비활성)
+- **3가지 가중 방식 지원** (P2):
+  - `equal` — 1/N (baseline)
+  - **`inverse_vol`** — weight ∝ 1/σ_60d (책 권장, 변동성 큰 종목 비중 ↓)
+  - `risk_parity` — equal risk contribution (현재 inverse_vol 과 동일 근사)
 
 **Drawdown brake**:
 - equity curve 의 현재 drawdown 계산
 - `dd < drawdown_brake` 면 다음 rebalance 부터 노출을 0.5x
 - 회복 시 자동 정상화
+
+**레짐 cash trigger (P1)**:
+- `regime_cash_trigger=True` 시 macro_regime() == "FEAR" 이면 100% 현금
+- 단순하지만 위기 자동 회피 (2008, 2020 같은 시나리오)
+
+**현실적 세금 시뮬레이션 (P7)**:
+- `tax_short_term_pct` / `tax_long_term_pct`
+- 매도 시점에 entry_log 의 보유 일수 산출 → 단기/장기 세율 적용
+- 한국 거주자 미국 주식 케이스: `tax_short_term=tax_long_term=0.22`
+- 결과: `tax_paid_total_pct` + `tax_events` 리스트
 
 ### Hyperparameter sweep (`sweep_v3.py`)
 
@@ -292,6 +319,38 @@ v3 default (-15%, 0.25)         alpha +0.29%   Sharpe 0.36   MDD -20.2%
 tighter    (-10%, 0.30)         ← 현재 채택 (Sharpe 최고 + 보수적 MDD)
 …
 ```
+
+### Multi-horizon 앙상블 (P5, `backtest/multi_horizon.py`)
+
+단일 21d 호라이즌 대신 **5d/21d/63d 세 호라이즌**을 동시에 학습 + 가중평균:
+
+```python
+from app.backtest.multi_horizon import train_ensemble, predict_ensemble
+bundle = train_ensemble(panel, feature_cols)
+scores = predict_ensemble(test_panel, bundle)
+# horizon_weights default = {5: 0.20, 21: 0.55, 63: 0.25}
+```
+
+각 모델 예측을 cross-sectional percentile rank 로 정규화 후 가중평균 →
+단일 호라이즌 IS 변동성에 덜 휘둘리는 안정된 시그널.
+
+### Paper-trading 모드 (P4, `app/paper/trader.py`)
+
+**가장 정직한 OOS 검증** — 실거래 X, 추천만 매일 기록.
+
+```python
+from app.paper.trader import record_snapshot, evaluate_open_trades, paper_metrics
+record_snapshot(items, source="book_rules")   # 매일 장 마감 후
+evaluate_open_trades()                          # 매일 STOP/TARGET/TIMEOUT 체크
+paper_metrics()                                  # 누적 통계
+```
+
+테이블 스키마 (`paper_trades`):
+- snapshot_date / ticker / source (복합 PK — 같은 종목 다른 시그널 소스 가능)
+- action, book_score, entry_price, stop_price, target_price, based_on
+- closed (Boolean), close_date, close_price, close_reason, realized_pct
+
+CLI: `paper-snapshot`, `paper-evaluate`, `paper-stats`.
 
 ### 학습된 모델 출력
 
@@ -468,15 +527,20 @@ finance/
 │   │   ├── fetch.py               FRED + yfinance 수집
 │   │   └── state.py               상태 분류 + 시장 레짐
 │   ├── data/
-│   │   ├── pit_db.py              DuckDB 스키마
+│   │   ├── pit_db.py              DuckDB 스키마 (universe, prices, fundamentals,
+│   │   │                                          macro, insider_transactions, paper_trades)
 │   │   ├── universe.py            S&P 500 동적
-│   │   ├── ingest_sec.py          SEC EDGAR
+│   │   ├── ingest_sec.py          SEC EDGAR (Company Facts)
+│   │   ├── ingest_insiders.py     SEC Form 4 (P3, 인사이더 거래 XML)
 │   │   ├── ingest_prices.py       yfinance
-│   │   ├── ingest_krx.py          pykrx
-│   │   └── kis.py                 한투 API (v3 NEW)
+│   │   ├── ingest_krx.py          FinanceDataReader + pykrx fallback (P6)
+│   │   ├── ingest_dart.py         DART OpenAPI (P6, 한국 펀더멘탈)
+│   │   └── kis.py                 한투 API (실시간 시세 + 잔고)
 │   ├── features/
-│   │   ├── pipeline_v3.py         50+ 피처 + 섹터 중립
+│   │   ├── pipeline_v3.py         50+ 피처 + 섹터 중립 + 멀티-호라이즌 target
 │   │   ├── factor_zoo.py          Piotroski / Mohanram / Beneish / Asness
+│   │   ├── macro_features.py      거시 8피처 (P1, 레짐 conditioning)
+│   │   ├── insider_features.py    인사이더 6피처 (P3)
 │   │   ├── fund_vec.py            펀더멘털 PIT 벡터화
 │   │   ├── fundamentals.py        TTM 계산
 │   │   └── technical.py           가격 기반 피처
@@ -485,8 +549,12 @@ finance/
 │   │   └── lgbm.py                LightGBM 학습/저장
 │   ├── backtest/
 │   │   ├── walkforward.py         v1 (raw target)
-│   │   └── walkforward_v3.py      v3 (rank target + sector cap + DD brake)
-│   ├── cli/__main__.py            typer CLI (10개 명령)
+│   │   ├── walkforward_v3.py      v3 — rank target + sector cap + DD brake +
+│   │   │                          inverse-vol + regime cash trigger + 세금 sim
+│   │   └── multi_horizon.py       5d/21d/63d 앙상블 (P5)
+│   ├── paper/                     Paper-trading (P4)
+│   │   └── trader.py              record_snapshot / evaluate / metrics
+│   ├── cli/__main__.py            typer CLI (15+개 명령)
 │   ├── train.py                   학습 CLI 진입
 │   └── config.py                  경로 + .env loader
 │
