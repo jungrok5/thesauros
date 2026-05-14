@@ -71,6 +71,42 @@ CREATE TABLE IF NOT EXISTS macro (
     PRIMARY KEY (series_id, date)
 );
 CREATE INDEX IF NOT EXISTS idx_macro_date ON macro(date);
+
+CREATE TABLE IF NOT EXISTS insider_transactions (
+    ticker            VARCHAR,
+    cik               VARCHAR,
+    filed_date        DATE,
+    txn_date          DATE,
+    insider_name      VARCHAR,
+    insider_title     VARCHAR,
+    txn_code          VARCHAR,
+    txn_shares        DOUBLE,
+    txn_price_usd     DOUBLE,
+    ownership_after   DOUBLE,
+    acquired_disposed VARCHAR,
+    accession         VARCHAR,
+    PRIMARY KEY (cik, accession, insider_name, txn_date, txn_code)
+);
+CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_transactions(ticker, filed_date);
+
+CREATE TABLE IF NOT EXISTS paper_trades (
+    snapshot_date     DATE,
+    ticker            VARCHAR,
+    action            VARCHAR,
+    book_score        DOUBLE,
+    entry_price       DOUBLE,
+    stop_price        DOUBLE,
+    target_price      DOUBLE,
+    based_on          VARCHAR,
+    source            VARCHAR,
+    closed            BOOLEAN DEFAULT FALSE,
+    close_date        DATE,
+    close_price       DOUBLE,
+    close_reason      VARCHAR,
+    realized_pct      DOUBLE,
+    PRIMARY KEY (snapshot_date, ticker, source)
+);
+CREATE INDEX IF NOT EXISTS idx_paper_date ON paper_trades(snapshot_date);
 """
 
 

@@ -18,6 +18,7 @@ from app.features.factor_zoo import (
     asness_quality_score, beneish_m_score_proxy, chande_momentum,
     mohanram_g_score, piotroski_with_yoy, value_score,
 )
+from app.features.insider_features import INSIDER_FEATURES, attach_insiders
 from app.features.macro_features import ML_MACRO_FEATURES, attach_macro
 from app.features.technical import technical_panel
 
@@ -279,6 +280,11 @@ def build_panel_v3(start: str = "2014-01-01",
     if verbose:
         print("[v3] attaching macro features (regime conditioning)...")
     panel = attach_macro(panel)
+
+    # Attach insider transaction features (P3) — fills 0 when no data
+    if verbose:
+        print("[v3] attaching insider transaction features...")
+    panel = attach_insiders(panel)
 
     # Drop helper raw columns
     drop_cols = [c for c in panel.columns if c.startswith("__")

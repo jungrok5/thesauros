@@ -158,6 +158,31 @@ def cmd_ingest_krx(
         ingest_kospi200_kosdaq150(years=years, workers=workers, verbose=True)
 
 
+@app.command("ingest-insiders")
+def cmd_ingest_insiders(
+    max_filings: int = typer.Option(50, help="Recent Form 4 filings per ticker."),
+    workers: int = typer.Option(4, help="Parallel workers (SEC rate-limited)."),
+    tickers: str = typer.Option("", help="Comma-separated tickers (blank = all)."),
+):
+    """Fetch SEC Form 4 (insider) transactions for the universe."""
+    from app.data.ingest_insiders import ingest_universe, ingest_universe_default
+    if tickers:
+        from app.data.universe import get_universe_df
+        wanted = {t.strip().upper() for t in tickers.split(",")}
+        uni = get_universe_df()
+        targets = [{"ticker": r["ticker"], "cik": str(r["cik"]).strip()}
+                   for _, r in uni.iterrows()
+                   if r["ticker"] in wanted and r["cik"]]
+        if not targets:
+            typer.echo("No matching tickers with CIK found.", err=True)
+            raise typer.Exit(code=1)
+        counts = ingest_universe(targets, max_filings, workers, True)
+    else:
+        counts = ingest_universe_default(max_filings, workers, True)
+    ok = sum(1 for v in counts.values() if v > 0)
+    print(f"\nDone. {ok}/{len(counts)} tickers had insider data.")
+
+
 @app.command("ingest-us")
 def cmd_ingest_us(
     years: int = typer.Option(8),
