@@ -52,6 +52,12 @@ def kis_base_url() -> str:
     return "https://openapi.koreainvestment.com:9443"
 
 
+# DART OpenAPI — Korean corporate fundamental disclosures
+# Register at https://opendart.fss.or.kr/  (free, 1000 req/min)
+DART_API_KEY = os.getenv("DART_API_KEY", "")
+DART_BASE_URL = "https://opendart.fss.or.kr/api"
+
+
 # Ticker conventions:
 #   US:  AAPL, MSFT     (yfinance native)
 #   KR:  005930.KS (KOSPI), 035420.KQ (KOSDAQ)

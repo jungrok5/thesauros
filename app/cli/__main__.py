@@ -158,6 +158,26 @@ def cmd_ingest_krx(
         ingest_kospi200_kosdaq150(years=years, workers=workers, verbose=True)
 
 
+@app.command("ingest-dart")
+def cmd_ingest_dart(
+    years: str = typer.Option("2020-2025", help="e.g. 2018-2025"),
+    stock_codes: str = typer.Option(
+        "", help="Comma-separated 6-digit codes (blank=all KR in DB)."
+    ),
+):
+    """Fetch Korean fundamentals from DART OpenAPI (requires DART_API_KEY)."""
+    from app.data.ingest_dart import ingest_universe
+    yr_parts = years.split("-")
+    if len(yr_parts) == 2:
+        yrs = list(range(int(yr_parts[0]), int(yr_parts[1]) + 1))
+    else:
+        yrs = [int(years)]
+    codes = [c.strip() for c in stock_codes.split(",") if c.strip()] or None
+    counts = ingest_universe(stock_codes=codes, years=yrs, verbose=True)
+    ok = sum(1 for v in counts.values() if v > 0)
+    print(f"\nDone. {ok}/{len(counts)} stocks ingested.")
+
+
 @app.command("ingest-insiders")
 def cmd_ingest_insiders(
     max_filings: int = typer.Option(50, help="Recent Form 4 filings per ticker."),
