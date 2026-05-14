@@ -4,12 +4,12 @@ export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100">
-      <div className="w-full max-w-md p-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 backdrop-blur">
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+      <div className="w-full max-w-md p-8 rounded-2xl border border-border bg-card">
         <h1 className="text-2xl font-semibold tracking-tight mb-1">
           Thesauros
         </h1>
-        <p className="text-sm text-zinc-400 mb-8">
+        <p className="text-sm text-muted-foreground mb-8">
           캔들차트 추세추종 × ML 종합 분석.
         </p>
 
@@ -21,7 +21,7 @@ export default function LoginPage() {
         >
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg bg-white text-zinc-900 hover:bg-zinc-100 transition text-sm font-medium"
+            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg bg-foreground text-background hover:opacity-90 transition text-sm font-medium"
           >
             <svg viewBox="0 0 24 24" className="w-5 h-5">
               <path
@@ -45,7 +45,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-xs text-zinc-500 mt-6">
+        <p className="text-xs text-muted-foreground mt-6">
           관리자가 미리 등록한 이메일만 접근할 수 있습니다.
         </p>
       </div>

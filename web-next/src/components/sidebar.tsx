@@ -22,10 +22,10 @@ const NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="w-56 border-r border-zinc-800 bg-zinc-950 px-3 py-6 hidden md:flex md:flex-col gap-1">
+    <aside className="w-56 border-r border-border bg-background px-3 py-6 hidden md:flex md:flex-col gap-1">
       <Link href="/dashboard" className="px-3 mb-6 block">
         <div className="text-lg font-semibold tracking-tight">Thesauros</div>
-        <div className="text-[10px] uppercase tracking-widest text-zinc-500">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
           book × ML
         </div>
       </Link>
@@ -39,10 +39,10 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition",
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
                 active
-                  ? "bg-zinc-800/80 text-zinc-100"
-                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200",
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
