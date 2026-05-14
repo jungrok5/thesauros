@@ -18,6 +18,7 @@ from app.features.factor_zoo import (
     asness_quality_score, beneish_m_score_proxy, chande_momentum,
     mohanram_g_score, piotroski_with_yoy, value_score,
 )
+from app.features.macro_features import ML_MACRO_FEATURES, attach_macro
 from app.features.technical import technical_panel
 
 
@@ -48,7 +49,10 @@ TECH_FEATURES_V3 = [
     "consistency_12m",
 ]
 
+# Macro features are NOT sector-neutralized (they're the same for all tickers
+# on a given date), so we keep them separate and exclude from the `_sn` loop.
 ALL_V3 = FUND_FEATURES_V3 + TECH_FEATURES_V3
+ALL_V3_WITH_MACRO = ALL_V3 + ML_MACRO_FEATURES
 
 
 def load_prices_wide(start: Optional[str] = None, end: Optional[str] = None) -> pd.DataFrame:
@@ -270,6 +274,11 @@ def build_panel_v3(start: str = "2014-01-01",
     for c in ALL_V3:
         if c in panel.columns:
             panel[c + "_rk"] = panel.groupby("date")[c].rank(pct=True, method="average")
+
+    # Attach macro features as-of date (regime conditioning, P1)
+    if verbose:
+        print("[v3] attaching macro features (regime conditioning)...")
+    panel = attach_macro(panel)
 
     # Drop helper raw columns
     drop_cols = [c for c in panel.columns if c.startswith("__")

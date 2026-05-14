@@ -17,6 +17,7 @@ from scipy.stats import spearmanr
 from app.config import (COST_BPS, EMBARGO_DAYS, FORWARD_HORIZON,
                         RF_ANNUAL, SLIPPAGE_BPS, TRADING_DAYS)
 from app.features.pipeline_v3 import ALL_V3, build_panel_v3, load_prices_wide
+from app.features.macro_features import ML_MACRO_FEATURES
 
 
 def _select_with_sector_cap(scores: pd.Series, sectors: pd.Series,
@@ -172,8 +173,14 @@ def run_wf_v3(params: WFv3Params,
     feature_cols = [c + suffix for c in ALL_V3 if (c + suffix) in panel.columns]
     if not feature_cols:
         feature_cols = [c for c in ALL_V3 if c in panel.columns]
+    # Macro features are NOT sector-neutralized (same value all tickers / date).
+    if params.regime_feature:
+        macro_cols = [c for c in ML_MACRO_FEATURES if c in panel.columns]
+        feature_cols.extend(macro_cols)
+        if verbose:
+            print(f"[v3-bt] +{len(macro_cols)} macro features (regime conditioning)")
     if verbose:
-        print(f"[v3-bt] Using {len(feature_cols)} features (suffix={suffix})")
+        print(f"[v3-bt] Using {len(feature_cols)} features total (suffix={suffix})")
 
     target_col = "y_rank" if params.use_rank_target else "y_fwd"
 
