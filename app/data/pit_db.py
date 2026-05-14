@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS meta (
     value VARCHAR,
     ts   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS macro (
+    series_id VARCHAR,
+    date      DATE,
+    value     DOUBLE,
+    PRIMARY KEY (series_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_macro_date ON macro(date);
 """
 
 

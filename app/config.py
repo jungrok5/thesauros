@@ -20,6 +20,16 @@ SEC_USER_AGENT = os.getenv(
     "FinanceResearch jungrok5@gmail.com",
 )
 
+# FRED (Federal Reserve Economic Data) — register at https://fred.stlouisfed.org/
+FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+
+# Ticker conventions:
+#   US:  AAPL, MSFT     (yfinance native)
+#   KR:  005930.KS (KOSPI), 035420.KQ (KOSDAQ)
+def is_korean_ticker(ticker: str) -> bool:
+    return ticker.endswith(".KS") or ticker.endswith(".KQ")
+
+
 # Knobs
 TRADING_DAYS = 252
 RF_ANNUAL = 0.035
