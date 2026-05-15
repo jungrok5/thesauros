@@ -24,18 +24,99 @@ import numpy as np
 import pandas as pd
 
 from app.book.signals import detect_signals_at, SignalSet
-from app.book.trend import resample_to_period
+from app.book.trend import add_moving_averages, resample_to_period
 
 
 UNIT_SIZE = 0.25            # 4등분: 한 unit = 25%
 MAX_UNITS = 4               # 최대 4단까지 추매 (100%)
-WARN_CONFIRM_BARS = 1       # WARN 다음 봉에서 EXIT/하락 확인 시 분할 매도
 
-# 시그널 confidence 임계값 — 낮은 noise 시그널 무시
-ENTER_MIN_CONF = 0.60
-PYRAMID_MIN_CONF = 0.70
-WARN_MIN_CONF = 0.50
-EXIT_MIN_CONF = 0.70
+
+@dataclass
+class TFParams:
+    """Timeframe-aware tuning. 책 원문은 월봉 기준 룰 → 단기로 갈수록 더 보수.
+
+    Reasoning:
+      - 일봉: 노이즈 多 → EXIT 임계 매우 높게 (강신호만), PYRAMID 쿨다운 길게
+      - 주봉: 책 권장. 균형
+      - 월봉: 책 핵심. 가장 너그럽게 (신호 자체가 드물어서)
+    """
+    enter_min_conf: float = 0.60
+    pyramid_min_conf: float = 0.70
+    warn_min_conf: float = 0.55
+    exit_min_conf: float = 0.80
+    pyramid_cooldown_bars: int = 5
+    require_240ma_above: bool = True       # 240MA 아래에선 ENTER 금지
+    warn_require_red_candle: bool = True   # WARN 확정 시 음봉 필요
+    warn_require_volume_up: bool = True    # WARN 확정 시 거래량 증가 필요
+    warn_require_ma10_near: bool = True    # WARN 확정 시 10MA 근접 필요
+    # ─── 책 강화 옵션 (V4) ───
+    forbid_sideways_entry: bool = True      # 책 3장: 박스권 매매 금지
+    forbid_bearish_alignment_entry: bool = True  # 책 4장: 역배열 매수 금지
+    simple_book_exit: bool = False          # True = "월봉 10MA 하향" 만 EXIT (책 그대로)
+    require_topdown_ok: bool = False        # macro.market_regime() 가 BULL/HOPE 이상 일 때만 ENTER
+    trade_only_period_end: bool = False     # 책 3장: "말일/금요일 14시 1회"만 검사
+    # 매매 검사 빈도 옵션 (모든 봉 대신):
+    #   daily: weekday=4 (금요일) 만
+    #   weekly: 모든 봉 (어차피 주봉 = 금요일 1회)
+    #   monthly: 모든 봉 (월봉 = 말일)
+
+
+def _book_strict_params(base: TFParams) -> TFParams:
+    """V4: 책 그대로 모드 — 모든 책 강화 옵션 ON."""
+    return TFParams(
+        enter_min_conf=base.enter_min_conf,
+        pyramid_min_conf=base.pyramid_min_conf,
+        warn_min_conf=base.warn_min_conf,
+        exit_min_conf=base.exit_min_conf,
+        pyramid_cooldown_bars=base.pyramid_cooldown_bars,
+        require_240ma_above=True,
+        warn_require_red_candle=True,
+        warn_require_volume_up=base.warn_require_volume_up,
+        warn_require_ma10_near=base.warn_require_ma10_near,
+        # 책 강화 옵션 ON
+        forbid_sideways_entry=True,
+        forbid_bearish_alignment_entry=True,
+        simple_book_exit=True,        # 월봉 10MA 만 EXIT (책 그대로)
+        require_topdown_ok=False,     # 백테스트 시 macro state 는 현재 시점만 — 비활성 (look-ahead)
+        trade_only_period_end=True,   # 일봉이면 금요일만
+    )
+
+
+PARAMS_BY_TF: Dict[str, TFParams] = {
+    "daily": TFParams(
+        enter_min_conf=0.70,
+        pyramid_min_conf=0.80,
+        warn_min_conf=0.60,
+        exit_min_conf=0.88,
+        pyramid_cooldown_bars=20,
+        require_240ma_above=True,
+        warn_require_red_candle=True,
+        warn_require_volume_up=True,
+        warn_require_ma10_near=True,
+    ),
+    "weekly": TFParams(
+        enter_min_conf=0.65,
+        pyramid_min_conf=0.72,
+        warn_min_conf=0.55,
+        exit_min_conf=0.80,
+        pyramid_cooldown_bars=4,
+        require_240ma_above=True,
+        warn_require_red_candle=True,
+        warn_require_volume_up=False,
+        warn_require_ma10_near=True,
+    ),
+    "monthly": TFParams(
+        enter_min_conf=0.55,
+        pyramid_min_conf=0.65,
+        warn_min_conf=0.50,
+        exit_min_conf=0.70,
+        pyramid_cooldown_bars=2,
+        require_240ma_above=False,    # 월봉 240 = 20년 데이터 필요해서 비활성
+        warn_require_red_candle=True,
+        warn_require_volume_up=False,
+        warn_require_ma10_near=False,
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -145,18 +226,89 @@ class TradeResult:
 # ---------------------------------------------------------------------------
 # State-machine backtest on a single timeframe
 # ---------------------------------------------------------------------------
+def _confirm_warn(df_aug: pd.DataFrame, i: int, params: TFParams) -> bool:
+    """다음 봉에서 WARN 신호가 진짜인지 확인.
+
+    조건 (params 에 따라 활성):
+      - 음봉 (close < open)
+      - 직전 봉 종가 대비 하락
+      - 거래량 증가 (직전 5봉 평균 이상)
+      - 10MA 근접 (종가가 ma_10 ±3% 이내, 즉 깰 위험권)
+    """
+    if i < 1 or i >= len(df_aug):
+        return False
+    row = df_aug.iloc[i]
+    prev = df_aug.iloc[i - 1]
+    close = float(row["close"])
+    open_ = float(row["open"])
+    prev_close = float(prev["close"])
+
+    if close >= prev_close:
+        return False  # 상승이면 WARN 무효
+
+    if params.warn_require_red_candle and close >= open_:
+        return False
+
+    if params.warn_require_volume_up and "volume" in df_aug.columns:
+        v_now = float(row["volume"]) if pd.notna(row["volume"]) else 0
+        prev5 = df_aug["volume"].iloc[max(0, i - 5): i]
+        v_avg = float(prev5.mean()) if len(prev5) > 0 else 0
+        if v_avg > 0 and v_now < v_avg * 1.0:
+            return False
+
+    if params.warn_require_ma10_near and "ma_10" in df_aug.columns:
+        ma10 = df_aug["ma_10"].iloc[i]
+        if pd.notna(ma10):
+            ma10 = float(ma10)
+            if close > ma10 * 1.03:
+                return False  # 10MA 와 너무 멀면 아직 위험 없음
+
+    return True
+
+
+def _asof_higher_tf_uptrend(daily_dates: pd.Series,
+                            higher_df: pd.DataFrame) -> pd.Series:
+    """For each daily date, look up the most recent COMPLETED higher-TF bar
+    and return whether close > ma_10 (uptrend) at that bar.
+
+    Returns Series of bool aligned to daily_dates (True = uptrend, NaN→False).
+    """
+    if higher_df is None or higher_df.empty:
+        return pd.Series([True] * len(daily_dates), index=daily_dates.index)
+    h = higher_df.copy()
+    h["date"] = pd.to_datetime(h["date"])
+    h = h.sort_values("date").reset_index(drop=True)
+    h = add_moving_averages(h, [10])
+    h["uptrend"] = (h["close"] > h["ma_10"]).fillna(False)
+
+    left = pd.DataFrame({"date": pd.to_datetime(daily_dates).values,
+                          "_orig_idx": daily_dates.index})
+    merged = pd.merge_asof(
+        left.sort_values("date"),
+        h[["date", "uptrend"]].sort_values("date"),
+        on="date", direction="backward",
+    )
+    merged = merged.sort_values("_orig_idx")
+    return merged["uptrend"].fillna(False).reset_index(drop=True)
+
+
 def backtest_advanced(df: pd.DataFrame,
                        ticker: str,
                        timeframe: str = "daily",
-                       warmup: int = 60) -> Dict:
+                       warmup: int = 60,
+                       params: Optional[TFParams] = None,
+                       higher_tf_dfs: Optional[Dict[str, pd.DataFrame]] = None,
+                       ) -> Dict:
     """Run the 4-tier state-machine backtest on a single OHLCV series.
 
     Args:
         df: OHLCV (date, open, high, low, close, volume). Already resampled
             to the desired timeframe (daily/weekly/monthly).
         ticker: ticker label (for output rows).
-        timeframe: 'daily' / 'weekly' / 'monthly' (annotation only).
+        timeframe: 'daily' / 'weekly' / 'monthly'. Used to pick tuning
+            unless `params` is overridden.
         warmup: bars to skip before signals can fire.
+        params: optional explicit TFParams (overrides timeframe default).
 
     Returns dict with:
         - trades: list of TradeResult
@@ -166,35 +318,93 @@ def backtest_advanced(df: pd.DataFrame,
     if df is None or len(df) < warmup + 10:
         return {"trades": [], "all_steps": [], "summary": {}}
 
+    p = params or PARAMS_BY_TF.get(timeframe, TFParams())
+
     df = df.copy().reset_index(drop=True)
     if "date" not in df.columns:
         df["date"] = pd.to_datetime(df.index)
     df["date"] = pd.to_datetime(df["date"])
 
+    # 240MA gate + WARN 확정용 MA10 precompute
+    df_aug = add_moving_averages(df, [10, 240])
+
+    # Option A: 상위 TF 추세 게이트 (as-of join, look-ahead 차단)
+    higher_uptrends: Dict[str, pd.Series] = {}
+    if higher_tf_dfs:
+        for name, hdf in higher_tf_dfs.items():
+            higher_uptrends[name] = _asof_higher_tf_uptrend(df["date"], hdf)
+
     pos = Position(ticker=ticker)
     trades: List[TradeResult] = []
     all_steps: List[TradeStep] = []
 
-    last_pyramid_bar: int = -10  # debounce: don't add two units in two adjacent bars
+    last_pyramid_bar: int = -10**6
+
+    # 책 강화: 탑다운 게이트 (한 번 호출, 캐시)
+    topdown_ok = True
+    if p.require_topdown_ok:
+        try:
+            from app.macro.state import market_regime
+            r = market_regime()
+            topdown_ok = r.get("regime") in ("HOPE", "CONVICTION")
+        except Exception:
+            topdown_ok = True  # fail-open
 
     for i in range(warmup, len(df)):
         bar = df.iloc[i]
         bar_date = pd.to_datetime(bar["date"])
         bar_close = float(bar["close"])
 
+        # 책 강화: 매매 빈도 (일봉이면 금요일만)
+        if p.trade_only_period_end and timeframe == "daily":
+            if bar_date.weekday() != 4:  # 0=월, 4=금
+                continue
+
         try:
             ss = detect_signals_at(df, i)
         except Exception:
             continue
 
-        has_exit = ss.has("EXIT", min_conf=EXIT_MIN_CONF)
-        best_exit = ss.best("EXIT") if has_exit else None
-        has_warn = ss.has("WARN", min_conf=WARN_MIN_CONF)
+        # 책 강화: simple_book_exit 모드 — 10MA 하향 만 EXIT
+        if p.simple_book_exit:
+            exit_signals = [s for s in ss.signals
+                             if s.kind == "EXIT" and "10MA" in s.source]
+            has_exit = bool(exit_signals)
+            best_exit = max(exit_signals, key=lambda s: s.confidence) if exit_signals else None
+        else:
+            has_exit = ss.has("EXIT", min_conf=p.exit_min_conf)
+            best_exit = ss.best("EXIT") if has_exit else None
+        has_warn = ss.has("WARN", min_conf=p.warn_min_conf)
         best_warn = ss.best("WARN") if has_warn else None
-        has_pyramid = ss.has("PYRAMID", min_conf=PYRAMID_MIN_CONF)
+        has_pyramid = ss.has("PYRAMID", min_conf=p.pyramid_min_conf)
         best_pyramid = ss.best("PYRAMID") if has_pyramid else None
-        has_enter = ss.has("ENTER", min_conf=ENTER_MIN_CONF)
+        has_enter = ss.has("ENTER", min_conf=p.enter_min_conf)
         best_enter = ss.best("ENTER") if has_enter else None
+
+        # 책 게이트들 평가 (ENTER 차단용)
+        gate_sideways_block = (
+            p.forbid_sideways_entry and ss.trend_type == "sideways"
+        )
+        gate_bearish_align_block = (
+            p.forbid_bearish_alignment_entry and ss.bearish_alignment
+        )
+        book_gates_ok = (
+            not gate_sideways_block
+            and not gate_bearish_align_block
+            and topdown_ok
+        )
+
+        # 240MA gate: 가격이 240MA 아래면 ENTER 금지 (책: 죽은 차트 진입 차단)
+        ma240_val = df_aug["ma_240"].iloc[i] if "ma_240" in df_aug.columns else None
+        ma240_ok = (
+            not p.require_240ma_above
+            or (pd.notna(ma240_val) and bar_close >= float(ma240_val))
+        )
+
+        # Option A: 상위 TF 추세 게이트 (모두 상승 추세여야 ENTER 허용)
+        higher_tf_ok = all(
+            bool(s.iloc[i]) for s in higher_uptrends.values()
+        ) if higher_uptrends else True
 
         # ----- 1. EXIT (보유 중이면 즉시 청산) -----
         if pos.is_open and has_exit:
@@ -221,16 +431,15 @@ def backtest_advanced(df: pd.DataFrame,
             pos = Position(ticker=ticker)
             continue
 
-        # ----- 2. WARN 확정 (직전 bar 에 WARN 났고 이번 bar 가 하락 종가면 부분 매도) -----
+        # ----- 2. WARN 확정 (직전 bar 에 WARN 났고 이번 bar 가 조건 충족) -----
         if pos.is_open and pos.pending_warn:
-            prev_close = float(df["close"].iloc[i - 1])
-            confirmed = bar_close < prev_close  # 다음 봉 하락 = 확정
+            confirmed = _confirm_warn(df_aug, i, p)
             if confirmed and pos.units > UNIT_SIZE:
                 step = pos.reduce_unit(
                     date=bar_date, price=bar_close, units=UNIT_SIZE,
                     action="SCALE_OUT",
-                    source="WARN 확정 (전봉 경고 후 하락)",
-                    detail=f"prev_close {prev_close:.2f} → {bar_close:.2f}",
+                    source="WARN 확정 (음봉+거래량+10MA근접)",
+                    detail=f"prev WARN: {pos.pending_warn_date}",
                 )
                 all_steps.append(step)
             pos.pending_warn = False
@@ -238,7 +447,7 @@ def backtest_advanced(df: pd.DataFrame,
 
         # ----- 3. PYRAMID (보유 중 + 강한 상승 신호) -----
         if pos.is_open and has_pyramid and pos.units < 1.0 - 1e-6:
-            if i - last_pyramid_bar >= 2:  # 연속 추매 방지
+            if i - last_pyramid_bar >= p.pyramid_cooldown_bars:
                 step = pos.add_unit(
                     date=bar_date, price=bar_close, units=UNIT_SIZE,
                     action="PYRAMID",
@@ -248,8 +457,13 @@ def backtest_advanced(df: pd.DataFrame,
                 all_steps.append(step)
                 last_pyramid_bar = i
 
-        # ----- 4. ENTER (포지션 없음 + 진입 신호) -----
-        if not pos.is_open and has_enter and not has_warn:
+        # ----- 4. ENTER (포지션 없음 + 진입 신호 + 게이트 모두 통과) -----
+        if (not pos.is_open
+                and has_enter
+                and not has_warn
+                and ma240_ok
+                and higher_tf_ok
+                and book_gates_ok):
             step = pos.add_unit(
                 date=bar_date, price=bar_close, units=UNIT_SIZE,
                 action="BUY",
@@ -350,29 +564,90 @@ def _summarize(trades: List[TradeResult], df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
-# Multi-timeframe driver
+# Option B: Triple Screen — daily 봉 단위로 매매, 상위 TF 동시 합의 필요
 # ---------------------------------------------------------------------------
-def backtest_advanced_all_timeframes(daily_df: pd.DataFrame,
-                                     ticker: str) -> Dict:
-    """Run the same state machine on daily / weekly / monthly bars."""
-    out: Dict[str, Dict] = {}
-    # Daily
-    out["daily"] = backtest_advanced(daily_df.copy(), ticker, "daily", warmup=60)
+def backtest_triple_screen(daily_df: pd.DataFrame,
+                            ticker: str,
+                            warmup: int = 60,
+                            params: Optional[TFParams] = None,
+                            require_weekly_pattern: bool = False) -> Dict:
+    """3-time-frame consensus backtest (Alexander Elder Triple Screen 변형).
 
-    # Weekly
+    실행 단위 = 일봉. 매 일봉에서:
+      1. 월봉의 마지막 완성된 봉 → 추세 양호?  (close > 10MA)
+      2. 주봉의 마지막 완성된 봉 → 추세 양호?
+      3. 일봉의 현재 봉 → ENTER 신호?
+    셋 다 OK 일 때만 매수. EXIT 는 일봉 한 곳에서만 발동돼도 청산.
+    """
+    p = params or PARAMS_BY_TF.get("daily", TFParams())
+
+    df = daily_df.copy().reset_index(drop=True)
+    if "date" not in df.columns:
+        df["date"] = pd.to_datetime(df.index)
+    df["date"] = pd.to_datetime(df["date"])
+
     weekly = resample_to_period(daily_df, "W").reset_index().rename(
         columns={"index": "date"}
     )
     if "date" not in weekly.columns:
         weekly = weekly.rename(columns={weekly.columns[0]: "date"})
-    out["weekly"] = backtest_advanced(weekly, ticker, "weekly", warmup=30)
-
-    # Monthly
     monthly = resample_to_period(daily_df, "M").reset_index().rename(
         columns={"index": "date"}
     )
     if "date" not in monthly.columns:
         monthly = monthly.rename(columns={monthly.columns[0]: "date"})
-    out["monthly"] = backtest_advanced(monthly, ticker, "monthly", warmup=24)
 
+    return backtest_advanced(
+        df=df, ticker=ticker, timeframe="daily",
+        warmup=warmup, params=p,
+        higher_tf_dfs={"weekly": weekly, "monthly": monthly},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Multi-timeframe driver
+# ---------------------------------------------------------------------------
+def backtest_advanced_all_timeframes(daily_df: pd.DataFrame,
+                                     ticker: str,
+                                     use_higher_tf_gate: bool = False,
+                                     book_strict: bool = False) -> Dict:
+    """Run the same state machine on daily / weekly / monthly bars.
+
+    Args:
+        use_higher_tf_gate: Option A. If True, daily backtest is gated by
+            weekly + monthly uptrend; weekly is gated by monthly uptrend.
+    """
+    out: Dict[str, Dict] = {}
+
+    # Resample once (reused for gates)
+    weekly = resample_to_period(daily_df, "W").reset_index().rename(
+        columns={"index": "date"}
+    )
+    if "date" not in weekly.columns:
+        weekly = weekly.rename(columns={weekly.columns[0]: "date"})
+    monthly = resample_to_period(daily_df, "M").reset_index().rename(
+        columns={"index": "date"}
+    )
+    if "date" not in monthly.columns:
+        monthly = monthly.rename(columns={monthly.columns[0]: "date"})
+
+    daily_gates = {"weekly": weekly, "monthly": monthly} if use_higher_tf_gate else None
+    weekly_gates = {"monthly": monthly} if use_higher_tf_gate else None
+
+    def _params(tf: str) -> TFParams:
+        base = PARAMS_BY_TF.get(tf, TFParams())
+        return _book_strict_params(base) if book_strict else base
+
+    out["daily"] = backtest_advanced(
+        daily_df.copy(), ticker, "daily", warmup=60,
+        params=_params("daily"), higher_tf_dfs=daily_gates,
+    )
+    out["weekly"] = backtest_advanced(
+        weekly, ticker, "weekly", warmup=30,
+        params=_params("weekly"), higher_tf_dfs=weekly_gates,
+    )
+    out["monthly"] = backtest_advanced(
+        monthly, ticker, "monthly", warmup=24,
+        params=_params("monthly"),
+    )
     return out

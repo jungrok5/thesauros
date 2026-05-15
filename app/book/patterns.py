@@ -791,6 +791,98 @@ def detect_forking(df: pd.DataFrame, periods: List[int] = None,
 
 
 # ---------------------------------------------------------------------------
+# 11. 눌림목 매매 (책 4장 p340-345: "고수는 음봉 매수, 하수는 양봉 추격")
+# ---------------------------------------------------------------------------
+def detect_pullback_buy(df: pd.DataFrame,
+                         ma_period: int = 20,
+                         lookback: int = 40,
+                         max_pullback_pct: float = 0.10) -> Optional[Pattern]:
+    """눌림목 매매 — 정배열 상승 추세 + 단기 음봉 조정 + 이평선 지지.
+
+    Book: 음봉에 매수, 양봉 추격 금지. 거래량 적은 조정 = 매집 완료 임박.
+
+    Criteria:
+      1. 직전 60봉이 상승 추세 (close 끝 > close 시작)
+      2. 가격이 ma_period (10/20/60) 위에 있다가 살짝 눌림 (-3 ~ -10%)
+      3. 이번 봉이 음봉 (close < open)
+      4. 이번 봉의 low 가 ma_period 에 1% 이내 접근
+      5. 거래량이 직전 20봉 평균보다 작음 (매집 완료 조용함)
+    """
+    if df is None or len(df) < lookback + ma_period:
+        return None
+
+    # Only compute the ma we need (was [10,20,60] = 3 rolling means).
+    ma_col = f"ma_{ma_period}"
+    work = add_moving_averages(df, [ma_period]).copy().reset_index(drop=True)
+    if ma_col not in work.columns or pd.isna(work[ma_col].iloc[-1]):
+        return None
+
+    last = work.iloc[-1]
+    last_close = float(last["close"])
+    last_open = float(last["open"])
+    last_low = float(last["low"])
+    ma_val = float(last[ma_col])
+
+    # 1. 큰 추세 = 상승
+    seg = work.tail(lookback)
+    seg_chg = (float(seg["close"].iloc[-1]) - float(seg["close"].iloc[0])) / float(seg["close"].iloc[0])
+    if seg_chg < 0.05:
+        return None
+
+    # 2. 직전 (lookback - 10) 동안 가격이 ma 위에 있었음
+    pre = work.iloc[-lookback:-3]
+    above_ratio = (pre["close"] > pre[ma_col]).mean()
+    if above_ratio < 0.70:
+        return None
+
+    # 최근 고점 대비 눌림 강도
+    recent_high = float(work["close"].iloc[-15:].max())
+    pullback = (recent_high - last_close) / recent_high
+    if pullback <= 0 or pullback > max_pullback_pct:
+        return None
+
+    # 3. 이번 봉이 음봉
+    if last_close >= last_open:
+        return None
+
+    # 4. low 가 ma 에 접근 (지지 테스트)
+    if abs(last_low - ma_val) / ma_val > 0.015:
+        return None
+
+    # 5. 거래량 조용함
+    vol_avg = work["volume"].iloc[-21:-1].mean() if "volume" in work.columns else 0
+    last_vol = float(last["volume"]) if "volume" in work.columns else 0
+    quiet = vol_avg > 0 and last_vol < vol_avg * 0.85
+
+    conf = 0.72
+    if quiet:
+        conf += 0.08
+    if pullback > 0.05:
+        conf += 0.05
+    if ma_period >= 60:
+        conf += 0.05
+    conf = min(conf, 0.95)
+
+    return Pattern(
+        kind=f"눌림목 매매 ({ma_period}MA)",
+        direction="bullish",
+        confidence=conf,
+        completed=True,
+        detected_at=pd.to_datetime(last["date"] if "date" in last else work.index[-1]),
+        entry=last_close,
+        stop=ma_val * 0.97,
+        target=last_close + (last_close - ma_val) * 4,
+        reason=(
+            f"눌림목: {ma_period}MA 지지 + 음봉 매수 ({pullback*100:.1f}% 눌림)"
+            + (" / 거래량 조용 (매집 완료)" if quiet else "")
+            + ". 책: 음봉 매수, 양봉 추격 금지."
+        ),
+        extra={"ma_period": ma_period, "pullback_pct": float(pullback),
+               "quiet_volume": bool(quiet)},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
 def detect_all(df: pd.DataFrame) -> List[Pattern]:

@@ -202,6 +202,162 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
 # ---------------------------------------------------------------------------
 # 역매집 캔들 — 긴 위꼬리 역망치형 반복
 # ---------------------------------------------------------------------------
+def detect_volume_node(df: pd.DataFrame,
+                        bins: int = 20,
+                        lookback: int = 200,
+                        node_percentile: float = 80) -> Optional[Dict]:
+    """마덧값 (Volume-by-Price / 매물대 클러스터) — 책 5장.
+
+    가격 구간별 누적 거래량 분포 → 상위 매물대 노드 식별.
+    현재가가 그 노드를 위로 돌파하면 강력한 지지, 아래로 깨면 저항.
+
+    returns: {
+      'nodes': [{'price_low', 'price_high', 'volume_total', 'rank'}],
+      'current_price_zone': 'support' / 'resistance' / 'neutral',
+      'nearest_node_dist_pct': float,
+    }
+    """
+    if df is None or len(df) < lookback or "volume" not in df.columns:
+        return None
+    tail = df.tail(lookback)
+    lo = float(tail["low"].min())
+    hi = float(tail["high"].max())
+    if hi <= lo:
+        return None
+    step = (hi - lo) / bins
+    if step <= 0:
+        return None
+
+    volumes = np.zeros(bins)
+    for _, row in tail.iterrows():
+        rng_lo = (float(row["low"]) - lo) / step
+        rng_hi = (float(row["high"]) - lo) / step
+        i0 = max(0, int(np.floor(rng_lo)))
+        i1 = min(bins - 1, int(np.ceil(rng_hi)))
+        if i1 > i0:
+            volumes[i0:i1+1] += float(row["volume"]) / (i1 - i0 + 1)
+        else:
+            volumes[i0] += float(row["volume"])
+
+    threshold = np.percentile(volumes, node_percentile)
+    nodes = []
+    for i in range(bins):
+        if volumes[i] >= threshold and volumes[i] > 0:
+            nodes.append({
+                "price_low": lo + i * step,
+                "price_high": lo + (i + 1) * step,
+                "volume_total": float(volumes[i]),
+                "rank": i,
+            })
+    if not nodes:
+        return None
+
+    nodes.sort(key=lambda n: -n["volume_total"])
+    nodes = nodes[:5]  # top 5 nodes
+
+    cur = float(df["close"].iloc[-1])
+    nearest = min(nodes, key=lambda n: min(abs(cur - n["price_low"]),
+                                            abs(cur - n["price_high"])))
+    node_mid = (nearest["price_low"] + nearest["price_high"]) / 2
+    dist_pct = (cur - node_mid) / cur if cur > 0 else 0
+
+    if dist_pct > 0.005:
+        zone = "support"  # 가격이 노드 위 → 매물대가 아래에서 지지
+    elif dist_pct < -0.005:
+        zone = "resistance"  # 가격이 노드 아래 → 매물대가 위에서 저항
+    else:
+        zone = "neutral"
+
+    return {
+        "nodes": nodes,
+        "current_price_zone": zone,
+        "nearest_node_dist_pct": dist_pct,
+        "nearest_node_price_mid": node_mid,
+    }
+
+
+def detect_531_accumulation(df: pd.DataFrame,
+                             min_total_bars: int = 80) -> Optional[Dict]:
+    """5,3,3-1 매집 파동 (책 p366-367).
+
+    매집(5봉 상승) → Test(3봉 조정) → 최종 Test(3봉 조정, 깊이 더 작음)
+    → 1봉 본격 상승 시작.
+
+    단순화 알고리즘:
+      - 최근 12봉 정도를 [5, 3, 3, 1] 구간으로 나눠 검사
+      - 5봉: 상승 + 거래량 ↑
+      - 첫 3봉: 조정 (소폭 하락 또는 횡보), 거래량 ↓
+      - 다음 3봉: 조정 (첫 조정보다 더 얕음), 거래량 더 ↓
+      - 마지막 1봉: 장대양봉 + 거래량 ↑↑
+    """
+    if df is None or len(df) < min_total_bars:
+        return None
+    tail = df.tail(12).reset_index(drop=True)
+    if len(tail) < 12 or "volume" not in tail.columns:
+        return None
+
+    seg_accum = tail.iloc[0:5]
+    seg_test1 = tail.iloc[5:8]
+    seg_test2 = tail.iloc[8:11]
+    seg_burst = tail.iloc[11:12]
+
+    # 1. 5봉 매집: 상승
+    accum_ret = (seg_accum["close"].iloc[-1] - seg_accum["close"].iloc[0]) / seg_accum["close"].iloc[0]
+    if accum_ret < 0.03:
+        return None
+    accum_vol = float(seg_accum["volume"].mean())
+
+    # 2. 첫 3봉 Test: 조정 (-5% ~ +1%)
+    test1_high = seg_accum["close"].iloc[-1]
+    test1_low = float(seg_test1["low"].min())
+    test1_depth = (test1_high - test1_low) / test1_high
+    if test1_depth < 0.01 or test1_depth > 0.10:
+        return None
+    test1_vol = float(seg_test1["volume"].mean())
+    if test1_vol >= accum_vol:
+        return None  # 조정인데 거래량 그대로 = 매집 아님
+
+    # 3. 두번째 3봉 Test: 더 얕은 조정
+    test2_high = float(seg_test1["close"].iloc[-1])
+    test2_low = float(seg_test2["low"].min())
+    test2_depth = (test2_high - test2_low) / test2_high if test2_high > 0 else 0
+    if test2_depth >= test1_depth:
+        return None  # 더 얕아야 함
+    test2_vol = float(seg_test2["volume"].mean())
+    if test2_vol >= test1_vol * 1.1:
+        return None  # 더 줄어야 함
+
+    # 4. 마지막 봉: 장대양봉 + 큰 거래량
+    burst = seg_burst.iloc[0]
+    burst_body = float(burst["close"]) - float(burst["open"])
+    if burst_body <= 0:
+        return None
+    body_avg = (tail["close"] - tail["open"]).abs().iloc[:-1].mean()
+    if body_avg <= 0 or burst_body < body_avg * 1.8:
+        return None
+    burst_vol = float(burst["volume"])
+    if burst_vol < test2_vol * 1.8:
+        return None
+
+    return {
+        "detected": True,
+        "accum_return_pct": accum_ret * 100,
+        "test1_depth_pct": test1_depth * 100,
+        "test2_depth_pct": test2_depth * 100,
+        "burst_body_x_avg": float(burst_body / body_avg),
+        "burst_vol_x_test2": float(burst_vol / test2_vol),
+        "confidence": min(0.92,
+                          0.72 + (test1_depth - test2_depth) * 2 + min(0.10, (burst_vol / max(accum_vol, 1) - 1) * 0.05)),
+        "reason": (
+            f"5,3,3-1 매집: 상승 {accum_ret*100:.1f}% → "
+            f"Test1 -{test1_depth*100:.1f}% (거래량↓) → "
+            f"Test2 -{test2_depth*100:.1f}% (더 얕음, 거래량↓↓) → "
+            f"장대양봉 ({burst_body/body_avg:.1f}x body, "
+            f"{burst_vol/test2_vol:.1f}x volume). 책: 본격 상승 시작."
+        ),
+    }
+
+
 def detect_reverse_accumulation(df: pd.DataFrame,
                                 window: int = 30,
                                 min_occurrences: int = 3) -> Optional[Dict]:

@@ -29,6 +29,7 @@ from app.book.patterns import (
     detect_double_top,
     detect_forking,
     detect_head_and_shoulders,
+    detect_pullback_buy,
     detect_reverse_head_and_shoulders,
     detect_triple_bottom,
     detect_triple_top,
@@ -38,9 +39,16 @@ from app.book.reversals import (
     detect_reversal_double_bottom_to_top,
     detect_reversal_double_top_to_inv_hns,
     detect_reversal_single_candle,
+    detect_reversal_wedge_convergence,
 )
-from app.book.trend import add_moving_averages, MA_PERIODS
-from app.book.volume import classify_volume_case, detect_reverse_accumulation
+from app.book.trend import (
+    add_moving_averages, MA_PERIODS,
+    is_sideways, is_bearish_alignment, classify_trend_type,
+)
+from app.book.volume import (
+    classify_volume_case, detect_reverse_accumulation,
+    detect_531_accumulation, detect_volume_node,
+)
 
 
 SignalKind = str   # "ENTER" / "PYRAMID" / "WARN" / "EXIT"
@@ -62,6 +70,10 @@ class SignalSet:
     ma_10: Optional[float] = None
     ma_240: Optional[float] = None
     signals: List[Signal] = field(default_factory=list)
+    # Trend context (책 게이트용)
+    trend_type: str = "unknown"     # 'uptrend' / 'downtrend' / 'sideways' / 'unknown'
+    bearish_alignment: bool = False  # 역배열 여부 (책: 매수 금지)
+    volume_zone: str = "neutral"    # 마덧값 zone: support / resistance / neutral
 
     def has(self, kind: SignalKind, min_conf: float = 0) -> bool:
         return any(s.kind == kind and s.confidence >= min_conf
@@ -236,6 +248,21 @@ def detect_signals_at(df: pd.DataFrame, i: int) -> SignalSet:
     ss = SignalSet(date=pd.to_datetime(last["date"]),
                    close=close, ma_10=ma10, ma_240=ma240)
 
+    # 추세 컨텍스트 — 책 게이트
+    try:
+        ss.trend_type = classify_trend_type(win)
+        ss.bearish_alignment = is_bearish_alignment(win)
+    except Exception:
+        pass
+
+    # 마덧값 zone
+    try:
+        vn = detect_volume_node(win)
+        if vn:
+            ss.volume_zone = vn.get("current_price_zone", "neutral")
+    except Exception:
+        pass
+
     # 거래량 케이스 (한 번 분류, EXIT/WARN/ENTER 에서 재사용)
     try:
         vol_case = classify_volume_case(win)
@@ -388,6 +415,51 @@ def detect_signals_at(df: pd.DataFrame, i: int) -> SignalSet:
     except Exception:
         pass
 
+    # 되돌림 4형 (쐐기 수렴) — bullish/bearish 분기
+    try:
+        wedge = detect_reversal_wedge_convergence(win)
+        if wedge and wedge.completed:
+            if wedge.direction == "bullish":
+                ss.signals.append(Signal(
+                    kind="ENTER", source="되돌림 4형 (쐐기 수렴 ↑)",
+                    confidence=wedge.confidence,
+                    detail=wedge.reason[:120],
+                ))
+            else:
+                ss.signals.append(Signal(
+                    kind="EXIT", source="되돌림 4형 (쐐기 수렴 ↓)",
+                    confidence=wedge.confidence,
+                    detail=wedge.reason[:120],
+                ))
+    except Exception:
+        pass
+
+    # 눌림목 매매 (음봉 매수) — 정배열 + 음봉 + MA 지지
+    for ma_period in (10, 20, 60):
+        try:
+            pb = detect_pullback_buy(win, ma_period=ma_period)
+            if pb and pb.completed:
+                ss.signals.append(Signal(
+                    kind="ENTER", source=f"눌림목 ({ma_period}MA) 음봉 매수",
+                    confidence=pb.confidence,
+                    detail=pb.reason[:120],
+                ))
+                break  # 한 ma_period 만 채택
+        except Exception:
+            pass
+
+    # 5,3,3-1 매집 파동 — 본격 상승 시작
+    try:
+        wave = detect_531_accumulation(win)
+        if wave and wave.get("detected"):
+            ss.signals.append(Signal(
+                kind="ENTER", source="5,3,3-1 매집 파동 완성",
+                confidence=wave.get("confidence", 0.78),
+                detail=wave.get("reason", "")[:120],
+            ))
+    except Exception:
+        pass
+
     # ============================
     # PYRAMID — 강한 상승 / "팔자 고치는 패턴"
     # ============================
@@ -473,6 +545,26 @@ def detect_signals_at(df: pd.DataFrame, i: int) -> SignalSet:
             kind="PYRAMID", source="거래량 케이스 7 (매집 완료)",
             confidence=vol_case.confidence,
             detail=vol_case.reason[:120],
+        ))
+
+    # 5,3,3-1 매집 파동 — PYRAMID 로도 등록 (보유 중이면 추매 사인)
+    try:
+        wave531 = detect_531_accumulation(win)
+        if wave531 and wave531.get("detected"):
+            ss.signals.append(Signal(
+                kind="PYRAMID", source="5,3,3-1 매집 본격 상승",
+                confidence=min(0.92, wave531.get("confidence", 0.78) + 0.05),
+                detail=wave531.get("reason", "")[:120],
+            ))
+    except Exception:
+        pass
+
+    # 마덧값 지지 (현재가가 매물대 위) — 추매 우호 조건
+    if ss.volume_zone == "support" and pattern_bullish_completed:
+        ss.signals.append(Signal(
+            kind="PYRAMID", source="마덧값 지지 (매물대 돌파)",
+            confidence=0.70,
+            detail="현재가가 누적 매물대 노드 위 — 책: 강력 지지",
         ))
 
     # ============================

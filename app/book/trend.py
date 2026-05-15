@@ -55,7 +55,9 @@ def add_moving_averages(df: pd.DataFrame, periods: List[int] = None,
     periods = periods or MA_PERIODS
     out = df.copy()
     for p in periods:
-        out[f"ma_{p}"] = out[price_col].rolling(window=p, min_periods=max(1, p // 3)).mean()
+        out[f"ma_{p}"] = out[price_col].rolling(
+            window=p, min_periods=max(1, p // 3)
+        ).mean()
     return out
 
 
@@ -90,6 +92,64 @@ def alignment_score(mas: List[float]) -> float:
     inversions = sum(1 if mas[i] > mas[i + 1] else -1
                      for i in range(n_pairs))
     return inversions / n_pairs
+
+
+def is_sideways(df: pd.DataFrame, lookback: int = 40,
+                range_pct_max: float = 0.12) -> bool:
+    """혼조(박스권) 추세 감지 — 책: 박스권에선 매매 금지.
+
+    최근 lookback 봉의 (high - low) / mean(close) 비율이 작으면 박스권.
+    """
+    if df is None or len(df) < lookback:
+        return False
+    tail = df.tail(lookback)
+    hi = float(tail["high"].max())
+    lo = float(tail["low"].min())
+    avg = float(tail["close"].mean())
+    if avg <= 0:
+        return False
+    return (hi - lo) / avg < range_pct_max
+
+
+def is_bearish_alignment(df: pd.DataFrame,
+                          periods: Optional[List[int]] = None,
+                          threshold: float = -0.50) -> bool:
+    """역배열 감지 — 책: 역배열 종목 매수 금지 (사망탑).
+
+    alignment_score 가 threshold 이하면 역배열로 간주.
+    """
+    periods = periods or [5, 10, 20, 60, 120, 240]
+    if df is None or len(df) < max(periods):
+        return False
+    work = add_moving_averages(df, periods)
+    last = work.iloc[-1]
+    mas = []
+    for p in periods:
+        v = last.get(f"ma_{p}")
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            continue
+        mas.append(float(v))
+    if len(mas) < 3:
+        return False
+    return alignment_score(mas) <= threshold
+
+
+def classify_trend_type(df: pd.DataFrame, lookback: int = 60) -> str:
+    """추세 3종류 분류 — 책 3장.
+
+    returns: 'uptrend' / 'downtrend' / 'sideways' / 'unknown'
+    """
+    if df is None or len(df) < lookback:
+        return "unknown"
+    if is_sideways(df, lookback=min(lookback, 40)):
+        return "sideways"
+    tail = df.tail(lookback)
+    chg = (float(tail["close"].iloc[-1]) - float(tail["close"].iloc[0])) / float(tail["close"].iloc[0])
+    if chg > 0.10:
+        return "uptrend"
+    if chg < -0.10:
+        return "downtrend"
+    return "sideways"
 
 
 def classify_trend(df: pd.DataFrame, timeframe: str) -> Optional[TrendState]:

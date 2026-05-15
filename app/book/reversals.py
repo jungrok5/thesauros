@@ -178,6 +178,90 @@ def detect_reversal_single_candle(df: pd.DataFrame,
     )
 
 
+def detect_reversal_wedge_convergence(df: pd.DataFrame,
+                                       lookback: int = 80,
+                                       body_mult: float = 2.5) -> Optional[Pattern]:
+    """되돌림 4패턴: 쐐기 수렴 (책 p299-301).
+
+    두 패턴이 쐐기로 수렴 → 장대봉의 방향이 결정. 동국홀딩스 +157% 사례.
+
+    알고리즘:
+      - 최근 lookback 봉에서 고점 우하향(저항선 ↓) + 저점 우상향(지지선 ↑)
+      - 두 추세선이 한 점으로 수렴
+      - 마지막 봉이 평균 body 의 body_mult 배 이상 (장대봉)
+      - 방향: 장대양봉 → bullish, 장대음봉 → bearish
+    """
+    if df is None or len(df) < lookback + 5:
+        return None
+    tail = df.tail(lookback).reset_index(drop=True)
+
+    n = len(tail)
+    half = n // 2
+    # 전반부 vs 후반부 고/저점
+    high_early = float(tail["high"].iloc[:half].max())
+    high_late = float(tail["high"].iloc[half:].max())
+    low_early = float(tail["low"].iloc[:half].min())
+    low_late = float(tail["low"].iloc[half:].min())
+
+    # 쐐기 조건: 고점은 내려오고, 저점은 올라옴 (수렴)
+    highs_converging = high_late < high_early * 0.99
+    lows_converging = low_late > low_early * 1.01
+    if not (highs_converging and lows_converging):
+        return None
+
+    # 범위가 충분히 수렴했는가?
+    early_range = high_early - low_early
+    late_range = high_late - low_late
+    if early_range <= 0 or late_range / early_range > 0.70:
+        return None  # not converged enough
+
+    # 마지막 봉이 장대봉?
+    last = tail.iloc[-1]
+    body = abs(float(last["close"]) - float(last["open"]))
+    body_avg = (tail["close"] - tail["open"]).abs().iloc[:-1].mean()
+    if body_avg <= 0 or body < body_avg * body_mult:
+        return None
+
+    is_bullish = float(last["close"]) > float(last["open"])
+    direction = "bullish" if is_bullish else "bearish"
+
+    # 거래량 확인
+    vol_avg = tail["volume"].iloc[:-1].mean() if "volume" in tail.columns else 0
+    last_vol = float(last["volume"]) if "volume" in tail.columns else 0
+    high_vol = vol_avg > 0 and last_vol > vol_avg * 1.5
+
+    conf = 0.78
+    if late_range / early_range < 0.40:
+        conf += 0.08  # tight convergence
+    if high_vol:
+        conf += 0.07
+    conf = min(conf, 0.95)
+
+    entry = float(last["close"])
+    stop = float(min(low_late, low_early)) if is_bullish else float(max(high_late, high_early))
+    target = entry * (1 + (early_range / entry) * (3 if is_bullish else -3))
+
+    return Pattern(
+        kind="되돌림 4형 (쐐기 수렴)",
+        direction=direction,
+        confidence=conf,
+        completed=True,
+        detected_at=pd.to_datetime(last["date"] if "date" in last else df["date"].iloc[-1]),
+        entry=entry,
+        stop=stop,
+        target=target,
+        reason=(
+            f"쐐기 수렴 ({late_range/early_range*100:.0f}% range) "
+            f"+ 장대{'양' if is_bullish else '음'}봉 (body {body/body_avg:.1f}x)"
+            + (" + 거래량 증가" if high_vol else "")
+            + ". 책: 동국홀딩스 +157% 사례."
+        ),
+        extra={"early_range": early_range, "late_range": late_range,
+               "body_mult": float(body / body_avg) if body_avg > 0 else 0,
+               "high_volume": bool(high_vol)},
+    )
+
+
 def detect_all_reversals(df: pd.DataFrame) -> List[Pattern]:
     out: List[Pattern] = []
     for fn in [
@@ -185,6 +269,7 @@ def detect_all_reversals(df: pd.DataFrame) -> List[Pattern]:
         detect_reversal_double_bottom_to_top,
         detect_reversal_double_top_to_inv_hns,
         detect_reversal_single_candle,
+        detect_reversal_wedge_convergence,
     ]:
         try:
             p = fn(df)
