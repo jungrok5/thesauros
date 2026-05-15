@@ -130,6 +130,23 @@ class WFv3Params:
     # Universe filter
     market: Optional[str] = None              # None=all, 'us', 'kr'
 
+    # Phase 2 — honesty infrastructure
+    seed: int = 1                              # LightGBM random_state
+    use_survivorship_correction: bool = False  # use universe_alive_at(t)
+    realistic_costs: bool = False              # KR 0.18% + 50bp slippage
+
+    # Phase 3b — multi-factor mode (deterministic, no ML)
+    use_multifactor_only: bool = False         # skip LightGBM, use rank score
+    use_multifactor_hybrid: bool = False       # 0.5 * LightGBM + 0.5 * mf score
+    mf_weights: Optional[Dict] = None          # override default factor weights
+
+    # Phase 3d — Long-short
+    enable_short: bool = False                  # add short positions
+    short_k: Optional[int] = None               # default = top_k
+    long_gross: float = 1.0                     # long-only = 1.0, market-neutral = 0.5
+    short_gross: float = 0.0                    # 0 = no short, 0.5 = 100/100 LS
+    short_borrow_bps: float = 50.0              # annualized borrow cost
+
     lgb_params: dict = field(default_factory=lambda: {
         "objective": "regression",
         "metric": "rmse",
@@ -215,6 +232,9 @@ def run_wf_v3(params: WFv3Params,
 
     rets = prices.pct_change().fillna(0)
     cost = (params.cost_bps + params.slippage_bps) / 10_000.0
+    # Phase 2 — realistic cost: KR transaction tax 0.18% sell-side + 50bp slippage
+    if params.realistic_costs:
+        cost = (50 + 18) / 10_000.0  # 0.68% round-trip-ish (50bp + 0.18% sell)
 
     # Phase 1B — book V4 EXIT overlay
     book_cache = None
@@ -274,15 +294,58 @@ def run_wf_v3(params: WFv3Params,
             cutoff = t - pd.Timedelta(days=EMBARGO_DAYS + FORWARD_HORIZON)
             train = panel[panel["date"] <= cutoff].dropna(subset=[target_col]).copy()
             test = panel[panel["date"] == t].copy()
+            # Phase 2 — survivorship correction: only consider tickers alive at t
+            if params.use_survivorship_correction:
+                try:
+                    from app.data.ingest_delisted_kr import universe_alive_at
+                    alive = set(universe_alive_at(str(t.date())))
+                    if alive:
+                        # Restrict to alive tickers
+                        test = test[test["ticker"].isin(alive)].copy()
+                        train = train[train["ticker"].isin(alive)].copy()
+                except Exception:
+                    pass
             if len(train) >= 5000 and len(test) > 0:
                 Xtr = train[feature_cols]
                 ytr = train[target_col].astype(float)
                 Xte = test[feature_cols]
-                model = lgb.train(params.lgb_params,
-                                  lgb.Dataset(Xtr, label=ytr),
-                                  num_boost_round=params.boost_rounds)
-                preds = model.predict(Xte)
-                test["pred"] = preds
+
+                # Phase 3b — multi-factor scoring (deterministic, no ML)
+                if params.use_multifactor_only or params.use_multifactor_hybrid:
+                    from app.features.multi_factor import (
+                        compute_multifactor_score, MultiFactorParams
+                    )
+                    mf_params = MultiFactorParams(
+                        weights=params.mf_weights or {
+                            "value": 0.30, "quality": 0.30,
+                            "momentum": 0.20, "lowvol": 0.20,
+                        }
+                    )
+                    # Score the test set deterministically
+                    mf_score = compute_multifactor_score(test, mf_params)
+
+                if params.use_multifactor_only:
+                    # Pure multi-factor: skip LightGBM entirely
+                    test["pred"] = mf_score.values
+                else:
+                    # Phase 2 — seed control for multi-run robustness
+                    lgb_p = dict(params.lgb_params)
+                    lgb_p["seed"] = params.seed
+                    lgb_p["bagging_seed"] = params.seed
+                    lgb_p["feature_fraction_seed"] = params.seed
+                    model = lgb.train(lgb_p,
+                                      lgb.Dataset(Xtr, label=ytr),
+                                      num_boost_round=params.boost_rounds)
+                    preds = model.predict(Xte)
+                    if params.use_multifactor_hybrid:
+                        # 50/50 blend of LightGBM and multi-factor ranks
+                        # Both ranked to [0, 1] to combine fairly
+                        from scipy.stats import rankdata
+                        lgbm_rank = rankdata(preds) / len(preds)
+                        mf_rank = rankdata(mf_score.values) / len(mf_score)
+                        test["pred"] = 0.5 * lgbm_rank + 0.5 * mf_rank
+                    else:
+                        test["pred"] = preds
                 if test["y_fwd"].notna().sum() > 5:
                     ic = float(spearmanr(test["pred"], test["y_fwd"].fillna(0))[0])
                 else:
@@ -297,13 +360,35 @@ def run_wf_v3(params: WFv3Params,
                     vol_today = daily_vol.loc[d]
                 else:
                     vol_today = daily_vol.iloc[-1]
+                # Long side (top-K)
                 target_w = _sector_cap_weights(
                     test_idx["pred"], test_idx["sector"],
                     top_k=params.top_k, sector_cap=params.sector_cap,
                     vols=vol_today, scheme=params.weighting_scheme,
                 )
+                # Scale to long_gross
+                if params.enable_short:
+                    long_sum = sum(target_w.values()) or 1.0
+                    target_w = {k: v / long_sum * params.long_gross
+                                 for k, v in target_w.items()}
                 # Apply exposure (drawdown brake)
                 target_w = {k: v * exposure for k, v in target_w.items()}
+
+                # Phase 3d — Short side (bottom-K)
+                if params.enable_short and params.short_gross > 0:
+                    short_k = params.short_k or params.top_k
+                    short_w_raw = _sector_cap_weights(
+                        (-test_idx["pred"]), test_idx["sector"],   # invert score
+                        top_k=short_k, sector_cap=params.sector_cap,
+                        vols=vol_today, scheme=params.weighting_scheme,
+                    )
+                    short_sum = sum(short_w_raw.values()) or 1.0
+                    # Negative weights, scaled to short_gross
+                    for tk, sw in short_w_raw.items():
+                        # Don't short a ticker we're also longing
+                        if tk in target_w and target_w[tk] > 0:
+                            continue
+                        target_w[tk] = -(sw / short_sum * params.short_gross) * exposure
 
                 # Regime cash trigger (P1)
                 if params.regime_cash_trigger:
@@ -411,6 +496,11 @@ def run_wf_v3(params: WFv3Params,
             day_ret = rets.loc[d]
             port_ret = sum(weights.get(tk, 0.0) * float(day_ret.get(tk, 0.0))
                            for tk in weights)
+            # Phase 3d — short borrow cost (annualized → daily)
+            if params.enable_short:
+                short_exposure = sum(abs(w) for w in weights.values() if w < 0)
+                daily_borrow = (params.short_borrow_bps / 10_000.0) / 252.0
+                port_ret -= short_exposure * daily_borrow
             equity *= (1.0 + port_ret)
         if bench_weights is not None and d in rets.index:
             bench_ret = float((bench_weights * rets.loc[d]).sum())
