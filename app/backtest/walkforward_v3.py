@@ -18,6 +18,7 @@ from app.config import (COST_BPS, EMBARGO_DAYS, FORWARD_HORIZON,
                         RF_ANNUAL, SLIPPAGE_BPS, TRADING_DAYS)
 from app.features.pipeline_v3 import ALL_V3, build_panel_v3, load_prices_wide
 from app.features.macro_features import ML_MACRO_FEATURES
+from app.features.book_features import BOOK_FEATURES
 
 
 def _select_with_sector_cap(scores: pd.Series, sectors: pd.Series,
@@ -118,6 +119,17 @@ class WFv3Params:
     regime_cash_trigger: bool = False       # if True, go 100% cash on FEAR
     regime_feature: bool = False            # if True, add regime as a feature
 
+    # Phase 1A — book V4 signal features (signal fusion)
+    use_book_features: bool = False         # add 15 book features to ML
+
+    # Phase 1B — book V4 EXIT signal overlay (risk management)
+    book_exit_overlay: bool = False          # force-sell holdings on book EXIT
+    book_exit_min_conf: float = 0.80         # min confidence to trigger forced sell
+    book_exit_log_path: Optional[str] = None  # if set, log forced exits to JSON
+
+    # Universe filter
+    market: Optional[str] = None              # None=all, 'us', 'kr'
+
     lgb_params: dict = field(default_factory=lambda: {
         "objective": "regression",
         "metric": "rmse",
@@ -164,7 +176,10 @@ def run_wf_v3(params: WFv3Params,
               verbose: bool = True) -> Dict:
     if panel is None:
         panel = build_panel_v3(start=params.train_start, end=params.end,
-                               rebalance_n=params.rebalance_n, verbose=verbose)
+                               rebalance_n=params.rebalance_n,
+                               with_book_features=params.use_book_features,
+                               market=params.market,
+                               verbose=verbose)
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel.sort_values(["date", "ticker"]).reset_index(drop=True)
 
@@ -179,12 +194,20 @@ def run_wf_v3(params: WFv3Params,
         feature_cols.extend(macro_cols)
         if verbose:
             print(f"[v3-bt] +{len(macro_cols)} macro features (regime conditioning)")
+    # Phase 1A — book V4 signal features (not sector-neutralized — already
+    # cross-sectionally meaningful via trend type / MA position / etc.)
+    if params.use_book_features:
+        book_cols = [c for c in BOOK_FEATURES if c in panel.columns]
+        feature_cols.extend(book_cols)
+        if verbose:
+            print(f"[v3-bt] +{len(book_cols)} book signal features (Phase 1A fusion)")
     if verbose:
         print(f"[v3-bt] Using {len(feature_cols)} features total (suffix={suffix})")
 
     target_col = "y_rank" if params.use_rank_target else "y_fwd"
 
-    prices = load_prices_wide(start=params.train_start, end=params.end)
+    prices = load_prices_wide(start=params.train_start, end=params.end,
+                                 market=params.market)
     rb_dates = sorted(panel["date"].unique())
     rb_dates = [d for d in rb_dates if d >= pd.Timestamp(params.start)]
     if not rb_dates:
@@ -192,6 +215,15 @@ def run_wf_v3(params: WFv3Params,
 
     rets = prices.pct_change().fillna(0)
     cost = (params.cost_bps + params.slippage_bps) / 10_000.0
+
+    # Phase 1B — book V4 EXIT overlay
+    book_cache = None
+    forced_exits_log: List[Dict] = []
+    if params.book_exit_overlay:
+        from app.cache.signal_cache import SignalCache
+        book_cache = SignalCache()
+        if verbose:
+            print(f"[v3-bt] book EXIT overlay ON (min_conf={params.book_exit_min_conf})")
 
     # Pre-compute rolling daily vol for the inverse-vol / risk-parity weighting.
     daily_vol = rets.rolling(params.vol_lookback, min_periods=20).std()
@@ -347,6 +379,33 @@ def run_wf_v3(params: WFv3Params,
                 })
             next_rb += 1
 
+        # Phase 1B — book V4 EXIT overlay (before daily P&L)
+        if book_cache is not None and weights:
+            forced = []
+            for tk in list(weights.keys()):
+                if weights[tk] <= 0:
+                    continue
+                try:
+                    ss = book_cache.get_signal_set(tk, "weekly", d)
+                except Exception:
+                    ss = None
+                if ss is None:
+                    continue
+                if ss.has("EXIT", min_conf=params.book_exit_min_conf):
+                    forced.append((tk, ss.best("EXIT").source if ss.best("EXIT") else "EXIT"))
+            if forced:
+                # Sell forced exits: redistribute weight to cash (held in equity but not market)
+                turnover = sum(weights[tk] for tk, _ in forced)
+                equity *= (1.0 - turnover * cost)
+                for tk, src in forced:
+                    forced_exits_log.append({
+                        "date": str(d.date()), "ticker": tk,
+                        "weight_before": round(weights[tk], 4),
+                        "reason": src,
+                    })
+                    weights[tk] = 0.0
+                    entry_log.pop(tk, None)
+
         # Daily P&L
         if d in rets.index and weights:
             day_ret = rets.loc[d]
@@ -371,6 +430,8 @@ def run_wf_v3(params: WFv3Params,
         "ic_history": ic_history,
         "tax_paid_total_pct": round(tax_paid_total * 100, 3),
         "tax_events": tax_events[-50:],   # tail sample
+        "book_forced_exits": forced_exits_log,
+        "n_forced_exits": len(forced_exits_log),
         "params": {
             "start": params.start, "end": params.end, "top_k": params.top_k,
             "rebalance_n": params.rebalance_n, "cost_bps": params.cost_bps,

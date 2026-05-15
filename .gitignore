@@ -13,6 +13,11 @@ data/*.duckdb
 data/*.parquet
 models_store/*.pkl
 models_store/*.parquet
+models_store/signal_cache/
+
+# Misc temp files (Claude task outputs misplaced as filenames)
+C:Temp*.txt
+.claude/settings.local.json
 
 # Book image originals (large jpegs — keep transcripts/summaries/charts only)
 book_images/_dl_all/

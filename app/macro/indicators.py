@@ -263,6 +263,120 @@ INDICATORS: List[Dict] = [
         "desc": "한국 중소형주 지수.",
         "thresholds": {"type": "trend_ma200"},
     },
+
+    # ============================================================
+    # 책 1부 6장 추가 지표 (2026-05-15 audit)
+    # ============================================================
+    # ----- 소비 지표 -----
+    {
+        "key": "vehicle_sales",
+        "name_kr": "자동차 판매 (TOTALSA)",
+        "source": "FRED", "series_id": "TOTALSA",
+        "unit": "M units", "category": "growth",
+        "book_ref": "1부 6장 p170-171",
+        "desc": "월간 차량 판매 (annualized). 책: 개인소비 핵심 지표.",
+        "thresholds": {"type": "level", "good_max": 18.0, "warn_max": 15.0, "bad_max": 12.0},
+    },
+    {
+        "key": "consumer_sentiment",
+        "name_kr": "소비자심리 (Michigan)",
+        "source": "FRED", "series_id": "UMCSENT",
+        "unit": "index", "category": "sentiment",
+        "book_ref": "1부 6장 p172-173",
+        "desc": "미시간대 소비자 신뢰지수. 책: 소비심리 척도.",
+        "thresholds": {"type": "level", "good_max": 90.0, "warn_max": 70.0, "bad_max": 60.0},
+    },
+    {
+        "key": "housing_starts",
+        "name_kr": "주택 착공 (HOUST)",
+        "source": "FRED", "series_id": "HOUST",
+        "unit": "K units", "category": "growth",
+        "book_ref": "1부 6장 p174-175",
+        "desc": "신규 주택 착공 (annualized). 책: 경기 선행 지표.",
+        "thresholds": {"type": "level_yoy", "bull_level_max": 1500.0, "yoy_up": 5.0, "yoy_down": -10.0},
+    },
+    {
+        "key": "new_home_sales",
+        "name_kr": "신규주택 판매 (HSN1F)",
+        "source": "FRED", "series_id": "HSN1F",
+        "unit": "K units", "category": "growth",
+        "book_ref": "1부 6장 p184-185",
+        "desc": "단독주택 신규 판매. 책: 자산 + 소비 결합 지표.",
+        "thresholds": {"type": "level_yoy", "bull_level_max": 700.0, "yoy_up": 5.0, "yoy_down": -10.0},
+    },
+
+    # ----- 고용 지표 (추가) -----
+    {
+        "key": "underemployment_u6",
+        "name_kr": "불완전고용 U6 (U6RATE)",
+        "source": "FRED", "series_id": "U6RATE",
+        "unit": "%", "category": "growth",
+        "book_ref": "1부 6장 p172-173",
+        "desc": "광의 실업률 (단시간 + 한계근로자 포함). 책: 진짜 고용 척도.",
+        "thresholds": {"type": "level", "good_max": 7.0, "warn_max": 9.0, "bad_max": 11.0},
+    },
+    {
+        "key": "initial_claims",
+        "name_kr": "주간 실업수당 청구 (ICSA)",
+        "source": "FRED", "series_id": "ICSA",
+        "unit": "K", "category": "growth",
+        "book_ref": "1부 6장 p186-187 (주간 선행)",
+        "desc": "주간 실업수당 신규 청구. 매주 발표 = 가장 빠른 고용 선행.",
+        "thresholds": {"type": "level", "good_max": 250.0, "warn_max": 350.0, "bad_max": 450.0},
+    },
+
+    # ----- 기업 활동 -----
+    {
+        "key": "durable_goods_orders",
+        "name_kr": "내구재 수주 (DGORDER)",
+        "source": "FRED", "series_id": "DGORDER",
+        "unit": "$M", "category": "growth",
+        "book_ref": "1부 6장 p174-175",
+        "desc": "내구재 신규 수주 (자본재 포함). 책: 기업투자 척도.",
+        "thresholds": {"type": "yoy_pct", "bear": -8.0, "weak": -2.0, "neutral": 3.0, "bull": 8.0},
+    },
+    {
+        "key": "philly_fed_mfg",
+        "name_kr": "필라델피아 연준 제조업 (PHCM)",
+        "source": "FRED", "series_id": "GACDISA066MSFRBPHI",
+        "unit": "index", "category": "growth",
+        "book_ref": "1부 6장 p184-185",
+        "desc": "필라델피아 지역 제조업 활동. 양수=확장.",
+        "thresholds": {"type": "level", "good_max": 10.0, "warn_max": 0.0, "bad_max": -10.0},
+    },
+
+    # ----- 선행지수 -----
+    {
+        "key": "leading_index",
+        "name_kr": "미국 경기선행지수 (USSLIND)",
+        "source": "FRED", "series_id": "USSLIND",
+        "unit": "%", "category": "growth",
+        "book_ref": "1부 6장 p186-187 (주간 선행)",
+        "desc": "Conference Board 종합 선행지수. 책: 경기 회복/침체 사전 감지.",
+        "thresholds": {"type": "level", "good_max": 1.0, "warn_max": 0.0, "bad_max": -1.5},
+    },
+
+    # ----- 인플레이션/세금/통화 (추가) -----
+    {
+        "key": "import_price_index",
+        "name_kr": "수입물가 (IR)",
+        "source": "FRED", "series_id": "IR",
+        "unit": "index", "category": "inflation",
+        "book_ref": "1부 5장 p152-153 (수출입물가)",
+        "desc": "수입물가지수 YoY. 책: 인플레이션 압력 선행.",
+        "thresholds": {"type": "yoy_pct", "bear": -5.0, "weak": 0.0, "neutral": 3.0, "bull": 8.0},
+    },
+
+    # ----- 신용/리스크 (추가) -----
+    {
+        "key": "stlouis_fin_stress",
+        "name_kr": "St.Louis 금융스트레스 (STLFSI3)",
+        "source": "FRED", "series_id": "STLFSI4",
+        "unit": "z-score", "category": "sentiment",
+        "book_ref": "1부 6장 p190-191 (TED/스프레드 대안)",
+        "desc": "18가지 금융지표 종합 스트레스 (TED 폐지 후 대용). 0=평상, +1=경고, +2=위기.",
+        "thresholds": {"type": "level", "calm_max": 0.0, "warn_min": 1.0, "panic_min": 2.0},
+    },
 ]
 
 

@@ -18,6 +18,7 @@ from app.features.factor_zoo import (
     asness_quality_score, beneish_m_score_proxy, chande_momentum,
     mohanram_g_score, piotroski_with_yoy, value_score,
 )
+from app.features.book_features import BOOK_FEATURES, attach_book_signals
 from app.features.insider_features import INSIDER_FEATURES, attach_insiders
 from app.features.macro_features import ML_MACRO_FEATURES, attach_macro
 from app.features.technical import technical_panel
@@ -54,12 +55,23 @@ TECH_FEATURES_V3 = [
 # on a given date), so we keep them separate and exclude from the `_sn` loop.
 ALL_V3 = FUND_FEATURES_V3 + TECH_FEATURES_V3
 ALL_V3_WITH_MACRO = ALL_V3 + ML_MACRO_FEATURES
+ALL_V3_WITH_BOOK = ALL_V3 + ML_MACRO_FEATURES + BOOK_FEATURES
 
 
-def load_prices_wide(start: Optional[str] = None, end: Optional[str] = None) -> pd.DataFrame:
+def load_prices_wide(start: Optional[str] = None, end: Optional[str] = None,
+                      market: Optional[str] = None) -> pd.DataFrame:
+    """Wide panel of adj_close.
+
+    Args:
+        market: None=all, 'us'=US S&P500 (NOT .KS/.KQ), 'kr'=KR (.KS or .KQ)
+    """
     where = []; args: list = []
     if start: where.append("date >= ?"); args.append(start)
     if end: where.append("date <= ?"); args.append(end)
+    if market == "us":
+        where.append("ticker NOT LIKE '%.KS' AND ticker NOT LIKE '%.KQ'")
+    elif market == "kr":
+        where.append("(ticker LIKE '%.KS' OR ticker LIKE '%.KQ')")
     w = ("WHERE " + " AND ".join(where)) if where else ""
     with cursor() as con:
         df = con.execute(
@@ -175,9 +187,11 @@ def build_panel_v3(start: str = "2014-01-01",
                    rebalance_n: int = 21,
                    with_target: bool = True,
                    sector_neutralize: bool = True,
+                   with_book_features: bool = False,
+                   market: Optional[str] = None,
                    verbose: bool = True) -> pd.DataFrame:
     fetch_start = str((pd.to_datetime(start) - pd.Timedelta(days=400)).date())
-    prices = load_prices_wide(start=fetch_start, end=end)
+    prices = load_prices_wide(start=fetch_start, end=end, market=market)
     if prices.empty: raise RuntimeError("No prices in DB.")
     if verbose:
         print(f"[v3] prices {prices.shape} {prices.index.min().date()} → {prices.index.max().date()}")
@@ -285,6 +299,12 @@ def build_panel_v3(start: str = "2014-01-01",
     if verbose:
         print("[v3] attaching insider transaction features...")
     panel = attach_insiders(panel)
+
+    # Phase 1A: attach book V4 signal features (PIT-safe, weekly as-of)
+    if with_book_features:
+        if verbose:
+            print("[v3] attaching book V4 signal features (Phase 1A)...")
+        panel = attach_book_signals(panel, verbose=verbose)
 
     # Drop helper raw columns
     drop_cols = [c for c in panel.columns if c.startswith("__")
