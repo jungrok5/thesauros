@@ -9,6 +9,8 @@ export default auth((req) => {
   const isPublic =
     pathname === "/login" ||
     pathname.startsWith("/api/auth") ||
+    // Test-only session minter — guarded inside the handler by E2E_TEST_TOKEN.
+    pathname.startsWith("/api/e2e-test/") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico";
 
