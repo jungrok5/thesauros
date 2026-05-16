@@ -46,9 +46,15 @@ def get_dsn(*, mode: str = "transaction") -> str:
 @contextmanager
 def get_conn(*, mode: str = "transaction",
              autocommit: bool = False) -> Iterator[psycopg.Connection]:
-    """Yield a psycopg.Connection. Always use as `with get_conn() as conn:`."""
+    """Yield a psycopg.Connection. Always use as `with get_conn() as conn:`.
+
+    The transaction pooler (port 6543, PgBouncer) is incompatible with
+    psycopg3's auto-prepared statements (DuplicatePreparedStatement). We
+    pin `prepare_threshold=None` so every statement is sent as a simple
+    Query. Session mode (5432) doesn't need this but the flag is harmless.
+    """
     dsn = get_dsn(mode=mode)
-    conn = psycopg.connect(dsn, autocommit=autocommit)
+    conn = psycopg.connect(dsn, autocommit=autocommit, prepare_threshold=None)
     try:
         yield conn
         if not autocommit:
