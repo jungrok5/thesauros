@@ -70,12 +70,32 @@ LOWVOL_FACTORS = {
     "dd_252": +1,            # less negative drawdown = higher (closer to 0)
 }
 
-# Default weights (강환국식 + AQR Style Premia approximation)
+# 책 V4 신호 group — Phase 1A 의 book_features 활용
+# (현재 EXIT 만 overlay 로 사용 중 — 이제 score 에도 통합)
+BOOK_FACTORS = {
+    "book_enter_max_conf": +1,      # 진입 신호 강도 (책 V4)
+    "book_pyramid_max_conf": +1,    # 추매 신호 강도
+    "book_warn_max_conf": -1,       # 경고 신호 (음수 = 패널티)
+    "book_signal_count_4w": +1,     # 최근 4주 신호 활성도
+    "book_enter_count_12w": +1,     # 진입 누적
+    "book_exit_count_12w": -1,      # 청산 누적 (패널티)
+    "book_trend_uptrend": +1,       # 책 추세 분류
+    "book_trend_sideways": -1,      # 박스권 = 매매 비추 (책 3장)
+    "book_trend_downtrend": -1,     # 하락 추세
+    "book_bearish_alignment": -1,   # 역배열 = 매수 금지 (책 4장)
+    "book_vol_zone_support": +1,    # 마덧값 지지
+    "book_vol_zone_resistance": -1, # 마덧값 저항
+    "book_ma10_above": +1,          # 10MA 위 (책: 진정한 추세선)
+    "book_ma240_above": +1,         # 240MA 위 (책: 죽은 차트 라인 회피)
+}
+
+# Default weights (강환국식 + AQR + 책)
 DEFAULT_WEIGHTS = {
-    "value": 0.30,
-    "quality": 0.30,
-    "momentum": 0.20,
-    "lowvol": 0.20,
+    "value": 0.25,
+    "quality": 0.25,
+    "momentum": 0.15,
+    "lowvol": 0.15,
+    "book": 0.20,        # ← 새로 추가 (책 신호 활용)
 }
 
 
@@ -143,6 +163,7 @@ def compute_multifactor_score(panel: pd.DataFrame,
         "quality": QUALITY_FACTORS,
         "momentum": MOMENTUM_FACTORS,
         "lowvol": LOWVOL_FACTORS,
+        "book": BOOK_FACTORS,    # Phase 1A 책 신호 활용
     }
 
     # For each factor group, build a Series indexed like panel

@@ -147,6 +147,11 @@ class WFv3Params:
     short_gross: float = 0.0                    # 0 = no short, 0.5 = 100/100 LS
     short_borrow_bps: float = 50.0              # annualized borrow cost
 
+    # Phase 4-0 — KR universe filter (Gemini guide)
+    use_kr_filter: bool = False                 # exclude 우선주/스팩/금융/지주
+    kr_min_daily_value_krw: Optional[float] = None  # e.g. 1e8 (1억) — drop illiquid
+    kr_market_cap_percentile: Optional[tuple] = None  # (lo, hi), e.g. (0.0, 0.3) for small caps
+
     lgb_params: dict = field(default_factory=lambda: {
         "objective": "regression",
         "metric": "rmse",
@@ -303,6 +308,27 @@ def run_wf_v3(params: WFv3Params,
                         # Restrict to alive tickers
                         test = test[test["ticker"].isin(alive)].copy()
                         train = train[train["ticker"].isin(alive)].copy()
+                except Exception:
+                    pass
+            # Phase 4-0 — KR universe filter (Gemini guide)
+            if params.use_kr_filter:
+                try:
+                    from app.data.kr_universe_filter import get_kr_universe_filtered
+                    kr_keep = set(get_kr_universe_filtered(
+                        asof_date=str(t.date()),
+                        include_delisted=True,
+                        exclude_preferred=True,
+                        exclude_spac=True,
+                        exclude_financial=True,
+                        min_daily_value_krw=params.kr_min_daily_value_krw,
+                        market_cap_percentile=params.kr_market_cap_percentile,
+                    ))
+                    if kr_keep:
+                        # Only filter KR tickers (US untouched)
+                        is_kr = test["ticker"].str.endswith((".KS", ".KQ"))
+                        test = test[(~is_kr) | (test["ticker"].isin(kr_keep))].copy()
+                        is_kr_tr = train["ticker"].str.endswith((".KS", ".KQ"))
+                        train = train[(~is_kr_tr) | (train["ticker"].isin(kr_keep))].copy()
                 except Exception:
                     pass
             if len(train) >= 5000 and len(test) > 0:

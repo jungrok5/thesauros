@@ -5,6 +5,7 @@ import joblib
 
 from app.config import MODEL_DIR
 from app.features.pipeline_v3 import ALL_V3, build_panel_v3
+from app.features.panel_cache import save_panel_with_hash, is_panel_stale
 from app.model.lgbm import fit_lgbm
 from app.backtest.walkforward_v3 import WFv3Params, run_wf_v3
 
@@ -20,12 +21,15 @@ def log(msg):
 log("=" * 60)
 log("STEP 1: Build v3 panel from 2010")
 log("=" * 60)
+stale, reason = is_panel_stale()
+log(f"Panel cache check: stale={stale} ({reason})")
 t0 = time.time()
 panel = build_panel_v3(start="2010-01-01", rebalance_n=21, verbose=False)
 log(f"Built {len(panel):,} rows × {panel.shape[1]} cols in {time.time()-t0:.0f}s")
 log(f"Date range: {panel['date'].min()} → {panel['date'].max()}")
 log(f"Tickers: {panel['ticker'].nunique()}")
-panel.to_parquet(MODEL_DIR / "feature_panel_v3.parquet", index=False)
+panel_hash = save_panel_with_hash(panel)
+log(f"Saved with hash: {panel_hash}")
 
 # 2) Retrain
 log("\n" + "=" * 60)

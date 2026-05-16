@@ -338,7 +338,7 @@ INDICATORS: List[Dict] = [
     {
         "key": "philly_fed_mfg",
         "name_kr": "필라델피아 연준 제조업 (PHCM)",
-        "source": "FRED", "series_id": "GACDISA066MSFRBPHI",
+        "source": "FRED", "series_id": "GACDFSA066MSFRBPHI",
         "unit": "index", "category": "growth",
         "book_ref": "1부 6장 p184-185",
         "desc": "필라델피아 지역 제조업 활동. 양수=확장.",
