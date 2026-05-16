@@ -212,31 +212,50 @@ def build_summary(metrics: Dict[str, Optional[float]],
 
 # ---------- Fundamentals → metrics ----------------------------------------
 
-def _fundamentals_for(ticker: str) -> Dict[str, Optional[float]]:
-    """Pull from local DuckDB fundamentals table and derive metrics.
+REVENUE_ALIASES = (
+    "Revenues",
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "RevenueFromContractWithCustomerIncludingAssessedTax",
+    "SalesRevenueNet",
+)
 
-    Returns a dict possibly containing: revenue, ni, equity, debt, assets,
-    op_income, ttm_*. Returns empty dict if unavailable.
+
+def _first(concepts: Dict[str, float], names: Tuple[str, ...]) -> Optional[float]:
+    for n in names:
+        v = concepts.get(n)
+        if v is not None:
+            return v
+    return None
+
+
+def _fundamentals_for(ticker: str) -> Optional[Tuple[Dict[str, Optional[float]],
+                                                      Dict[int, Dict[str, float]],
+                                                      List[int]]]:
+    """Pull annual (FY) fundamentals only, derive metrics.
+
+    Returns: (metrics, by_year_fy, sorted_years_desc) or None.
+
+    Important: filters fp='FY' to avoid mixing quarterly YTD values with
+    annual totals (SEC's filing structure stores both for the same
+    period_end; the Q rows are year-to-date, not single-quarter).
     """
     try:
         from app.data.pit_db import cursor
     except Exception:
-        return {}
-    rows: Dict[str, List[Tuple[Any, Any]]] = {}
+        return None
     try:
         with cursor() as con:
             df = con.execute(
-                "SELECT concept, fy, value FROM fundamentals "
-                "WHERE ticker = ? ORDER BY fy DESC, filed_date DESC",
+                "SELECT concept, fy, fp, value FROM fundamentals "
+                "WHERE ticker = ? AND fp = 'FY' "
+                "ORDER BY fy DESC, filed_date DESC",
                 [ticker],
             ).df()
     except Exception:
-        return {}
+        return None
     if df.empty:
-        return {}
+        return None
 
-    # Latest year per concept
-    latest: Dict[str, float] = {}
     by_year: Dict[int, Dict[str, float]] = {}
     for _, r in df.iterrows():
         concept = str(r["concept"])
@@ -248,21 +267,27 @@ def _fundamentals_for(ticker: str) -> Dict[str, Optional[float]]:
             val = float(r["value"])
         except Exception:
             continue
-        latest.setdefault(concept, val)
+        # First seen wins (rows are ordered DESC by filed_date — most recent
+        # restatement first, so the latest filing prevails).
         by_year.setdefault(fy, {}).setdefault(concept, val)
 
-    revenue = latest.get("Revenues")
+    years = sorted(by_year.keys(), reverse=True)
+    if not years:
+        return None
+    latest_yr = years[0]
+    latest = by_year[latest_yr]
+
+    revenue = _first(latest, REVENUE_ALIASES)
     net_income = latest.get("NetIncomeLoss")
     op_income = latest.get("OperatingIncomeLoss")
     assets = latest.get("Assets")
     debt = latest.get("Liabilities")
     equity = latest.get("StockholdersEquity")
 
-    years = sorted(by_year.keys(), reverse=True)
     if len(years) >= 2:
-        last_rev = by_year[years[0]].get("Revenues")
-        prev_rev = by_year[years[1]].get("Revenues")
-        rev_growth = (last_rev / prev_rev - 1) if (last_rev and prev_rev) else None
+        last_rev = _first(by_year[years[0]], REVENUE_ALIASES)
+        prev_rev = _first(by_year[years[1]], REVENUE_ALIASES)
+        rev_growth = (last_rev / prev_rev - 1) if (last_rev and prev_rev and prev_rev > 0) else None
         last_ni = by_year[years[0]].get("NetIncomeLoss")
         prev_ni = by_year[years[1]].get("NetIncomeLoss")
         ni_growth = (last_ni / abs(prev_ni) - 1) if (last_ni and prev_ni) else None
@@ -293,6 +318,16 @@ def _fundamentals_for(ticker: str) -> Dict[str, Optional[float]]:
     return metrics, by_year, years
 
 
+def _revenue_series(by_year: Dict[int, Dict[str, float]], years: List[int]) -> Dict[str, float]:
+    """Pull revenue across years, trying multiple SEC/DART concept names."""
+    out: Dict[str, float] = {}
+    for y in years[:3]:
+        v = _first(by_year.get(y, {}), REVENUE_ALIASES)
+        if v is not None:
+            out[str(y)] = v
+    return out
+
+
 def _series_3y(by_year: Dict[int, Dict[str, float]], years: List[int],
                concept: str) -> Dict[str, float]:
     """Return last-3-year series for a concept as {fy_str: value}."""
@@ -313,6 +348,8 @@ def evaluate_ticker(ticker: str) -> Optional[Dict[str, Any]]:
     metrics, by_year, years = parsed
     if not by_year:
         return None
+    # Also keep DART-style data accessible via series builder.
+    revenue_series = _revenue_series(by_year, years)
 
     evals = {}
     for name in ("per", "pbr", "roe", "roa", "op_margin", "debt_ratio", "revenue_growth_yoy"):
@@ -331,7 +368,7 @@ def evaluate_ticker(ticker: str) -> Optional[Dict[str, Any]]:
         "axis": axis,
         "summary": summary,
         "series": {
-            "revenue_3y": _series_3y(by_year, years, "Revenues"),
+            "revenue_3y": revenue_series,
             "operating_income_3y": _series_3y(by_year, years, "OperatingIncomeLoss"),
             "net_income_3y": _series_3y(by_year, years, "NetIncomeLoss"),
             "assets_3y": _series_3y(by_year, years, "Assets"),
