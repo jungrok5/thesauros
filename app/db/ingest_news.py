@@ -1,0 +1,275 @@
+"""News + DART disclosures → Supabase (links only, no LLM summary).
+
+Sources:
+  - News: NaverFinance per-ticker RSS (KR), no-op for US (TBD).
+  - Disclosures: DART OpenAPI `list.json` per stock_code (KR only).
+
+Phase-1 conservative: ~3,000 KR tickers × 1 fetch each is ~3k RPS-day —
+NaverFinance is friendly; DART has a 1000 req/min cap which we throttle.
+
+Usage:
+    python -m app.db.ingest_news              # all KR tickers
+    python -m app.db.ingest_news --tickers 005930.KS 035720.KS
+    python -m app.db.ingest_news --limit 100   # smoke
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import sys
+import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from xml.etree import ElementTree as ET
+
+import requests
+from dotenv import load_dotenv
+
+_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_ROOT / ".env")
+
+from app.db import get_conn   # noqa: E402
+
+log = logging.getLogger("ingest_news")
+
+NAVER_MOBILE_NEWS = ("https://m.stock.naver.com/api/news/stock/{code}"
+                     "?pageSize=30&page=1")
+DART_LIST = "https://opendart.fss.or.kr/api/list.json"
+
+
+# ----------------------------------------------------------------------------
+# Naver Finance news (KR) — mobile JSON API (more reliable than HTML scrape)
+# ----------------------------------------------------------------------------
+
+def fetch_naver_news(stock_code: str) -> List[Dict[str, Any]]:
+    """Returns latest news titles+links for a KR stock_code (6-digit)."""
+    url = NAVER_MOBILE_NEWS.format(code=stock_code)
+    try:
+        r = requests.get(
+            url, timeout=15,
+            headers={
+                "User-Agent": "Mozilla/5.0 (research)",
+                "Referer": "https://m.stock.naver.com/",
+            },
+        )
+        r.raise_for_status()
+        groups = r.json()
+    except Exception as e:
+        log.debug("naver fetch %s: %s", stock_code, e)
+        return []
+
+    out: List[Dict[str, Any]] = []
+    # Response is a list of {total, items: [...]} groups; flatten.
+    if isinstance(groups, list):
+        for grp in groups:
+            for it in grp.get("items", []) if isinstance(grp, dict) else []:
+                title = (it.get("title") or it.get("titleFull") or "").strip()
+                if not title:
+                    continue
+                article_url = (
+                    it.get("mobileNewsUrl")
+                    or f"https://n.news.naver.com/mnews/article/{it.get('officeId')}/{it.get('articleId')}"
+                )
+                source = (it.get("officeName") or "").strip() or None
+                dt_raw = (it.get("datetime") or "").strip()
+                published_iso: Optional[str] = None
+                if dt_raw:
+                    try:
+                        # Format: "YYYYMMDDHHMM"
+                        dt = datetime.strptime(dt_raw[:12], "%Y%m%d%H%M")
+                        dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+                        published_iso = dt.isoformat()
+                    except Exception:
+                        published_iso = None
+                out.append({
+                    "title": title,
+                    "url": article_url,
+                    "source": source,
+                    "published_at": published_iso,
+                })
+    return out
+
+
+# ----------------------------------------------------------------------------
+# DART disclosures (KR)
+# ----------------------------------------------------------------------------
+
+_dart_corp_code_cache: Optional[Dict[str, str]] = None
+
+
+def _dart_corp_codes() -> Dict[str, str]:
+    """Returns {stock_code (6-digit): corp_code (8-digit)}.
+
+    Lazy-loads once per process. Reuses the existing local parquet cache from
+    app.data.ingest_dart.fetch_corp_code_map() when available; otherwise fetches.
+    """
+    global _dart_corp_code_cache
+    if _dart_corp_code_cache is not None:
+        return _dart_corp_code_cache
+    try:
+        from app.data.ingest_dart import fetch_corp_code_map
+        df = fetch_corp_code_map()
+    except Exception as e:
+        log.warning("DART corp_code map unavailable: %s", e)
+        _dart_corp_code_cache = {}
+        return _dart_corp_code_cache
+    cache = {}
+    for _, row in df.iterrows():
+        sc = str(row.get("stock_code", "")).strip()
+        cc = str(row.get("corp_code", "")).strip()
+        if sc and cc and sc.isdigit() and len(sc) == 6:
+            cache[sc] = cc
+    _dart_corp_code_cache = cache
+    log.info("DART corp_code map: %d entries", len(cache))
+    return cache
+
+
+def fetch_dart_disclosures(stock_code: str, days_back: int = 90) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("DART_API_KEY")
+    if not api_key:
+        return []
+    corp_codes = _dart_corp_codes()
+    corp_code = corp_codes.get(stock_code)
+    if not corp_code:
+        return []
+    end = date.today().strftime("%Y%m%d")
+    start = (date.today() - timedelta(days=days_back)).strftime("%Y%m%d")
+    try:
+        r = requests.get(
+            DART_LIST,
+            params={"crtfc_key": api_key, "corp_code": corp_code,
+                    "bgn_de": start, "end_de": end,
+                    "page_count": 100, "sort": "date", "sort_mth": "desc"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        log.debug("dart fetch %s: %s", stock_code, e)
+        return []
+    if data.get("status") != "000":
+        return []
+    out = []
+    for it in data.get("list", []):
+        rcept = it.get("rcept_no", "")
+        if not rcept:
+            continue
+        out.append({
+            "rcept_no": rcept,
+            "report_nm": it.get("report_nm", "").strip(),
+            "report_type": it.get("pblntf_ty"),
+            "filed_date": it.get("rcept_dt"),   # YYYYMMDD
+            "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept}",
+        })
+    return out
+
+
+# ----------------------------------------------------------------------------
+# DB upsert
+# ----------------------------------------------------------------------------
+
+def upsert_news(ticker: str, items: List[Dict[str, Any]]) -> int:
+    if not items:
+        return 0
+    rows = [(ticker, it["title"], it["url"], it.get("source"), it.get("published_at"))
+            for it in items]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO news (ticker, title, url, source, published_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (url) DO NOTHING
+                """,
+                rows,
+            )
+    return len(rows)
+
+
+def upsert_disclosures(ticker: str, items: List[Dict[str, Any]]) -> int:
+    if not items:
+        return 0
+    rows = []
+    for it in items:
+        fd = it.get("filed_date") or ""
+        try:
+            filed = datetime.strptime(fd, "%Y%m%d").date() if fd else None
+        except Exception:
+            filed = None
+        rows.append((
+            ticker, it["rcept_no"], it["report_nm"], it.get("report_type"),
+            filed, it.get("url"),
+        ))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO disclosures
+                  (ticker, rcept_no, report_nm, report_type, filed_date, url)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (rcept_no) DO NOTHING
+                """,
+                rows,
+            )
+    return len(rows)
+
+
+# ----------------------------------------------------------------------------
+# Driver
+# ----------------------------------------------------------------------------
+
+def _kr_tickers(limit: Optional[int]) -> List[str]:
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ticker FROM tickers "
+                "WHERE is_active = true AND market IN ('KOSPI', 'KOSDAQ') "
+                "ORDER BY ticker" + (f" LIMIT {int(limit)}" if limit else "")
+            )
+            return [r[0] for r in cur.fetchall()]
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    p = argparse.ArgumentParser()
+    p.add_argument("--tickers", nargs="+", default=None)
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--days-back", type=int, default=30)
+    p.add_argument("--skip-news", action="store_true")
+    p.add_argument("--skip-disclosures", action="store_true")
+    p.add_argument("--verbose", action="store_true")
+    args = p.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+
+    tickers = args.tickers or _kr_tickers(limit=args.limit)
+    log.info("processing %d tickers", len(tickers))
+    t0 = time.time()
+    n_news = n_disc = 0
+    for i, t in enumerate(tickers, 1):
+        code = t.split(".")[0]
+        if not args.skip_news:
+            try:
+                items = fetch_naver_news(code)
+                n_news += upsert_news(t, items)
+            except Exception as e:
+                log.warning("news %s: %s", t, e)
+        if not args.skip_disclosures and t.endswith((".KS", ".KQ")):
+            try:
+                items = fetch_dart_disclosures(code, days_back=args.days_back)
+                n_disc += upsert_disclosures(t, items)
+                time.sleep(0.06)   # DART 1000 req/min cap
+            except Exception as e:
+                log.warning("dart %s: %s", t, e)
+        if i % 100 == 0:
+            log.info("  [%d/%d] news=%d disclosures=%d", i, len(tickers), n_news, n_disc)
+    log.info("done in %.1fs: news=%d disclosures=%d", time.time() - t0, n_news, n_disc)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python smoke + scan tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ secrets.SUPABASE_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: |
+          pip install -r requirements.txt
+          pip install supabase "psycopg[binary]"
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          python -m app.db.tests.test_smoke
+          python -m app.db.tests.test_scan
+
+  web:
+    name: Next.js typecheck + lint + E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web-next/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npx playwright install chromium --with-deps
+      - name: Start Next.js
+        run: nohup npm run dev > /tmp/next.log 2>&1 &
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-dummy-secret-padding-padding-padding' }}
+          AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID || '' }}
+          AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET || '' }}
+          AUTH_ALLOWED_EMAILS: ${{ secrets.AUTH_ALLOWED_EMAILS || '' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://example.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci-dummy-anon-key' }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || 'ci-dummy-service-key' }}
+      - name: Wait for dev server
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3000/login >/dev/null; then echo ready; exit 0; fi
+            sleep 1
+          done
+          echo "dev server failed to start"
+          tail -50 /tmp/next.log || true
+          exit 1
+      - name: Run Playwright
+        run: npx playwright test e2e/public.spec.ts e2e/book-site.spec.ts --reporter=list
