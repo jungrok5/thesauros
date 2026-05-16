@@ -64,6 +64,49 @@ def analyze_ticker(ticker: str = Query(..., description="e.g. AAPL or 005930.KS"
     return JSONResponse(_clean(result))
 
 
+@router.get("/quote/{ticker}")
+def live_quote(ticker: str):
+    """Live current price via KIS API (KR only, paper-trading endpoint)."""
+    if not ticker.endswith((".KS", ".KQ")):
+        raise HTTPException(400, "KIS quote supports KR tickers only (.KS/.KQ)")
+    code = ticker.split(".")[0]
+    try:
+        from app.data.kis import KISClient
+        client = KISClient()
+        raw = client.current_price(code)
+    except Exception as e:
+        raise HTTPException(502, f"KIS quote failed: {e}")
+    out = raw.get("output") or {}
+    if not out:
+        raise HTTPException(404, "no quote returned")
+    # Pick the most useful fields (KIS returns string numbers)
+    def f(key: str, dflt: Any = None) -> Any:
+        v = out.get(key)
+        if v is None or v == "":
+            return dflt
+        try:
+            return float(v)
+        except Exception:
+            return v
+    return JSONResponse(_clean({
+        "ticker": ticker,
+        "price":           f("stck_prpr"),         # 현재가
+        "change":          f("prdy_vrss"),         # 전일 대비
+        "change_pct":      f("prdy_ctrt"),         # 전일 대비율 (%)
+        "volume":          f("acml_vol"),          # 누적거래량
+        "amount":          f("acml_tr_pbmn"),      # 누적거래대금
+        "open":            f("stck_oprc"),
+        "high":            f("stck_hgpr"),
+        "low":             f("stck_lwpr"),
+        "upper_limit":     f("stck_mxpr"),
+        "lower_limit":     f("stck_llam"),
+        "market_cap":      f("hts_avls"),          # 시가총액 (억)
+        "per":             f("per"),
+        "pbr":             f("pbr"),
+        "_raw_count":      len(out),
+    }))
+
+
 @router.get("/book/chart")
 def chart(ticker: str = Query(..., description="e.g. AAPL or 005930.KS"),
           timeframe: str = Query("daily", regex="^(daily|weekly|monthly)$"),
