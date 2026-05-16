@@ -6,6 +6,7 @@ import {
   BarChart3,
   Compass,
   LineChart,
+  Moon,
   Search,
   Settings,
   Star,
@@ -17,6 +18,7 @@ const NAV = [
   { href: "/recommendations", label: "추천 종목", icon: BarChart3 },
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
+  { href: "/closing-trade", label: "종가매매 모드", icon: Moon },
   { href: "/backtest", label: "백테스트", icon: LineChart },
   { href: "/settings", label: "설정", icon: Settings },
 ];

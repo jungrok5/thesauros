@@ -126,7 +126,8 @@ def _dart_corp_codes() -> Dict[str, str]:
     return cache
 
 
-def fetch_dart_disclosures(stock_code: str, days_back: int = 90) -> List[Dict[str, Any]]:
+def fetch_dart_disclosures(stock_code: str, days_back: int = 90,
+                           max_retries: int = 3) -> List[Dict[str, Any]]:
     api_key = os.environ.get("DART_API_KEY")
     if not api_key:
         return []
@@ -136,20 +137,35 @@ def fetch_dart_disclosures(stock_code: str, days_back: int = 90) -> List[Dict[st
         return []
     end = date.today().strftime("%Y%m%d")
     start = (date.today() - timedelta(days=days_back)).strftime("%Y%m%d")
-    try:
-        r = requests.get(
-            DART_LIST,
-            params={"crtfc_key": api_key, "corp_code": corp_code,
-                    "bgn_de": start, "end_de": end,
-                    "page_count": 100, "sort": "date", "sort_mth": "desc"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        log.debug("dart fetch %s: %s", stock_code, e)
-        return []
-    if data.get("status") != "000":
+    last_err: Optional[str] = None
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(
+                DART_LIST,
+                params={"crtfc_key": api_key, "corp_code": corp_code,
+                        "bgn_de": start, "end_de": end,
+                        "page_count": 100, "sort": "date", "sort_mth": "desc"},
+                timeout=15,
+            )
+            r.raise_for_status()
+            data = r.json()
+        except requests.exceptions.ConnectionError as e:
+            # Connection reset (rate-limit). Exponential backoff.
+            last_err = str(e)
+            time.sleep(2 ** attempt)
+            continue
+        except Exception as e:
+            log.debug("dart fetch %s: %s", stock_code, e)
+            return []
+        if data.get("status") == "020":
+            # Daily quota exceeded — stop retrying, but caller can continue.
+            log.warning("DART quota exceeded for %s", stock_code)
+            return []
+        if data.get("status") != "000":
+            return []
+        break
+    else:
+        log.debug("dart retries exhausted for %s: %s", stock_code, last_err)
         return []
     out = []
     for it in data.get("list", []):

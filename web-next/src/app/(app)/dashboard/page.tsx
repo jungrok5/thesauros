@@ -1,6 +1,7 @@
 import { api, type MacroSnapshot } from "@/lib/api";
 import { RegimeBadge } from "@/components/regime-badge";
 import { StatePill } from "@/components/state-pill";
+import { MacroDial } from "@/components/macro-dial";
 import { formatNumber, formatPct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,8 @@ export default async function DashboardPage() {
         </div>
         <RegimeBadge regime={regime.regime} score={regime.score} />
       </header>
+
+      <MacroDial />
 
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">

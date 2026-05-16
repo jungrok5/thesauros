@@ -24,6 +24,24 @@ test.describe("Book-faithful site — public routes redirect", () => {
     await page.goto("/stocks");
     await expect(page).toHaveURL(/\/login$/);
   });
+
+  test("closing-trade redirects to /login", async ({ page }) => {
+    await page.goto("/closing-trade");
+    await expect(page).toHaveURL(/\/login$/);
+  });
+});
+
+test.describe("Chart proxy auth", () => {
+  test("/api/chart without session → 401", async ({ request }) => {
+    const r = await request.get("/api/chart?ticker=AAPL");
+    expect(r.status()).toBe(401);
+  });
+
+  test("/api/chart with invalid ticker → 400 after auth would pass", async ({ request }) => {
+    // Without session this still returns 401 first.
+    const r = await request.get("/api/chart?ticker=$$$");
+    expect([400, 401]).toContain(r.status());
+  });
 });
 
 test.describe("Watchlist API auth gating", () => {

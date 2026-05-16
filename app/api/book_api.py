@@ -64,6 +64,132 @@ def analyze_ticker(ticker: str = Query(..., description="e.g. AAPL or 005930.KS"
     return JSONResponse(_clean(result))
 
 
+@router.get("/book/chart")
+def chart(ticker: str = Query(..., description="e.g. AAPL or 005930.KS"),
+          timeframe: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+          years: int = Query(2, ge=1, le=20)):
+    """OHLCV bars + book overlays for the requested timeframe.
+
+    Returns:
+      bars:        [{t (unix-seconds), open, high, low, close, volume}]
+      mas:         {ma_10, ma_20, ma_60, ma_240}  → each a list aligned to bars
+      patterns:    completed patterns with (start_idx, end_idx, kind, direction, confidence)
+      signals:     latest book V4 marker if present {kind, idx, conf}
+      quarter_lines: 4-quadrant lines (100/75/50/25/0%) from last 장대양봉
+                   {price_high, price_75, price_50, price_25, price_low,
+                    start_idx, end_idx}
+    """
+    from app.book.analyzer import load_ticker_data
+    from app.book.trend import resample_to_period
+    from app.book.patterns import detect_all
+    from app.book.candles import latest_candle_summary
+
+    # Load with extra warm-up so MA_240 (need 240 bars) has values from the
+    # earliest visible bar. Daily: years + 1y warmup. Weekly: years + 5y. Monthly: full history.
+    warmup_years = {"daily": 1, "weekly": 5, "monthly": 20}.get(timeframe, 1)
+    df = load_ticker_data(ticker, years=years + warmup_years)
+    if df is None or df.empty:
+        raise HTTPException(404, f"No price data for {ticker}.")
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    if timeframe == "weekly":
+        rsr = resample_to_period(df, "W")
+        df = rsr.reset_index().rename(columns={rsr.index.name or "index": "date"})
+        if "date" not in df.columns:
+            df = df.rename(columns={df.columns[0]: "date"})
+    elif timeframe == "monthly":
+        rsr = resample_to_period(df, "M")
+        df = rsr.reset_index().rename(columns={rsr.index.name or "index": "date"})
+        if "date" not in df.columns:
+            df = df.rename(columns={df.columns[0]: "date"})
+
+    # Clamp to the requested visible window (preserve MAs computed with warmup).
+    if years and len(df) > 0:
+        cutoff = df["date"].iloc[-1] - pd.Timedelta(days=int(years * 365.25))
+        visible_mask = df["date"] >= cutoff
+    else:
+        visible_mask = pd.Series(True, index=df.index)
+
+    df_vis = df[visible_mask].reset_index(drop=True)
+    bars = [
+        {
+            "t": int(pd.Timestamp(d).timestamp()),
+            "open": float(o), "high": float(h), "low": float(lo),
+            "close": float(c), "volume": int(v) if pd.notna(v) else 0,
+        }
+        for d, o, h, lo, c, v in zip(
+            df_vis["date"], df_vis["open"], df_vis["high"], df_vis["low"],
+            df_vis["close"], df_vis["volume"],
+        )
+        if pd.notna(o) and pd.notna(c)
+    ]
+
+    # Compute MAs on full series, then slice to visible window
+    closes_full = df["close"].astype(float)
+    dates_full = df["date"]
+    mas = {}
+    for w in (10, 20, 60, 120, 240):
+        if len(closes_full) >= w:
+            ma = closes_full.rolling(w).mean()
+            mas[f"ma_{w}"] = [
+                {"t": int(pd.Timestamp(d).timestamp()), "value": float(v)}
+                for d, v, vis in zip(dates_full, ma, visible_mask)
+                if pd.notna(v) and vis
+            ]
+
+    # patterns + retracements (completed only) — run on visible window so
+    # detections align with rendered candles.
+    patterns = []
+    for p in detect_all(df_vis):
+        pd_ = p.to_dict()
+        if pd_.get("completed"):
+            patterns.append({
+                "kind": pd_["kind"],
+                "direction": pd_["direction"],
+                "confidence": pd_["confidence"],
+                "entry": pd_.get("entry"),
+                "stop": pd_.get("stop"),
+                "target": pd_.get("target"),
+                "extra": pd_.get("extra"),
+                "detected_at": pd_.get("detected_at"),
+            })
+
+    # 4-quadrant lines from the most recent 장대양봉 (body >= 5%) within visible
+    quarter_lines = None
+    if len(df_vis) >= 2:
+        for i in range(len(df_vis) - 1, max(-1, len(df_vis) - 30), -1):
+            o, c, hi, lo = (df_vis.iloc[i].get(k) for k in ("open", "close", "high", "low"))
+            try:
+                o, c, hi, lo = float(o), float(c), float(hi), float(lo)
+            except Exception:
+                continue
+            if o <= 0:
+                continue
+            body_pct = (c - o) / o
+            if body_pct >= 0.05 and c > o:
+                quarter_lines = {
+                    "price_low": o, "price_25": o + 0.25 * (c - o),
+                    "price_50": o + 0.50 * (c - o), "price_75": o + 0.75 * (c - o),
+                    "price_high": c,
+                    "candle_t": int(pd.Timestamp(df_vis.iloc[i]["date"]).timestamp()),
+                }
+                break
+
+    last_candle = latest_candle_summary(df_vis)
+
+    return JSONResponse(_clean({
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "bars": bars,
+        "mas": mas,
+        "patterns": patterns,
+        "quarter_lines": quarter_lines,
+        "last_candle": last_candle,
+    }))
+
+
 @router.get("/book/screen")
 def screen(
     market: str = Query("all", regex="^(us|kr|all)$"),

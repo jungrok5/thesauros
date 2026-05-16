@@ -3,6 +3,7 @@ import { TickerSearch } from "@/components/ticker-search";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
+import { BookChart } from "@/components/book-chart";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { auth } from "@/auth";
@@ -92,6 +93,10 @@ export default async function StockDetailPage({ params }: PageProps) {
         </div>
       ) : (
         <>
+          <div>
+            <h2 className="mb-3 text-lg font-semibold tracking-tight">차트 + 책 신호 오버레이</h2>
+            <BookChart ticker={ticker} timeframe="weekly" years={2} />
+          </div>
           <AnalysisView result={ok} />
           <div className="mt-8">
             <h2 className="mb-3 text-lg font-semibold tracking-tight">종목 정보</h2>

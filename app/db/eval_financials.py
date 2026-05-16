@@ -505,14 +505,33 @@ def publish(ticker: str, result: Dict[str, Any]) -> None:
 
 
 def _all_tickers_with_fundamentals(limit: Optional[int]) -> List[str]:
+    """Intersect DuckDB fundamentals with Supabase tickers master.
+
+    Avoids FK violations on financials_eval.ticker → tickers.ticker
+    (older fundamentals rows reference codes that the FDR-derived tickers
+    master may not include).
+    """
     try:
         from app.data.pit_db import cursor
     except Exception:
         return []
     with cursor() as con:
-        sql = ("SELECT DISTINCT ticker FROM fundamentals ORDER BY ticker"
-               + (f" LIMIT {int(limit)}" if limit else ""))
-        return [r[0] for r in con.execute(sql).fetchall()]
+        local = [r[0] for r in con.execute(
+            "SELECT DISTINCT ticker FROM fundamentals"
+        ).fetchall()]
+    if not local:
+        return []
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ticker FROM tickers WHERE is_active = true "
+                "AND ticker = ANY(%s)", (local,)
+            )
+            allowed = {r[0] for r in cur.fetchall()}
+    out = [t for t in local if t in allowed]
+    if limit:
+        out = out[: int(limit)]
+    return out
 
 
 def main(argv: Optional[List[str]] = None) -> int:
