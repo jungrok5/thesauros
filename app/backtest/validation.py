@@ -71,21 +71,33 @@ class ValidationResult:
 
 def _bootstrap_alpha_pvalue(returns: pd.Series, bench: pd.Series,
                               n_boot: int = 500, block: int = 20) -> float:
-    """Block bootstrap p-value. Null: no alpha."""
+    """Block bootstrap p-value.
+
+    Null hypothesis: no alpha (excess return mean = 0).
+    H1: positive alpha (observed > 0).
+
+    Method: center excess returns to mean 0 (null world), block-bootstrap,
+    measure how often boot mean >= observed mean.
+    One-sided p-value = P(boot_mean >= observed | H0).
+    """
     excess = (returns - bench).dropna()
     if len(excess) < 50:
         return 1.0
-    observed = float(excess.mean() * 252)
+    observed = float(excess.mean() * 252)  # annualized observed alpha
     n = len(excess)
     n_blocks = (n + block - 1) // block
     rng = np.random.default_rng(42)
     arr = excess.values
-    boot_excess = []
+    # 🚨 BUG FIX: center under null hypothesis (mean = 0)
+    arr_null = arr - arr.mean()
+    boot_means = []
     for _ in range(n_boot):
         idx = rng.integers(0, n - block + 1, size=n_blocks)
-        sample = np.concatenate([arr[i:i + block] for i in idx])[:n]
-        boot_excess.append(float(sample.mean() * 252 - observed))
-    return float((np.array(boot_excess) >= 0).mean())
+        sample = np.concatenate([arr_null[i:i + block] for i in idx])[:n]
+        boot_means.append(float(sample.mean() * 252))
+    boot_arr = np.array(boot_means)
+    # one-sided: P(boot_mean >= observed) under null
+    return float((boot_arr >= observed).mean())
 
 
 def run_validated(

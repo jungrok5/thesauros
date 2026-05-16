@@ -61,8 +61,31 @@ ML_MACRO_FEATURES = [
 ]
 
 
+# 🚨 Bug #5 fix: FRED `date` 컬럼은 관측 기간 (e.g. CPI Jan = 2024-01-01)
+# 이지 발표일 아님. 통상 +N일 지연. 보수적 lag 적용으로 look-ahead 차단.
+# 즉각 series (market data: VIX, indices, FX, commodities) 는 lag=0
+# 경제 통계 (CPI, PCE, PPI, employment, IP, M2) 는 +30 일 lag
+SERIES_RELEASE_LAG_DAYS = {
+    # Real-time market data (no lag)
+    "^VIX": 0, "^GSPC": 0, "^IXIC": 0, "^KS11": 0, "^KQ11": 0,
+    "DX-Y.NYB": 0, "GC=F": 0, "HG=F": 0, "CL=F": 0, "JPY=X": 0,
+    "T10Y2Y": 0, "T10Y3M": 0, "T10YIE": 0, "DFII10": 0, "DFF": 0,
+    "BAMLC0A0CM": 1, "BAMLH0A0HYM2": 1, "STLFSI4": 7,
+    # Monthly economic indicators (lagged release)
+    "CPIAUCSL": 30, "PCEPILFE": 30, "PPIACO": 30,
+    "UNRATE": 7,           # NFP first Friday → effective +7d
+    "U6RATE": 7,
+    "INDPRO": 30, "AMTMNO": 35, "M2SL": 30,
+    "WALCL": 7,
+    "TOTALSA": 7, "UMCSENT": 14, "HOUST": 21, "HSN1F": 25,
+    "ICSA": 7, "DGORDER": 28, "USSLIND": 30,
+    "IR": 30, "GACDFSA066MSFRBPHI": 21,
+}
+DEFAULT_RELEASE_LAG_DAYS = 30  # 보수적 default
+
+
 def _load_series(series_id: str) -> pd.DataFrame:
-    """Pull a macro series from DuckDB."""
+    """Pull a macro series from DuckDB, lagged by realistic release delay."""
     with cursor() as con:
         df = con.execute(
             "SELECT date, value FROM macro WHERE series_id = ? ORDER BY date",
@@ -70,9 +93,11 @@ def _load_series(series_id: str) -> pd.DataFrame:
         ).df()
     if df.empty:
         return pd.DataFrame(columns=["date", "value"])
-    # Force ns precision so merge_asof against ns-typed pandas DatetimeIndex
-    # succeeds (DuckDB returns datetime64[us]).
     df["date"] = pd.to_datetime(df["date"]).astype("datetime64[ns]")
+    # 🚨 Apply release lag to prevent look-ahead bias
+    lag = SERIES_RELEASE_LAG_DAYS.get(series_id, DEFAULT_RELEASE_LAG_DAYS)
+    if lag > 0:
+        df["date"] = df["date"] + pd.Timedelta(days=lag)
     return df
 
 

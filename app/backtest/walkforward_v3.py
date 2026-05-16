@@ -237,9 +237,21 @@ def run_wf_v3(params: WFv3Params,
 
     rets = prices.pct_change().fillna(0)
     cost = (params.cost_bps + params.slippage_bps) / 10_000.0
-    # Phase 2 — realistic cost: KR transaction tax 0.18% sell-side + 50bp slippage
+
+    # 🚨 Bug #3 fix: market-aware realistic cost + per-side correct accounting
+    # turnover = Σ|Δw| counts both buys and sells (round-trip = 2.0).
+    # cost * turnover therefore applies cost twice → cost is per-side.
     if params.realistic_costs:
-        cost = (50 + 18) / 10_000.0  # 0.68% round-trip-ish (50bp + 0.18% sell)
+        if params.market == "kr":
+            # KR: sell-side transaction tax 0.18% (one-way) + 25bp slippage per side
+            # per-side ≈ 9bp tax (averaged) + 25bp slippage = 34bp
+            cost = 34 / 10_000.0
+        elif params.market == "us":
+            # US: SEC fee ~0.3bp + spread ~5bp + impact ~10bp = 15bp per side
+            cost = 15 / 10_000.0
+        else:
+            # Conservative: assume mixed = max
+            cost = 30 / 10_000.0
 
     # Phase 1B — book V4 EXIT overlay
     book_cache = None
@@ -300,14 +312,17 @@ def run_wf_v3(params: WFv3Params,
             train = panel[panel["date"] <= cutoff].dropna(subset=[target_col]).copy()
             test = panel[panel["date"] == t].copy()
             # Phase 2 — survivorship correction: only consider tickers alive at t
+            # 🚨 Bug #2 fix: pass market to avoid KR-only fallback in US backtests
             if params.use_survivorship_correction:
                 try:
                     from app.data.ingest_delisted_kr import universe_alive_at
-                    alive = set(universe_alive_at(str(t.date())))
-                    if alive:
-                        # Restrict to alive tickers
+                    alive = set(universe_alive_at(str(t.date()),
+                                                    market=params.market))
+                    # Fail-loud: don't silently shrink universe to empty
+                    if alive and len(alive) >= 50:
                         test = test[test["ticker"].isin(alive)].copy()
                         train = train[train["ticker"].isin(alive)].copy()
+                    # else: skip survivorship correction (no delisted data)
                 except Exception:
                     pass
             # Phase 4-0 — KR universe filter (Gemini guide)

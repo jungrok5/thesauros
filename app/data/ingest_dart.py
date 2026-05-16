@@ -51,6 +51,25 @@ DART_CONCEPT_MAP = {
 }
 
 
+def _ticker_market_lookup(stock_code: str) -> Optional[str]:
+    """🚨 Bug #4 fix: stock_code → real ticker (with .KS or .KQ).
+
+    Lookup which market the code actually exists in `prices` table.
+    Returns None if neither exists.
+    """
+    from app.data.pit_db import cursor
+    with cursor() as con:
+        # Try KOSPI first (more common for blue chips)
+        for suffix in (".KS", ".KQ"):
+            r = con.execute(
+                "SELECT 1 FROM prices WHERE ticker = ? LIMIT 1",
+                [f"{stock_code}{suffix}"],
+            ).fetchone()
+            if r:
+                return f"{stock_code}{suffix}"
+    return None
+
+
 def _have_key() -> bool:
     return bool(DART_API_KEY)
 
@@ -162,19 +181,23 @@ def ingest_company(corp_code: str, stock_code: str,
                 # Period end: 12-31 for annual
                 period_end = pd.Timestamp(f"{y}-12-31").date()
 
-                # We don't know KOSPI vs KOSDAQ from DART; insert against both
-                # tickers. (Only the real one will exist in `prices` table.)
-                for ticker in (ticker_kospi, ticker_kosdaq):
-                    rows.append({
-                        "ticker": ticker,
-                        "concept": concept,
-                        "period_end": period_end,
-                        "fp": "FY",
-                        "fy": y,
-                        "filed_date": filed_date or period_end,
-                        "value": value,
-                        "unit": "KRW",
-                    })
+                # 🚨 Bug #4 fix: lookup market from `prices` table (which one
+                # actually exists). Avoids cross-contamination if same 6-digit
+                # code happens to exist in both KOSPI and KOSDAQ historically.
+                real_ticker = _ticker_market_lookup(stock_code)
+                if not real_ticker:
+                    # No prices for either — skip (don't pollute fundamentals)
+                    continue
+                rows.append({
+                    "ticker": real_ticker,
+                    "concept": concept,
+                    "period_end": period_end,
+                    "fp": "FY",
+                    "fy": y,
+                    "filed_date": filed_date or period_end,
+                    "value": value,
+                    "unit": "KRW",
+                })
 
     if not rows:
         return 0

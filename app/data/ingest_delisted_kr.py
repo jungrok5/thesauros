@@ -203,25 +203,54 @@ def ingest_prices(min_delist_date: str = "2008-01-01",
     return counts
 
 
-def universe_alive_at(date_str: str) -> List[str]:
-    """`date_str` 시점에 살아있던 KR 종목 리스트 (survivorship-bias-safe).
+def universe_alive_at(date_str: str,
+                       market: Optional[str] = None) -> List[str]:
+    """`date_str` 시점에 살아있던 종목 리스트 (survivorship-bias-safe).
 
-    Returns: list of tickers (.KS/.KQ format).
+    Args:
+        date_str: ISO date
+        market: 'kr' (.KS/.KQ), 'us' (no suffix), None (all)
+
+    Returns: list of tickers.
+
+    🚨 IMPORTANT (Bug #2 fix): market 매개변수 추가.
+    이전 버전은 항상 KR 만 반환 → US 백테스트에서 호출 시 universe 0 → trade 안 함.
     """
     ensure_table()
     with cursor() as con:
-        # Alive = ticker in prices but NOT delisted before this date
+        # Build market filter
+        if market == "kr":
+            mkt_clause = "(ticker LIKE '%.KS' OR ticker LIKE '%.KQ')"
+        elif market == "us":
+            mkt_clause = "ticker NOT LIKE '%.KS' AND ticker NOT LIKE '%.KQ'"
+        else:
+            mkt_clause = "1=1"
+
+        # KR delisted (currently only KR has delisted table populated)
         delisted_before = set(r[0] for r in con.execute(
             "SELECT ticker FROM delisted_tickers WHERE delisting_date <= ?",
             [date_str],
         ).fetchall())
+
+        # Alive = ticker in prices on or before this date, minus delisted
         all_in_prices = set(r[0] for r in con.execute(
-            "SELECT DISTINCT ticker FROM prices "
-            "WHERE (ticker LIKE '%.KS' OR ticker LIKE '%.KQ') "
-            "AND date <= ?",
+            f"SELECT DISTINCT ticker FROM prices WHERE {mkt_clause} "
+            f"AND date <= ?",
             [date_str],
         ).fetchall())
-    return sorted(all_in_prices - delisted_before)
+
+    alive = sorted(all_in_prices - delisted_before)
+
+    # 🚨 Fail-loud: if universe shrinks to near-empty, warn caller
+    if market == "us" and len(alive) < 50:
+        import warnings
+        warnings.warn(
+            f"universe_alive_at(market='us'): only {len(alive)} alive "
+            f"tickers — likely no US delisted data ingested. Using "
+            f"all US tickers as fallback.",
+            stacklevel=2,
+        )
+    return alive
 
 
 if __name__ == "__main__":
