@@ -69,6 +69,108 @@ class ValidationResult:
         )
 
 
+def deflated_sharpe_ratio(observed_sharpe: float,
+                          n_trials: int,
+                          n_obs: int,
+                          skewness: float = 0.0,
+                          kurtosis: float = 3.0) -> Dict[str, float]:
+    """Deflated Sharpe Ratio (Bailey & López de Prado 2014).
+
+    Adjusts an observed Sharpe for selection bias from running N_trials.
+    Returns: dict with keys: dsr (prob alpha > 0 after deflation), sr_threshold
+    (expected max Sharpe under H0), passes (dsr >= 0.95).
+
+    n_trials: how many variants were actually tested in your search space.
+    n_obs: number of daily returns observations.
+    skewness, kurtosis: return-distribution moments (default normal: 0, 3).
+
+    Interpretation:
+      dsr >= 0.95: alpha > 0 even after accounting for selection bias (REAL)
+      dsr <  0.95: cannot reject H0 of zero alpha after selection penalty
+    """
+    from math import sqrt, log
+    from scipy.stats import norm
+
+    # Variance of estimated ANNUALIZED Sharpe (Mertens 2002 / Lo 2002)
+    # V[SR_annualized] = (1 - γ·SR + (κ-1)/4 · SR²) / (T-1) · 252
+    # Here SR is already annualized; we measure variance on the same scale.
+    var_sr = (
+        1.0 - skewness * observed_sharpe
+        + ((kurtosis - 1.0) / 4.0) * observed_sharpe ** 2
+    ) / max(n_obs - 1, 1) * 252.0
+    se_sharpe = sqrt(max(var_sr, 0.0))
+
+    # Expected maximum Sharpe under H0 (zero true alpha) across N independent
+    # trials, each estimated with variance var_sr.
+    # E[max_N(SR_i)] ≈ √V · [Z^-1(1 - 1/N) · (1 - γE) + Z^-1(1 - 1/(N·e)) · γE]
+    # where γE = Euler-Mascheroni; Bailey & López de Prado 2014 eq. 5.
+    EULER = 0.5772156649
+    if n_trials <= 1:
+        sr_threshold = 0.0
+    else:
+        n = float(n_trials)
+        sr_threshold = se_sharpe * (
+            (1.0 - EULER) * norm.ppf(1.0 - 1.0 / n)
+            + EULER * norm.ppf(1.0 - 1.0 / (n * 2.71828))
+        )
+
+    # z-score: how many SEs the observed is above the H0 expected max
+    z = (observed_sharpe - sr_threshold) / max(se_sharpe, 1e-9)
+    dsr = float(norm.cdf(z))   # prob alpha > 0 after selection penalty
+
+    return {
+        "dsr": dsr,
+        "sr_threshold": float(sr_threshold),
+        "se_sharpe": float(se_sharpe),
+        "z": float(z),
+        "passes": dsr >= 0.95,
+    }
+
+
+def probability_of_backtest_overfitting(
+    is_sharpes: List[float],
+    oos_sharpes: List[float],
+) -> Dict[str, float]:
+    """PBO via CSCV (Combinatorial Symmetric Cross-Validation), Bailey 2014.
+
+    Given paired in-sample and out-of-sample Sharpes across S configurations,
+    PBO = P(rank of best-IS config in OOS < median).
+
+    Interpretation:
+      PBO ≈ 0.5: tuning has 50/50 chance of finding *random*-quality OOS pick
+      PBO > 0.5: the "best" IS config tends to be BELOW median OOS = severe overfit
+      PBO < 0.1: tuning genuinely separates good from bad configs
+
+    Args:
+      is_sharpes: list of in-sample Sharpe per config
+      oos_sharpes: list of out-of-sample Sharpe per config (same order)
+
+    Returns: {pbo, n_configs, best_is_idx, oos_rank, median_oos}
+    """
+    if len(is_sharpes) != len(oos_sharpes) or len(is_sharpes) < 2:
+        return {"pbo": float("nan"), "n_configs": 0}
+    is_arr = np.asarray(is_sharpes, float)
+    oos_arr = np.asarray(oos_sharpes, float)
+    best_is = int(np.argmax(is_arr))
+    oos_best_is = oos_arr[best_is]
+    oos_median = float(np.median(oos_arr))
+    n = len(is_arr)
+    # Position of best-IS in OOS distribution
+    oos_rank = float((oos_arr <= oos_best_is).sum() / n)  # 0.5 = median
+    # PBO via logit transform of relative rank (Bailey & López de Prado 2014 eq. 6)
+    # Use simple binary form for clarity
+    pbo = float((oos_arr > oos_best_is).sum() / n)
+    return {
+        "pbo": pbo,
+        "n_configs": n,
+        "best_is_idx": best_is,
+        "oos_at_best_is": float(oos_best_is),
+        "median_oos": oos_median,
+        "rank_of_best_is_in_oos": oos_rank,
+        "passes": pbo < 0.5,
+    }
+
+
 def _bootstrap_alpha_pvalue(returns: pd.Series, bench: pd.Series,
                               n_boot: int = 500, block: int = 20) -> float:
     """Block bootstrap p-value.

@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
@@ -249,6 +250,12 @@ def build_panel_v3(start: str = "2014-01-01",
     panel = panel.merge(uni, on="ticker", how="left")
 
     # Valuation features
+    # 🚨 Bug #12 fix (revert prior patch): the FDR "current shares" snapshot
+    # was identical for every historical date — that is a forward-looking
+    # leak (using 2026 share counts on 2014 rows post-splits/buybacks).
+    # Until historical PIT shares are available (DART corp_info or KRX
+    # market-cap by date), leave __shares_out as-is. KR valuation features
+    # remain NaN, which the multi-factor scorer handles cleanly.
     shares = panel.get("__shares_out")
     equity = panel.get("__equity")
     rev = panel.get("__ttm_revenue")

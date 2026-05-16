@@ -28,13 +28,17 @@ def _select_with_sector_cap(scores: pd.Series, sectors: pd.Series,
     Equal-weight assumption only used for cap check; actual weighting
     is applied separately so we can plug in inverse-vol / risk-parity.
     """
-    df = pd.DataFrame({"score": scores, "sector": sectors}).dropna()
+    # 🚨 Bug #9 fix: only require non-NaN score. KR panel has no sector
+    # mapping (universe.sector empty for .KS/.KQ tickers) — without this,
+    # the whole df gets dropped and no positions are selected.
+    df = pd.DataFrame({"score": scores, "sector": sectors}).dropna(subset=["score"])
     df = df.sort_values("score", ascending=False)
     selected: List[str] = []
     sector_weights: Dict[str, float] = {}
     equal_w = 1.0 / top_k
     for tk, row in df.iterrows():
-        sec = row["sector"] or "UNKNOWN"
+        sec_val = row["sector"]
+        sec = sec_val if isinstance(sec_val, str) and sec_val else "UNKNOWN"
         if sector_weights.get(sec, 0) + equal_w > sector_cap + 1e-9:
             continue
         selected.append(tk)
@@ -235,7 +239,28 @@ def run_wf_v3(params: WFv3Params,
     if not rb_dates:
         return {"error": "No rebalance dates after start"}
 
-    rets = prices.pct_change().fillna(0)
+    # 🚨 Bug #13 fix: do NOT silently turn delisting NaN into 0% return.
+    # Detect last-valid-price → next-NaN transitions and inject the
+    # realistic delisting loss. We approximate KR 정리매매 with -50% and
+    # US "going-to-zero" delistings with -90% on the day the price first
+    # becomes NaN, then 0% thereafter. (For tickers whose tail-NaN reflects
+    # post-end-of-history padding rather than delisting, the resulting return
+    # is irrelevant — they are dropped from bench/portfolio weights.)
+    _raw_pct = prices.pct_change()
+    _valid_today = prices.notna()
+    _valid_yest = prices.notna().shift(1)
+    _delist_day = (~_valid_today) & _valid_yest.fillna(False)
+    _kr_mask = pd.Series(False, index=prices.columns)
+    for c in prices.columns:
+        if isinstance(c, str) and (c.endswith(".KS") or c.endswith(".KQ")):
+            _kr_mask[c] = True
+    _delist_loss = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
+    for c in prices.columns:
+        if _kr_mask[c]:
+            _delist_loss[c] = -0.50  # KR 정리매매 통상 -30~-70%
+        else:
+            _delist_loss[c] = -0.90
+    rets = _raw_pct.fillna(0).where(~_delist_day, _delist_loss)
     cost = (params.cost_bps + params.slippage_bps) / 10_000.0
 
     # 🚨 Bug #3 fix: market-aware realistic cost + per-side correct accounting
@@ -287,9 +312,13 @@ def run_wf_v3(params: WFv3Params,
     if not daily_dates:
         return {"error": "No daily dates"}
 
+    # 🚨 Bug #13b fix: do NOT fix bench_weights at day 0 forever — that
+    # silently freezes the universe and makes the benchmark immune to
+    # delistings. Now we re-equal-weight at every rebalance date over the
+    # currently-alive set, matching what an EW index ETF actually does.
+    bench_weights = pd.Series(0.0, index=prices.columns)
     init_valid = prices.loc[daily_dates[0]].dropna().index.tolist()
     if init_valid:
-        bench_weights = pd.Series(0.0, index=prices.columns)
         bench_weights[init_valid] = 1.0 / len(init_valid)
 
     next_rb = 0
@@ -308,21 +337,31 @@ def run_wf_v3(params: WFv3Params,
         # Rebalance?
         if next_rb < len(rb_dates) and d >= rb_dates[next_rb]:
             t = rb_dates[next_rb]
-            cutoff = t - pd.Timedelta(days=EMBARGO_DAYS + FORWARD_HORIZON)
+            # 🚨 Bug #14 fix: EMBARGO_DAYS / FORWARD_HORIZON are in *trading*
+            # days but were being passed to pd.Timedelta(days=...) as calendar
+            # days, leaving only ~42 calendar days = ~30 trading days vs the
+            # ~60-calendar-day (42 trading) gap actually needed. Convert via
+            # 7/5 factor.
+            _gap_calendar = int((EMBARGO_DAYS + FORWARD_HORIZON) * 7 / 5)
+            cutoff = t - pd.Timedelta(days=_gap_calendar)
             train = panel[panel["date"] <= cutoff].dropna(subset=[target_col]).copy()
             test = panel[panel["date"] == t].copy()
-            # Phase 2 — survivorship correction: only consider tickers alive at t
+            # Phase 2 — survivorship correction
             # 🚨 Bug #2 fix: pass market to avoid KR-only fallback in US backtests
+            # 🚨 Bug #11 fix: filter only the TEST set with `alive at t`. Filtering
+            # training rows by `alive at t` is forward-looking — it removes from
+            # the past anything that didn't survive to t, which is the
+            # textbook survivorship leak. Training rows should keep tickers
+            # that were alive at their own row date (they ARE alive in the
+            # training data already, by definition of having a price + target).
             if params.use_survivorship_correction:
                 try:
                     from app.data.ingest_delisted_kr import universe_alive_at
                     alive = set(universe_alive_at(str(t.date()),
                                                     market=params.market))
-                    # Fail-loud: don't silently shrink universe to empty
                     if alive and len(alive) >= 50:
                         test = test[test["ticker"].isin(alive)].copy()
-                        train = train[train["ticker"].isin(alive)].copy()
-                    # else: skip survivorship correction (no delisted data)
+                        # NOTE: train is NOT filtered here — see Bug #11 fix.
                 except Exception:
                     pass
             # Phase 4-0 — KR universe filter (Gemini guide)
@@ -503,6 +542,13 @@ def run_wf_v3(params: WFv3Params,
                     "scores": [float(test_idx.loc[tk, "pred"]) for tk in target_w],
                     "exposure": exposure,
                 })
+            # 🚨 Bug #13b: refresh benchmark equal-weight at each rebalance
+            # over today's alive universe, matching what an EW index actually
+            # does (and ensuring delisting losses hit the benchmark).
+            alive_now = prices.loc[d].dropna().index.tolist()
+            if alive_now:
+                bench_weights = pd.Series(0.0, index=prices.columns)
+                bench_weights[alive_now] = 1.0 / len(alive_now)
             next_rb += 1
 
         # Phase 1B — book V4 EXIT overlay (before daily P&L)

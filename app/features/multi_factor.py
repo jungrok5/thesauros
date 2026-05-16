@@ -203,12 +203,21 @@ def compute_multifactor_score(panel: pd.DataFrame,
     for grp_name, score in group_scores.items():
         combined = combined.add(score * p.weights.get(grp_name, 0.0), fill_value=0)
 
-    # Sector neutralization
+    # Sector neutralization — only when meaningful coverage exists.
+    # 🚨 Bug #6 fix: KR panels currently have no sector mapping. Skip silently
+    # rather than producing all-NaN scores from a groupby on an all-NaN key.
     if p.sector_neutralize and "sector" in panel.columns:
-        df = panel[["date", "sector"]].copy()
-        df["score"] = combined
-        sector_mean = df.groupby(["date", "sector"])["score"].transform("mean")
-        combined = combined - sector_mean
+        coverage = float(panel["sector"].notna().mean())
+        if coverage >= 0.5:
+            df = panel[["date", "sector"]].copy()
+            df["score"] = combined
+            sector_mean = df.groupby(["date", "sector"], observed=True
+                                     )["score"].transform("mean")
+            sector_mean = sector_mean.fillna(0.0)
+            combined = combined - sector_mean
+        elif verbose:
+            print(f"  [multifactor] sector coverage {coverage:.1%} < 50% - "
+                  f"skipping sector neutralization")
 
     return combined
 

@@ -180,6 +180,14 @@ def ingest_company(corp_code: str, stock_code: str,
                         filed_date = None
                 # Period end: 12-31 for annual
                 period_end = pd.Timestamp(f"{y}-12-31").date()
+                # 🚨 Bug #10 fix: when filed_date is unknown, do NOT fall
+                # back to period_end (12/31) — that fakes a same-day filing
+                # and leaks 90-120 days of look-ahead. KR 사업보고서 is
+                # legally filed within 90 days of year-end (~3/31). Use
+                # period_end + 90 days as the conservative PIT default.
+                if filed_date is None:
+                    filed_date = (pd.Timestamp(period_end)
+                                  + pd.Timedelta(days=90)).date()
 
                 # 🚨 Bug #4 fix: lookup market from `prices` table (which one
                 # actually exists). Avoids cross-contamination if same 6-digit
@@ -194,7 +202,7 @@ def ingest_company(corp_code: str, stock_code: str,
                     "period_end": period_end,
                     "fp": "FY",
                     "fy": y,
-                    "filed_date": filed_date or period_end,
+                    "filed_date": filed_date,
                     "value": value,
                     "unit": "KRW",
                 })
