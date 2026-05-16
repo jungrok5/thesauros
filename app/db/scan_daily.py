@@ -240,63 +240,67 @@ def _list_tickers(markets: Optional[List[str]] = None,
             return [r[0] for r in cur.fetchall()]
 
 
-def _deactivate_old(conn, ticker: str, signal_types: Iterable[str]) -> None:
-    """Mark ALL previous active rows for this ticker as inactive.
+def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
+    """Write a chunk of (ticker, as_of, signals) results in one transaction.
 
-    Rationale: each scan reproduces the full active-signal set for the
-    ticker at that moment. Any signal that has disappeared (e.g. pattern
-    completed last week but no longer "live") must be deactivated even if
-    it wasn't in this scan's new signal types. Historical rows stay in
-    table (is_active=false) for analytics.
+    Two SQL statements per chunk (vs. 2 per ticker in the old per-ticker
+    pattern): a single bulk UPDATE deactivates all current rows for the
+    chunk's tickers, then a single executemany INSERT writes the new
+    signal rows.
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE scan_results SET is_active = false "
-            "WHERE ticker = %s AND is_active = true",
-            (ticker,),
-        )
-
-
-def _insert_signals(conn, ticker: str, as_of: pd.Timestamp,
-                    signals: List[Dict[str, Any]]) -> int:
     import json
-    if not signals:
+    if not chunk:
         return 0
-    rows = []
-    for s in signals:
-        rows.append((
-            ticker, s["signal_type"], s["timeframe"],
-            as_of, s.get("strength", 0.5),
-            s.get("reason"),
-            json.dumps(s.get("params") or {}, ensure_ascii=False),
-        ))
-    with conn.cursor() as cur:
-        cur.executemany(
-            """
-            INSERT INTO scan_results
-              (ticker, signal_type, timeframe, detected_at, strength, reason, params)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            rows,
-        )
+    tickers = [c["ticker"] for c in chunk]
+    rows: List[Tuple[Any, ...]] = []
+    for c in chunk:
+        for s in c["signals"]:
+            rows.append((
+                c["ticker"], s["signal_type"], s["timeframe"],
+                c["as_of"], s.get("strength", 0.5),
+                s.get("reason"),
+                json.dumps(s.get("params") or {}, ensure_ascii=False),
+            ))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scan_results SET is_active = false "
+                "WHERE ticker = ANY(%s) AND is_active = true",
+                (tickers,),
+            )
+            if rows:
+                cur.executemany(
+                    """
+                    INSERT INTO scan_results
+                      (ticker, signal_type, timeframe, detected_at,
+                       strength, reason, params)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    rows,
+                )
     return len(rows)
 
 
-def scan_one(ticker: str, years: int = 5) -> Dict[str, Any]:
+def scan_one_local(ticker: str, years: int = 5) -> Dict[str, Any]:
+    """Compute the scan result for one ticker without touching the DB.
+
+    Returns: {ticker, status, as_of?, signals?}
+      status ∈ {"ok", "insufficient_history", "no_active_signal"}
+    """
     df = load_ticker_data(ticker, years=years)
     if df is None or len(df) < 250:
-        return {"ticker": ticker, "skipped": "insufficient_history",
-                "rows": 0 if df is None else len(df)}
+        return {"ticker": ticker, "status": "insufficient_history"}
     result = analyze_ticker(ticker, df)
     signals = extract_signals(result)
     if not signals:
-        return {"ticker": ticker, "skipped": "no_active_signal", "rows": len(df)}
-    types = [s["signal_type"] for s in signals]
-    as_of = pd.Timestamp(result.get("as_of"))
-    with get_conn() as conn:
-        _deactivate_old(conn, ticker, types)
-        n = _insert_signals(conn, ticker, as_of, signals)
-    return {"ticker": ticker, "inserted": n, "signals": [s["signal_type"] for s in signals]}
+        return {"ticker": ticker, "status": "no_active_signal",
+                "as_of": pd.Timestamp(result.get("as_of"))}
+    return {
+        "ticker": ticker,
+        "status": "ok",
+        "as_of": pd.Timestamp(result.get("as_of")),
+        "signals": signals,
+    }
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -307,6 +311,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="explicit ticker list (overrides --markets)")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--years", type=int, default=5)
+    p.add_argument("--batch", type=int, default=100,
+                   help="flush DB rows every N tickers (default 100)")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -318,26 +324,52 @@ def main(argv: Optional[List[str]] = None) -> int:
     tickers = _list_tickers(markets=args.markets,
                             tickers=args.tickers,
                             limit=args.limit)
-    log.info("scanning %d tickers (years=%d)", len(tickers), args.years)
+    log.info("scanning %d tickers (years=%d, batch=%d)",
+             len(tickers), args.years, args.batch)
     t0 = time.time()
     stats = {"scanned": 0, "with_signals": 0, "inserted": 0,
              "skipped_no_history": 0, "skipped_no_signal": 0, "errors": 0}
+    chunk: List[Dict[str, Any]] = []
+    # Ensure even tickers that had a signal yesterday but no signal today get
+    # deactivated (the chunk UPDATE only touches the chunk's tickers).
+    no_signal_chunk: List[str] = []
+
+    def flush() -> None:
+        nonlocal chunk, no_signal_chunk
+        if chunk or no_signal_chunk:
+            # Deactivate "no signal today" tickers by passing an empty-signals
+            # row so the UPDATE in _flush_chunk runs for them.
+            all_chunk = chunk + [
+                {"ticker": t, "as_of": pd.Timestamp.now(), "signals": []}
+                for t in no_signal_chunk
+            ]
+            stats["inserted"] += _flush_chunk(all_chunk)
+        chunk = []
+        no_signal_chunk = []
+
     for i, t in enumerate(tickers, 1):
         try:
-            res = scan_one(t, years=args.years)
+            res = scan_one_local(t, years=args.years)
             stats["scanned"] += 1
-            if res.get("skipped") == "insufficient_history":
+            status = res["status"]
+            if status == "insufficient_history":
                 stats["skipped_no_history"] += 1
-            elif res.get("skipped") == "no_active_signal":
+                # Don't bother queueing for deactivate — likely never had rows.
+            elif status == "no_active_signal":
                 stats["skipped_no_signal"] += 1
-            elif res.get("inserted"):
+                # Still queue to deactivate any stale rows.
+                no_signal_chunk.append(t)
+            else:  # ok
                 stats["with_signals"] += 1
-                stats["inserted"] += res["inserted"]
+                chunk.append(res)
         except Exception as e:
             stats["errors"] += 1
             log.exception("scan failed for %s: %s", t, e)
-        if i % 50 == 0:
+        if (len(chunk) + len(no_signal_chunk)) >= args.batch:
+            flush()
+        if i % 100 == 0:
             log.info("  [%d/%d] %s", i, len(tickers), stats)
+    flush()
     log.info("done in %.1fs: %s", time.time() - t0, stats)
     return 0
 

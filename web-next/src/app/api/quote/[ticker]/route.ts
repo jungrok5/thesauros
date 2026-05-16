@@ -35,6 +35,11 @@ export async function GET(
       headers: { "content-type": r.headers.get("content-type") ?? "application/json" },
     });
   } catch (e) {
-    return NextResponse.json({ error: "backend unreachable", detail: String(e) }, { status: 502 });
+    console.error("quote proxy error:", e);
+    const detail = process.env.NODE_ENV === "production" ? undefined : String(e);
+    return NextResponse.json(
+      { error: "backend unreachable", ...(detail && { detail }) },
+      { status: 502 },
+    );
   }
 }
