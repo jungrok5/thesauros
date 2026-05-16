@@ -4,14 +4,28 @@ import { NextResponse } from "next/server";
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { nextUrl } = req;
+  const pathname = nextUrl.pathname;
 
   const isPublic =
-    nextUrl.pathname === "/login" ||
-    nextUrl.pathname.startsWith("/api/auth") ||
-    nextUrl.pathname.startsWith("/_next") ||
-    nextUrl.pathname === "/favicon.ico";
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico";
 
   if (isPublic) return NextResponse.next();
+
+  // API routes return JSON 401 instead of HTML redirect — needed for both
+  // client-side fetch() and test runners.
+  if (pathname.startsWith("/api/")) {
+    if (!isLoggedIn) {
+      return new NextResponse(
+        JSON.stringify({ error: "unauthorized" }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      );
+    }
+    return NextResponse.next();
+  }
+
   if (!isLoggedIn) {
     return NextResponse.redirect(new URL("/login", nextUrl));
   }

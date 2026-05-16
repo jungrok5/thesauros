@@ -1,8 +1,11 @@
 import { api } from "@/lib/api";
 import { TickerSearch } from "@/components/ticker-search";
 import { AnalysisView } from "@/components/analysis-view";
+import { WatchlistButton } from "@/components/watchlist-button";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { auth } from "@/auth";
+import { ensureUserId, getServerClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +13,45 @@ interface PageProps {
   params: Promise<{ ticker: string }>;
 }
 
+async function getWatchlistState(
+  ticker: string,
+): Promise<{ added: boolean; category: "observing" | "holding" }> {
+  const session = await auth();
+  if (!session?.user?.email) return { added: false, category: "observing" };
+  try {
+    const userId = await ensureUserId(
+      session.user.email.toLowerCase(),
+      session.user.name ?? null,
+    );
+    const sb = getServerClient();
+    const { data } = await sb
+      .from("watchlist")
+      .select("category")
+      .eq("user_id", userId)
+      .eq("ticker", ticker)
+      .maybeSingle();
+    if (data?.category) {
+      return { added: true, category: data.category as "observing" | "holding" };
+    }
+  } catch {
+    /* swallow — show un-added state */
+  }
+  return { added: false, category: "observing" };
+}
+
 export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: raw } = await params;
   const ticker = decodeURIComponent(raw).toUpperCase();
 
-  let result;
-  let error: string | null = null;
-  try {
-    result = await api.analyze(ticker, 5);
-  } catch (e) {
-    error = String(e);
-  }
+  const [result, watch] = await Promise.all([
+    api.analyze(ticker, 5).catch((e) => ({ _error: String(e) })),
+    getWatchlistState(ticker),
+  ]);
+  const error =
+    "_error" in (result as object)
+      ? (result as { _error: string })._error
+      : null;
+  const ok = !error ? (result as Awaited<ReturnType<typeof api.analyze>>) : null;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -36,7 +67,16 @@ export default async function StockDetailPage({ params }: PageProps) {
         <TickerSearch />
       </div>
 
-      {error || !result ? (
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="font-mono text-lg">{ticker}</div>
+        <WatchlistButton
+          ticker={ticker}
+          initiallyAdded={watch.added}
+          initialCategory={watch.category}
+        />
+      </div>
+
+      {error || !ok ? (
         <div className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-sm">
           <div className="font-medium text-rose-700 dark:text-rose-300">
             {ticker} 분석에 실패했습니다.
@@ -50,7 +90,7 @@ export default async function StockDetailPage({ params }: PageProps) {
           </div>
         </div>
       ) : (
-        <AnalysisView result={result} />
+        <AnalysisView result={ok} />
       )}
     </div>
   );

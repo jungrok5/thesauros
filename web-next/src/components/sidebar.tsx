@@ -8,15 +8,17 @@ import {
   LineChart,
   Search,
   Settings,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard", label: "Macro", icon: Compass },
-  { href: "/recommendations", label: "Recommendations", icon: BarChart3 },
-  { href: "/stocks", label: "Stock Search", icon: Search },
-  { href: "/backtest", label: "Backtest", icon: LineChart },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
+  { href: "/recommendations", label: "추천 종목", icon: BarChart3 },
+  { href: "/stocks", label: "종목 검색", icon: Search },
+  { href: "/watchlist", label: "관심 종목", icon: Star },
+  { href: "/backtest", label: "백테스트", icon: LineChart },
+  { href: "/settings", label: "설정", icon: Settings },
 ];
 
 export function Sidebar() {
