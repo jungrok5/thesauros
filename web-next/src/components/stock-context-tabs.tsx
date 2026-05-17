@@ -46,6 +46,45 @@ async function fetchAll(ticker: string) {
   };
 }
 
+/**
+ * Small banner that surfaces when the financials/factors row was last
+ * re-evaluated. Weekly cron is the producer (weekly-fundamentals.yml);
+ * if the row is older than ~14 days it's almost certainly stale.
+ *
+ * `isStale` is computed by the parent server component (which knows the
+ * current request time) so this render stays pure.
+ */
+function FreshnessNote({
+  updatedAt,
+  isStale,
+}: {
+  updatedAt: string | undefined;
+  isStale: boolean;
+}) {
+  if (!updatedAt) return null;
+  const cls = isStale
+    ? "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+    : "border-border bg-muted/30 text-muted-foreground";
+  return (
+    <div
+      className={`rounded-md border px-3 py-1.5 text-xs ${cls}`}
+      suppressHydrationWarning
+    >
+      {isStale ? "⚠️ 데이터가 오래됐습니다 — " : "마지막 갱신: "}
+      {new Date(updatedAt).toLocaleString("ko-KR")}
+    </div>
+  );
+}
+
+const STALE_THRESHOLD_DAYS = 14;
+
+function computeStale(updatedAt: string | undefined, nowMs: number): boolean {
+  if (!updatedAt) return false;
+  const age = (nowMs - new Date(updatedAt).getTime()) /
+    (1000 * 60 * 60 * 24);
+  return age > STALE_THRESHOLD_DAYS;
+}
+
 function NewsTab({ items }: { items: NewsRow[] }) {
   if (items.length === 0) {
     return (
@@ -128,7 +167,7 @@ function fmtPct(v: number | null | undefined, digits = 1): string {
   return `${(v * 100).toFixed(digits)}%`;
 }
 
-function FinancialsTab({ fin }: { fin: FinancialsEvalRow | null }) {
+function FinancialsTab({ fin, isStale }: { fin: FinancialsEvalRow | null; isStale: boolean }) {
   if (!fin) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
@@ -161,6 +200,7 @@ function FinancialsTab({ fin }: { fin: FinancialsEvalRow | null }) {
 
   return (
     <div className="space-y-4">
+      <FreshnessNote updatedAt={fin.updated_at} isStale={isStale} />
       {fin.summary_text && (
         <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
           {fin.summary_text}
@@ -218,7 +258,7 @@ function Metric({ label, value, eval: evl }: { label: string; value: string; eva
   );
 }
 
-function FactorsTab({ fac }: { fac: FactorsEvalRow | null }) {
+function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boolean }) {
   if (!fac) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
@@ -228,6 +268,7 @@ function FactorsTab({ fac }: { fac: FactorsEvalRow | null }) {
   }
   return (
     <div className="space-y-4">
+      <FreshnessNote updatedAt={fac.updated_at} isStale={isStale} />
       {fac.summary_text && (
         <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
           {fac.summary_text}
@@ -311,6 +352,12 @@ function GateBadge({ label, passed }: { label: string; passed: boolean | null })
 
 export async function StockContextTabs({ ticker }: Props) {
   const { news, disclosures, fin, fac } = await fetchAll(ticker);
+  // Server component runs once per request; Date.now() here is the request
+  // timestamp, which is the correct reference for staleness vs updated_at.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+  const finStale = computeStale(fin?.updated_at, now);
+  const facStale = computeStale(fac?.updated_at, now);
 
   return (
     <StockTabs
@@ -318,8 +365,8 @@ export async function StockContextTabs({ ticker }: Props) {
       tabs={[
         { key: "news",        label: "뉴스",     content: <NewsTab items={news} /> },
         { key: "disclosures", label: "공시",     content: <DisclosuresTab items={disclosures} /> },
-        { key: "financials",  label: "재무제표", content: <FinancialsTab fin={fin} /> },
-        { key: "factors",     label: "팩터",     content: <FactorsTab fac={fac} /> },
+        { key: "financials",  label: "재무제표", content: <FinancialsTab fin={fin} isStale={finStale} /> },
+        { key: "factors",     label: "팩터",     content: <FactorsTab fac={fac} isStale={facStale} /> },
       ]}
     />
   );

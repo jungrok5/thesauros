@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -239,22 +240,23 @@ def _fundamentals_for(ticker: str) -> Optional[Tuple[Dict[str, Optional[float]],
     annual totals (SEC's filing structure stores both for the same
     period_end; the Q rows are year-to-date, not single-quarter).
     """
+    # Read from Supabase fundamentals. Schema (migration 007): no `fp`
+    # column — DART ingest only stores FY rows, so PK is (ticker, concept, fy).
     try:
-        from app.data.pit_db import cursor
+        from app.db import get_conn
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT concept, fy, value FROM fundamentals "
+                    "WHERE ticker = %s ORDER BY fy DESC, filed_date DESC NULLS LAST",
+                    (ticker,),
+                )
+                rows = cur.fetchall()
     except Exception:
         return None
-    try:
-        with cursor() as con:
-            df = con.execute(
-                "SELECT concept, fy, fp, value FROM fundamentals "
-                "WHERE ticker = ? AND fp = 'FY' "
-                "ORDER BY fy DESC, filed_date DESC",
-                [ticker],
-            ).df()
-    except Exception:
+    if not rows:
         return None
-    if df.empty:
-        return None
+    df = pd.DataFrame(rows, columns=["concept", "fy", "value"])
 
     by_year: Dict[int, Dict[str, float]] = {}
     for _, r in df.iterrows():
@@ -511,27 +513,18 @@ def _all_tickers_with_fundamentals(limit: Optional[int]) -> List[str]:
     (older fundamentals rows reference codes that the FDR-derived tickers
     master may not include).
     """
-    try:
-        from app.data.pit_db import cursor
-    except Exception:
-        return []
-    with cursor() as con:
-        local = [r[0] for r in con.execute(
-            "SELECT DISTINCT ticker FROM fundamentals"
-        ).fetchall()]
-    if not local:
-        return []
+    # Both sides now live in Supabase — single query is enough.
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT ticker FROM tickers WHERE is_active = true "
-                "AND ticker = ANY(%s)", (local,)
+                "SELECT DISTINCT f.ticker FROM fundamentals f "
+                "JOIN tickers t ON t.ticker = f.ticker "
+                "WHERE t.is_active = true "
+                "ORDER BY f.ticker"
+                + (" LIMIT %s" if limit else ""),
+                (int(limit),) if limit else (),
             )
-            allowed = {r[0] for r in cur.fetchall()}
-    out = [t for t in local if t in allowed]
-    if limit:
-        out = out[: int(limit)]
-    return out
+            return [r[0] for r in cur.fetchall()]
 
 
 def main(argv: Optional[List[str]] = None) -> int:

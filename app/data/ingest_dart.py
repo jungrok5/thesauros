@@ -22,13 +22,14 @@ We store into the same `fundamentals` table by mapping concept names:
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
 
 from app.config import DART_API_KEY, DART_BASE_URL
-from app.data.pit_db import connect, cursor
+# DuckDB references removed — this module now reads/writes Supabase only.
+# DART corp_code cache lives on disk at data/dart_corp_code.parquet.
 
 
 # Account → XBRL-style concept mapping
@@ -52,21 +53,17 @@ DART_CONCEPT_MAP = {
 
 
 def _ticker_market_lookup(stock_code: str) -> Optional[str]:
-    """🚨 Bug #4 fix: stock_code → real ticker (with .KS or .KQ).
-
-    Lookup which market the code actually exists in `prices` table.
-    Returns None if neither exists.
-    """
-    from app.data.pit_db import cursor
-    with cursor() as con:
-        # Try KOSPI first (more common for blue chips)
-        for suffix in (".KS", ".KQ"):
-            r = con.execute(
-                "SELECT 1 FROM prices WHERE ticker = ? LIMIT 1",
-                [f"{stock_code}{suffix}"],
-            ).fetchone()
-            if r:
-                return f"{stock_code}{suffix}"
+    """stock_code → real ticker (with .KS or .KQ) via Supabase tickers table."""
+    from app.db import get_conn
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            for suffix in (".KS", ".KQ"):
+                cur.execute(
+                    "SELECT 1 FROM tickers WHERE ticker = %s LIMIT 1",
+                    (f"{stock_code}{suffix}",),
+                )
+                if cur.fetchone():
+                    return f"{stock_code}{suffix}"
     return None
 
 
@@ -208,19 +205,42 @@ def ingest_company(corp_code: str, stock_code: str,
 
     if not rows:
         return 0
-    df = pd.DataFrame(rows)
-    con = connect()
-    try:
-        con.register("df_in", df)
-        con.execute("""
-            INSERT OR REPLACE INTO fundamentals
-              (ticker, concept, period_end, fp, fy, filed_date, value, unit)
-            SELECT ticker, concept, period_end, fp, fy, filed_date, value, unit
-            FROM df_in
-        """)
-    finally:
-        con.close()
+    _upsert_fundamentals(rows)
     return len(rows)
+
+
+def _upsert_fundamentals(rows: List[Dict[str, Any]]) -> None:
+    """Upsert DART rows into Supabase `fundamentals`. Used to live in
+    DuckDB (one-shot migrated to Supabase via migrate_duckdb_to_supabase);
+    the cron now writes directly so the data stays fresh.
+
+    The Supabase table's primary key is (ticker, concept, fy). DART rows
+    arrive with fp='FY' (annual report), one row per ticker×concept×fy.
+    """
+    from app.db import get_conn
+    payload = [
+        (r["ticker"], r["concept"], r["fy"], r.get("period_end"),
+         r["filed_date"], r["value"], r.get("unit") or "")
+        for r in rows
+        if (r.get("fp") or "FY") == "FY"
+    ]
+    if not payload:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO fundamentals
+                  (ticker, concept, fy, period_end, filed_date, value, unit)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ticker, concept, fy) DO UPDATE SET
+                  period_end = EXCLUDED.period_end,
+                  filed_date = EXCLUDED.filed_date,
+                  value = EXCLUDED.value,
+                  unit = EXCLUDED.unit
+                """,
+                payload,
+            )
 
 
 def ingest_universe(stock_codes: Optional[List[str]] = None,
@@ -240,14 +260,15 @@ def ingest_universe(stock_codes: Optional[List[str]] = None,
     map_df = map_df[map_df["stock_code"].str.match(r"^\d{6}$", na=False)]
 
     if stock_codes is None:
-        # All KRX stocks already in `prices` table
-        with cursor() as con:
-            stock_codes = [
-                r[0].split(".")[0] for r in con.execute(
-                    "SELECT DISTINCT ticker FROM prices "
-                    "WHERE ticker LIKE '%.KS' OR ticker LIKE '%.KQ'"
-                ).fetchall()
-            ]
+        # All KRX tickers already known to Supabase.
+        from app.db import get_conn
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT ticker FROM tickers "
+                    "WHERE market IN ('KOSPI', 'KOSDAQ') AND is_active = true"
+                )
+                stock_codes = [r[0].split(".")[0] for r in cur.fetchall()]
 
     years = years or list(range(2018, 2026))
     counts: Dict[str, int] = {}
@@ -273,3 +294,36 @@ def ingest_universe(stock_codes: Optional[List[str]] = None,
         time.sleep(0.06)
 
     return counts
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point so cron can run `python -m app.data.ingest_dart`."""
+    import argparse
+    import logging
+    p = argparse.ArgumentParser(description="Ingest KR fundamentals from DART → Supabase.")
+    p.add_argument("--stock-codes", nargs="+", default=None,
+                   help="explicit 6-digit stock codes (default: all KR tickers in Supabase)")
+    p.add_argument("--limit", type=int, default=None,
+                   help="cap the number of tickers (debug)")
+    p.add_argument("--years", nargs="+", type=int, default=None,
+                   help="fiscal years to fetch (default 2018..current)")
+    p.add_argument("--verbose", action="store_true")
+    args = p.parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    codes = args.stock_codes
+    if args.limit and codes:
+        codes = codes[: int(args.limit)]
+    counts = ingest_universe(stock_codes=codes, years=args.years,
+                             verbose=args.verbose or True)
+    total = sum(v for v in counts.values() if v > 0)
+    ok = sum(1 for v in counts.values() if v > 0)
+    print(f"done: {ok}/{len(counts)} tickers, {total} rows inserted")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
