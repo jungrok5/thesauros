@@ -222,18 +222,84 @@ python -m app.db.vapid_keys
 
 **현 상태: Supabase 데이터 한도 초과 — 조치 필요 (§10).**
 
-## 10. 데이터 다이어트 (Supabase 500MB 한도 대응)
+## 10. 데이터 다이어트 + Supabase Free→Pro→Free 사이클
 
-`bars_daily` 가 570MB (총 622MB 중 91%) — 9,570 종목 × 일봉.
+`bars_daily` 가 비대 (5년 × 9.5K 종목 = ~1.7GB potential). 자유 한도 500MB
+를 넘으면 **Supabase 가 DB 를 자동 read-only 모드로 잠궈서 모든 cron 이
+멈춥니다**. 다음 절차로 한 번 정리:
 
-| 옵션 | 효과 | 코드 변경 |
-|---|---|---|
-| **A. 보존 기간 축소 5y → 2y** | ~230MB로 감소 (절반 이하) | scan_daily 호출 시 `--years 2`, BookChart 의 default `years=2` 유지 |
-| **B. 종목 축소** (관심+추천+활성만) | 강도 큼 | seed_tickers 에 active 필터 추가 |
-| **C. Supabase Pro $25/월** | 8GB | 없음 |
-| **D. 외부 무료 Postgres** (Neon, Aiven) | 새 무료 한도 | DSN 만 교체 |
+### 10.1 Universe 축소 결정 (이미 적용됨, commit 51d8a56)
 
-A안이 가장 단순. cron 의 `--years 5` 를 `--years 2` 로 바꾸고 오래된 행을 한 번 정리:
-```sql
-DELETE FROM bars_daily WHERE bar_date < now() - interval '2 years';
+cron 명령:
 ```
+python -m app.db.scan_daily --markets KOSPI KOSDAQ NASDAQ NYSE \
+  --sp500-only --years 2
+```
+- KR 전체 (KOSPI 923 + KOSDAQ 1,778) + 미국 S&P 500 = 약 3,200 종목
+- 2년치 일봉 ≈ 230MB
+- US 중소형주는 cron 대상에서 제외 (사이트엔 "분석 데이터 없음" 표시)
+- 책의 240주 MA (=4.6년) 는 일부 종목에서 제한 → 144주 MA 로 대체
+
+### 10.2 한 번에 정리 (read-only 모드라면 먼저 Pro 업그레이드 필요)
+
+DB 가 이미 read-only 면 Supabase Dashboard → Project Settings → Plan →
+**Pro 로 임시 업그레이드** ($25/월. 일할 계산되어 며칠만 쓰고 다운그레이드
+하면 일부만 청구). 그 다음:
+
+```cmd
+python -m scripts.cleanup_after_pro --execute
+```
+
+이 스크립트가 다음을 순차 실행:
+1. `DELETE FROM bars_daily WHERE bar_date < CURRENT_DATE - INTERVAL '2 years'`
+2. `DELETE FROM bars_daily WHERE ticker NOT IN (KR 전체 + S&P 500)`
+3. `VACUUM FULL bars_daily` (디스크 실제 회수)
+4. 최종 사이즈 출력
+
+500MB 이하면 Pro → Free 다운그레이드 안전. 사이즈 측정:
+```python
+python -c "from app.db import get_conn; ..."
+```
+또는 Supabase dashboard → Database → Reports.
+
+### 10.3 다른 옵션
+
+| 옵션 | 효과 | 비용 |
+|---|---|---|
+| **A. 위 절차 (Pro 1개월 + 정리 + Free 복귀)** | 영구적, 한 번만 | $25 1회 |
+| B. Supabase Pro 유지 | 8GB DB, auto-pause 없음 | $25/월 |
+| C. Neon Postgres (3GB) | 새 무료 한도, DSN 교체 | $0 |
+
+---
+
+## 11. GitHub Actions billing / Public 전환
+
+Private repo 는 GitHub Actions 무료 2,000분/월. 우리 측정 ~1,500분/월
+필요라 빠듯하고, 결제 실패 시 즉시 cron 정지:
+> "The job was not started because recent account payments have failed
+> or your spending limit needs to be increased."
+
+해결책:
+- **Settings → Billing & plans** 에서 결제 수단 갱신
+- 또는 **repo 를 Public 전환** (Actions 무제한)
+
+### Public 전환 안전성 (이미 확인)
+
+- `.env`, `.env.local` 모두 `.gitignore` 됨 ✅
+- git history 에 hardcoded secret 패턴 0건 ✅
+- tracked 파일 중 `.env.example` (placeholder 만) ✅
+- 코드 안 `eyJ...` 같은 JWT/key 0건 ✅
+
+→ 안전하게 public 전환 가능. **Repo Settings → Danger Zone → Change visibility**.
+
+### 12. 로컬 cron (billing 풀리기 전 임시)
+
+PC 가 켜져있는 동안 매일 한 번 실행:
+
+```cmd
+run-cron-daily.bat
+```
+
+5개 step (scan_daily / publish_macro / ingest_themes / investor_flow /
+telegram_worker) 을 GitHub Actions cron 과 동일한 순서로 실행. 작업
+스케줄러 (Windows) 에 등록하면 자동화 가능 — 매일 16:30 KST trigger.
