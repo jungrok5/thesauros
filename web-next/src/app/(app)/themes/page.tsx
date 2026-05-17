@@ -102,9 +102,10 @@ export default async function ThemesPage() {
 
           <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 auto-rows-[100px] gap-2">
             {rows.slice(0, 60).map((r) => (
-              <div
+              <Link
                 key={r.theme_id}
-                className={`rounded-lg p-2 border border-border/30 flex flex-col justify-between overflow-hidden ${toneFor(r.change_pct_1d)} ${sizeFor(r.members)}`}
+                href={`/themes/${r.theme_id}`}
+                className={`rounded-lg p-2 border border-border/30 flex flex-col justify-between overflow-hidden hover:opacity-90 transition-opacity ${toneFor(r.change_pct_1d)} ${sizeFor(r.members)}`}
               >
                 <div className="font-medium leading-tight truncate" title={r.name}>
                   {r.name}
@@ -121,12 +122,10 @@ export default async function ThemesPage() {
                 </div>
                 {r.leading_ticker && (
                   <div className="text-[10px] opacity-80 truncate mt-0.5" title={r.leading_name ?? ""}>
-                    <Link href={`/stocks/${encodeURIComponent(r.leading_ticker)}`} className="hover:underline">
-                      ↑ {r.leading_name}
-                    </Link>
+                    ↑ {r.leading_name}
                   </div>
                 )}
-              </div>
+              </Link>
             ))}
           </div>
 

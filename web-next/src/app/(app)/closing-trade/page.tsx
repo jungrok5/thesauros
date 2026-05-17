@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { TradeLogForm } from "@/components/trade-log-form";
 
 export const dynamic = "force-dynamic";
 
@@ -249,6 +250,7 @@ export default async function ClosingTradePage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           매매 일지 ({log.length})
         </h2>
+        <TradeLogForm />
         {log.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
             아직 기록된 매매가 없습니다.

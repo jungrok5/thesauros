@@ -65,13 +65,28 @@ export async function POST(req: NextRequest) {
   const entryDate = body.entry_date && DATE_RE.test(String(body.entry_date))
     ? String(body.entry_date)
     : null;
+  const targetPrice = Number.isFinite(Number(body.target_price)) && Number(body.target_price) > 0
+    ? Number(body.target_price) : null;
+  const targetPct = Number.isFinite(Number(body.target_pct_from_entry))
+    ? Number(body.target_pct_from_entry) : null;
+  const stopPrice = Number.isFinite(Number(body.stop_price)) && Number(body.stop_price) > 0
+    ? Number(body.stop_price) : null;
+  const stopPct = Number.isFinite(Number(body.stop_pct_from_entry))
+    ? Number(body.stop_pct_from_entry) : null;
 
   const userId = await ensureUserId(user.email, user.name);
   const sb = getServerClient();
   const { data, error } = await sb
     .from("watchlist")
     .upsert(
-      { user_id: userId, ticker, category, note, entry_price: entryPrice, entry_date: entryDate },
+      {
+        user_id: userId, ticker, category, note,
+        entry_price: entryPrice, entry_date: entryDate,
+        target_price: targetPrice,
+        target_pct_from_entry: targetPct,
+        stop_price: stopPrice,
+        stop_pct_from_entry: stopPct,
+      },
       { onConflict: "user_id,ticker" },
     )
     .select()

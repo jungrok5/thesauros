@@ -37,6 +37,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_ROOT / ".env")
 
 from app.db import get_conn   # noqa: E402
+from app.db.webpush import is_available as webpush_available, send_many  # noqa: E402
 
 log = logging.getLogger("telegram_worker")
 
@@ -102,26 +103,117 @@ def send_telegram(chat_id: str, text: str, *, token: Optional[str] = None) -> bo
 
 # ---- DB queries --------------------------------------------------------
 
-def _users_with_telegram() -> List[Dict[str, Any]]:
+def _users_with_alerts() -> List[Dict[str, Any]]:
+    """Users with at least one delivery channel (telegram OR web-push)."""
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, telegram_chat_id FROM users "
-                "WHERE telegram_chat_id IS NOT NULL"
+                "SELECT u.id, u.email, u.telegram_chat_id, "
+                "       EXISTS(SELECT 1 FROM push_subscriptions ps "
+                "              WHERE ps.user_id = u.id) AS has_push "
+                "FROM users u "
+                "WHERE u.telegram_chat_id IS NOT NULL "
+                "   OR EXISTS(SELECT 1 FROM push_subscriptions ps "
+                "             WHERE ps.user_id = u.id)"
             )
             cols = [d[0] for d in cur.description]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _push_subs_for(user_id: str) -> List[Dict[str, Any]]:
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT endpoint, p256dh, auth FROM push_subscriptions "
+                "WHERE user_id = %s",
+                (user_id,),
+            )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _delete_push_subs(endpoints: List[str]) -> None:
+    if not endpoints:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = ANY(%s)",
+                (endpoints,),
+            )
 
 
 def _watchlist_active(user_id: str) -> List[Dict[str, Any]]:
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT ticker, category FROM watchlist "
+                "SELECT ticker, category, entry_price, "
+                "       target_price, target_pct_from_entry, "
+                "       stop_price,   stop_pct_from_entry,   "
+                "       target_hit_at, stop_hit_at "
+                "FROM watchlist "
                 "WHERE user_id = %s AND alerts_enabled = true",
                 (user_id,),
             )
-            return [{"ticker": r[0], "category": r[1]} for r in cur.fetchall()]
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _user_prefs(user_id: str) -> Dict[str, bool]:
+    """Returns alert_preferences row as dict; missing row = all-on defaults."""
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT enable_enter, enable_pyramid, enable_warn, "
+                "enable_exit, enable_ma240_break, enable_quarter_25_break, "
+                "enable_daily_top5 FROM alert_preferences WHERE user_id = %s",
+                (user_id,),
+            )
+            r = cur.fetchone()
+            if not r:
+                return {k: True for k in (
+                    "enable_enter", "enable_pyramid", "enable_warn",
+                    "enable_exit", "enable_ma240_break",
+                    "enable_quarter_25_break", "enable_daily_top5",
+                )}
+            keys = [d[0] for d in cur.description]
+            return {k: bool(v) for k, v in zip(keys, r)}
+
+
+def _latest_close(ticker: str) -> Optional[float]:
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT close FROM bars_daily WHERE ticker = %s "
+                "ORDER BY bar_date DESC LIMIT 1",
+                (ticker,),
+            )
+            r = cur.fetchone()
+            return float(r[0]) if r and r[0] is not None else None
+
+
+def _mark_hit(user_id: str, ticker: str, column: str) -> None:
+    if column not in ("target_hit_at", "stop_hit_at"):
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE watchlist SET {column} = now() "
+                "WHERE user_id = %s AND ticker = %s",
+                (user_id, ticker),
+            )
+
+
+_PREF_BY_ALERT = {
+    "enter":   "enable_enter",
+    "pyramid": "enable_pyramid",
+    "warn":    "enable_warn",
+    "exit":    "enable_exit",
+    "target":  "enable_enter",          # treat 🎯 as enter-class
+    "stop":    "enable_exit",           # treat 🛑 as exit-class
+    "quarter_25": "enable_quarter_25_break",
+    "ma240":   "enable_ma240_break",
+}
 
 
 def _active_signals_for(tickers: List[str]) -> List[Dict[str, Any]]:
@@ -181,68 +273,138 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
         "pyramid":  "🟡 [추가매수 신호]",
         "warn":     "🟠 [경고]",
         "exit":     "🔴 [청산 권장]",
+        "target":   "🎯 [목표가 도달]",
+        "stop":     "🛑 [손절선 이탈]",
     }.get(alert_type, "📊")
     title = f"{badge} {ticker} {name or ''}"
     body = sig.get("reason") or sig.get("signal_type", "")
     strength = sig.get("strength")
     tf = sig.get("timeframe")
-    lines = [
-        f"<b>{title}</b>",
-        f"📊 {body}",
-        f"⏱ {tf} · 강도 {float(strength):.2f}" if strength is not None else f"⏱ {tf}",
-    ]
+    lines = [f"<b>{title}</b>", f"📊 {body}"]
+    if strength is not None:
+        lines.append(f"⏱ {tf} · 강도 {float(strength):.2f}")
+    elif tf:
+        lines.append(f"⏱ {tf}")
     return "\n".join(lines)
+
+
+def _check_price_targets(
+    user_id: str, w: Dict[str, Any]
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """Returns list of (alert_type, sig) for any newly-hit target/stop."""
+    out: List[Tuple[str, Dict[str, Any]]] = []
+    ticker = w["ticker"]
+    last = _latest_close(ticker)
+    if last is None:
+        return out
+
+    # ---- Target (one-shot: only if not already hit) ------------------
+    if w.get("target_hit_at") is None:
+        tgt = w.get("target_price")
+        if tgt is None and w.get("entry_price") and w.get("target_pct_from_entry") is not None:
+            tgt = float(w["entry_price"]) * (1.0 + float(w["target_pct_from_entry"]))
+        if tgt is not None and last >= float(tgt):
+            _mark_hit(user_id, ticker, "target_hit_at")
+            out.append(("target", {
+                "reason": f"종가 {last:,.2f} ≥ 목표 {float(tgt):,.2f}",
+                "timeframe": "daily",
+                "detected_at": "now()",
+                "strength": None,
+                "signal_type": "watchlist_target_hit",
+            }))
+
+    # ---- Stop (one-shot) --------------------------------------------
+    if w.get("stop_hit_at") is None:
+        stop = w.get("stop_price")
+        if stop is None and w.get("entry_price") and w.get("stop_pct_from_entry") is not None:
+            stop = float(w["entry_price"]) * (1.0 + float(w["stop_pct_from_entry"]))
+        if stop is not None and last <= float(stop):
+            _mark_hit(user_id, ticker, "stop_hit_at")
+            out.append(("stop", {
+                "reason": f"종가 {last:,.2f} ≤ 손절 {float(stop):,.2f}",
+                "timeframe": "daily",
+                "detected_at": "now()",
+                "strength": None,
+                "signal_type": "watchlist_stop_hit",
+            }))
+    return out
 
 
 def run_once(dry_run: bool = False) -> Dict[str, int]:
     stats = {"users": 0, "watched_tickers": 0, "new_alerts": 0, "sent": 0,
-             "skipped_existing": 0}
+             "pushed": 0, "skipped_existing": 0}
 
-    users = _users_with_telegram()
+    users = _users_with_alerts()
     stats["users"] = len(users)
     if not users:
-        log.info("no users with telegram_chat_id")
+        log.info("no users with telegram or push subscriptions")
         return stats
 
     for u in users:
         watch = _watchlist_active(u["id"])
         if not watch:
             continue
+        prefs = _user_prefs(u["id"])
         tickers = [w["ticker"] for w in watch]
         category_by_ticker = {w["ticker"]: w["category"] for w in watch}
+        watch_by_ticker = {w["ticker"]: w for w in watch}
         stats["watched_tickers"] += len(tickers)
         signals = _active_signals_for(tickers)
-        if not signals:
-            continue
-        # group by (ticker, alert_type) — keep highest strength
+
+        # group scan signals by (ticker, alert_type) — keep highest strength
         best: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for s in signals:
             cls = classify(s["signal_type"])
             if not cls:
                 continue
             atype, sev = cls
-            # For PYRAMID (bullish pattern), only fire if user is holding
             if atype == "pyramid" and category_by_ticker.get(s["ticker"]) != "holding":
                 continue
             k = (s["ticker"], atype)
             if k not in best or float(s["strength"] or 0) > float(best[k]["strength"] or 0):
                 best[k] = {**s, "alert_type": atype, "severity": sev}
 
+        # add per-user price target / stop alerts (one-shot via *_hit_at)
+        for w in watch:
+            for atype, sig in _check_price_targets(u["id"], w):
+                sev = "critical" if atype == "stop" else "info"
+                best[(w["ticker"], atype)] = {
+                    **sig, "alert_type": atype, "severity": sev,
+                    "ticker": w["ticker"],
+                }
+
         for (ticker, atype), sig in best.items():
-            sig_at = sig["detected_at"]
-            if _already_alerted(u["id"], ticker, atype, sig_at):
+            # respect alert_preferences toggles
+            pref_key = _PREF_BY_ALERT.get(atype)
+            if pref_key and not prefs.get(pref_key, True):
+                continue
+            sig_at = sig.get("detected_at") or "1970-01-01"
+            if sig_at != "now()" and _already_alerted(u["id"], ticker, atype, sig_at):
                 stats["skipped_existing"] += 1
                 continue
             name = _ticker_name(ticker)
             msg = format_message(ticker, name, atype, sig)
             sent = False
             if not dry_run:
-                sent = send_telegram(u["telegram_chat_id"], msg)
+                if u.get("telegram_chat_id"):
+                    sent = send_telegram(u["telegram_chat_id"], msg)
+                if u.get("has_push") and webpush_available():
+                    subs = _push_subs_for(u["id"])
+                    payload = {
+                        "title": f"{ticker} {name or ''}".strip(),
+                        "body": (sig.get("reason") or sig.get("signal_type") or "")[:200],
+                        "tag": f"{atype}:{ticker}",
+                        "url": f"/stocks/{ticker}",
+                        "severity": sig["severity"],
+                    }
+                    result = send_many(subs, payload)
+                    stats["pushed"] += len(result["sent"])
+                    _delete_push_subs(result["gone"])
                 _insert_alert(u["id"], ticker, atype, msg, sig["severity"], sent)
             stats["new_alerts"] += 1
             if sent:
                 stats["sent"] += 1
-                time.sleep(0.3)   # avoid telegram rate limit (~30 msg/sec, well under)
+                time.sleep(0.3)
     return stats
 
 

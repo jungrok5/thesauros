@@ -17,6 +17,16 @@ export const metadata: Metadata = {
   title: "Thesauros — 캔들차트 × ML 종합 분석",
   description:
     "저자 『추세추종 매매 룰』 룰 기반 자동화 + ML 랭킹.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Thesauros",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport = {
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({
@@ -33,7 +43,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground">
+      <body
+        suppressHydrationWarning
+        className="min-h-full bg-background text-foreground"
+      >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
