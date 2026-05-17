@@ -2,13 +2,14 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+const NOOP = () => () => {};
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  // Hydration guard: false on server / first client paint, true after mount.
+  const mounted = useSyncExternalStore(NOOP, () => true, () => false);
 
   const isDark = mounted && resolvedTheme === "dark";
 
