@@ -5,9 +5,6 @@ REM
 REM  Site reads Supabase directly (no FastAPI). Daily cron lives in
 REM  GitHub Actions in prod. Telegram bot uses webhook in prod (Vercel
 REM  route /api/telegram/webhook), so no long-poll worker needed.
-REM
-REM  For LOCAL bot testing only (no public HTTPS), open a separate
-REM  window and run `run-bot.bat`.
 REM ===================================================================
 setlocal
 cd /d "%~dp0"
@@ -19,7 +16,6 @@ echo =====================================================
 echo   Thesauros - dev stack
 echo =====================================================
 echo   Frontend : http://localhost:%FRONTEND_PORT%
-echo   Bot      : long-poll (telegram)
 echo =====================================================
 echo.
 
@@ -42,8 +38,6 @@ if not errorlevel 1 echo [WARN] Port %FRONTEND_PORT% already in use. Frontend ma
 
 REM --- start frontend ---
 echo Starting Next.js frontend on :%FRONTEND_PORT% ...
-echo (Production uses Telegram Webhook → no long-poll bot needed.
-echo  For local bot testing run `run-bot.bat` in a separate window.)
 start "thesauros-frontend" cmd /k "cd web-next && npm run dev -- --port %FRONTEND_PORT%"
 timeout /t 6 /nobreak >nul
 

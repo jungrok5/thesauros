@@ -1,9 +1,9 @@
 /**
  * Telegram helpers — token consume + sendMessage.
  *
- * Used by both the long-poll bot (legacy app/db/telegram_bot.py) via
- * /api/telegram/consume, AND by the webhook route (/api/telegram/webhook)
- * which receives Telegram Update payloads directly.
+ * Used by the webhook route (/api/telegram/webhook), which receives
+ * Telegram Update payloads directly and binds the sender's chat_id to
+ * the user via consumeLinkToken().
  */
 import { getServerClient } from "@/lib/supabase";
 

@@ -1,12 +1,12 @@
 /**
  * POST /api/telegram/link-token
- *   Issues a one-time, 1-hour link token for the current user. User pastes
- *   "/link <token>" to the bot, which then calls /api/telegram/consume
- *   (with the shared TELEGRAM_LINK_SECRET) to write `telegram_chat_id`.
+ *   Issues a one-time, 1-hour link token for the current user. The user
+ *   pastes "/link <token>" to the bot; Telegram forwards it to our
+ *   /api/telegram/webhook handler, which binds the chat_id to the user.
  *
  * GET  /api/telegram/link-token
- *   Returns the current user's most recent unexpired token (if any), so the
- *   settings page can display it on refresh without forcing re-issue.
+ *   Returns the current user's most recent unexpired token (if any), so
+ *   the settings page can display it on refresh without forcing re-issue.
  */
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";

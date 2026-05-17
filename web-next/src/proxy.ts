@@ -16,8 +16,6 @@ export default auth((req) => {
     pathname.startsWith("/api/e2e-test/") ||
     // Telegram webhook — guarded inside the handler by TELEGRAM_WEBHOOK_SECRET.
     pathname === "/api/telegram/webhook" ||
-    // Bot consume endpoint (legacy long-poll) — guarded by TELEGRAM_LINK_SECRET.
-    pathname === "/api/telegram/consume" ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
