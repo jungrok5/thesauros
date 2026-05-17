@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -34,61 +35,79 @@ from app.db import get_conn   # noqa: E402
 
 log = logging.getLogger("ingest_news")
 
-NAVER_MOBILE_NEWS = ("https://m.stock.naver.com/api/news/stock/{code}"
-                     "?pageSize=30&page=1")
+# 종목 뉴스 (curated "stock-specific" tab) on the desktop Naver Finance.
+# The mobile API at m.stock.naver.com mixed market-wide articles into the
+# per-stock feed; the desktop news tab only lists items genuinely tagged to
+# this ticker. URL params: code=6digit, page=1, sm=title_entity_id.basic.
+NAVER_STOCK_NEWS_TAB = (
+    "https://finance.naver.com/item/news_news.naver"
+    "?code={code}&page=1&sm=title_entity_id.basic&clusterId="
+)
 DART_LIST = "https://opendart.fss.or.kr/api/list.json"
 
 
 # ----------------------------------------------------------------------------
-# Naver Finance news (KR) — mobile JSON API (more reliable than HTML scrape)
+# Naver Finance news (KR) — desktop "종목 뉴스" tab (HTML)
 # ----------------------------------------------------------------------------
 
 def fetch_naver_news(stock_code: str) -> List[Dict[str, Any]]:
-    """Returns latest news titles+links for a KR stock_code (6-digit)."""
-    url = NAVER_MOBILE_NEWS.format(code=stock_code)
+    """Latest news titles+links for a KR 6-digit `stock_code`.
+
+    Scrapes the curated 종목 뉴스 tab on Naver Finance (not the broader
+    mobile feed, which surfaced market-wide stories that merely mentioned
+    the ticker name).
+    """
+    url = NAVER_STOCK_NEWS_TAB.format(code=stock_code)
     try:
         r = requests.get(
             url, timeout=15,
             headers={
                 "User-Agent": "Mozilla/5.0 (research)",
-                "Referer": "https://m.stock.naver.com/",
+                "Referer": "https://finance.naver.com/",
             },
         )
         r.raise_for_status()
-        groups = r.json()
+        # Page is EUC-KR despite the modern Korean web defaulting to UTF-8.
+        r.encoding = r.apparent_encoding or "euc-kr"
+        html = r.text
     except Exception as e:
         log.debug("naver fetch %s: %s", stock_code, e)
         return []
 
+    soup = BeautifulSoup(html, "lxml")
+    rows = soup.select("table.type5 tr")
     out: List[Dict[str, Any]] = []
-    # Response is a list of {total, items: [...]} groups; flatten.
-    if isinstance(groups, list):
-        for grp in groups:
-            for it in grp.get("items", []) if isinstance(grp, dict) else []:
-                title = (it.get("title") or it.get("titleFull") or "").strip()
-                if not title:
+    for tr in rows:
+        title_cell = tr.select_one("td.title a")
+        info_cell = tr.select_one("td.info")
+        date_cell = tr.select_one("td.date")
+        if not title_cell:
+            continue
+        title = title_cell.get_text(strip=True)
+        if not title:
+            continue
+        href = title_cell.get("href") or ""
+        article_url = (
+            f"https://finance.naver.com{href}" if href.startswith("/") else href
+        )
+        source = info_cell.get_text(strip=True) if info_cell else None
+        published_iso: Optional[str] = None
+        if date_cell:
+            dt_text = date_cell.get_text(strip=True)
+            for fmt in ("%Y.%m.%d %H:%M", "%Y.%m.%d"):
+                try:
+                    dt = datetime.strptime(dt_text, fmt)
+                    dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+                    published_iso = dt.isoformat()
+                    break
+                except ValueError:
                     continue
-                article_url = (
-                    it.get("mobileNewsUrl")
-                    or f"https://n.news.naver.com/mnews/article/{it.get('officeId')}/{it.get('articleId')}"
-                )
-                source = (it.get("officeName") or "").strip() or None
-                dt_raw = (it.get("datetime") or "").strip()
-                published_iso: Optional[str] = None
-                if dt_raw:
-                    try:
-                        # Format: "YYYYMMDDHHMM"
-                        dt = datetime.strptime(dt_raw[:12], "%Y%m%d%H%M")
-                        dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
-                        published_iso = dt.isoformat()
-                    except Exception:
-                        published_iso = None
-                out.append({
-                    "title": title,
-                    "url": article_url,
-                    "source": source,
-                    "published_at": published_iso,
-                })
+        out.append({
+            "title": title,
+            "url": article_url,
+            "source": source or None,
+            "published_at": published_iso,
+        })
     return out
 
 

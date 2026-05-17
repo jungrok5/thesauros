@@ -131,10 +131,13 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <>
+      {/* Hamburger trigger — positioned to align with the header on the
+          left edge. `fixed` + matching `top-2` keeps it visually inside
+          the sticky header without being a DOM child of it. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="md:hidden rounded-md border border-border p-2 hover:bg-muted"
+        className="md:hidden fixed top-2 left-3 z-40 rounded-md border border-border bg-background p-2 hover:bg-muted"
         aria-label="메뉴 열기"
         aria-expanded={open}
         aria-controls="mobile-nav-drawer"
@@ -147,19 +150,21 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
         <>
           {/* backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            className="fixed inset-0 z-50 bg-black/60 md:hidden"
             onClick={() => setOpen(false)}
             aria-hidden="true"
             data-testid="mobile-nav-backdrop"
           />
-          {/* drawer */}
+          {/* drawer — bg-card has a strict CSS token in globals.css; using
+              it here (and not bg-background) keeps the drawer fully opaque
+              even when a translucent layer is rendered behind it. */}
           <aside
             id="mobile-nav-drawer"
             role="dialog"
             aria-modal="true"
             aria-label="메뉴"
             data-testid="mobile-nav-drawer"
-            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-border px-3 py-6 flex flex-col gap-6 md:hidden shadow-xl"
+            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-card text-card-foreground border-r border-border px-3 py-6 flex flex-col gap-6 md:hidden shadow-2xl"
           >
             <div className="flex items-center justify-between">
               <Brand />
