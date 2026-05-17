@@ -1,21 +1,22 @@
 @echo off
 REM ===================================================================
-REM  Thesauros - full dev stack (backend + frontend + telegram bot)
+REM  Thesauros - dev stack (frontend + telegram bot)
 REM
-REM  Opens 3 separate console windows so each process logs are isolated
-REM  and Ctrl+C in this window will cleanly stop ALL three.
+REM  After Phase 6 cleanup there is no FastAPI backend — the site reads
+REM  Supabase directly. Daily/weekly cron is GitHub Actions in prod.
+REM
+REM  Opens 2 separate console windows so each process's logs are
+REM  isolated; Ctrl+C in this window will cleanly stop BOTH.
 REM ===================================================================
 setlocal
 cd /d "%~dp0"
 
-set BACKEND_PORT=8001
 set FRONTEND_PORT=3000
 
 echo.
 echo =====================================================
-echo   Thesauros - full dev stack
+echo   Thesauros - dev stack
 echo =====================================================
-echo   Backend  : http://127.0.0.1:%BACKEND_PORT%
 echo   Frontend : http://localhost:%FRONTEND_PORT%
 echo   Bot      : long-poll (telegram)
 echo =====================================================
@@ -34,24 +35,17 @@ if not exist "web-next\node_modules" (
     exit /b 1
 )
 
-REM --- check ports already in use ---
-netstat -ano | findstr :%BACKEND_PORT% | findstr LISTENING >nul
-if not errorlevel 1 echo [WARN] Port %BACKEND_PORT% already in use. Backend may fail.
+REM --- check port already in use ---
 netstat -ano | findstr :%FRONTEND_PORT% | findstr LISTENING >nul
 if not errorlevel 1 echo [WARN] Port %FRONTEND_PORT% already in use. Frontend may fail.
 
-REM --- start backend ---
-echo [1/3] Starting FastAPI backend on :%BACKEND_PORT% ...
-start "thesauros-backend" cmd /k ".venv\Scripts\python.exe -m uvicorn app.api.server:app --reload --host 127.0.0.1 --port %BACKEND_PORT%"
-timeout /t 3 /nobreak >nul
-
 REM --- start frontend ---
-echo [2/3] Starting Next.js frontend on :%FRONTEND_PORT% ...
+echo [1/2] Starting Next.js frontend on :%FRONTEND_PORT% ...
 start "thesauros-frontend" cmd /k "cd web-next && npm run dev -- --port %FRONTEND_PORT%"
 timeout /t 6 /nobreak >nul
 
 REM --- start telegram bot worker ---
-echo [3/3] Starting Telegram bot worker (long-poll) ...
+echo [2/2] Starting Telegram bot worker (long-poll) ...
 start "thesauros-bot" cmd /k ".venv\Scripts\python.exe -m app.db.telegram_bot --verbose"
 timeout /t 2 /nobreak >nul
 
@@ -62,8 +56,8 @@ start http://localhost:%FRONTEND_PORT%
 
 echo.
 echo =====================================================
-echo   All servers running in their own windows.
-echo   Press any key in THIS window to STOP all three.
+echo   Both processes running in their own windows.
+echo   Press any key in THIS window to STOP both.
 echo =====================================================
 echo.
 pause >nul
@@ -72,17 +66,11 @@ REM --- stop everything ---
 echo.
 echo Stopping...
 
-REM kill port owners + their trees (backend, frontend)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%BACKEND_PORT% ^| findstr LISTENING') do (
-    taskkill /F /PID %%a /T >nul 2>&1
-)
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%FRONTEND_PORT% ^| findstr LISTENING') do (
     taskkill /F /PID %%a /T >nul 2>&1
 )
 
-REM kill the bot windows by title (no port to track)
 taskkill /F /FI "WINDOWTITLE eq thesauros-bot*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq thesauros-backend*" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq thesauros-frontend*" /T >nul 2>&1
 
 echo Stopped. Bye.

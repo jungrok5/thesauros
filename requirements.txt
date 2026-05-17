@@ -1,28 +1,39 @@
-fastapi==0.110.0
-uvicorn[standard]==0.27.1
-pydantic==2.6.1
+# Thesauros — Python dependencies (cron + bot only; no HTTP server)
+#
+# Used by:
+#   - cron scripts in app/db/* (scan_daily, publish_macro, publish_chart,
+#     telegram_*, ingest_themes, ingest_investor_flow, seed_tickers, migrate)
+#   - data ingest modules (DART, KRX, KIS, SEC)
+#   - book analyzer (candles/patterns/trend)
+#
+# No FastAPI/uvicorn/lightgbm/scikit-learn — site runs on Vercel + Supabase.
+
+# Data + analysis
 pandas==2.2.0
 numpy==1.26.4
-yfinance==0.2.40
+scipy>=1.10
 requests==2.31.0
 beautifulsoup4==4.12.3
 lxml==5.1.0
 python-dateutil==2.8.2
-duckdb>=1.4
-lightgbm>=4.5
-scikit-learn>=1.4
 joblib>=1.4
 tqdm>=4.66
-scipy>=1.10
-# Book analysis + macro
-pykrx>=1.0.45
-finance-datareader>=0.9.96  # fallback to pykrx for KR listing + OHLCV
-fredapi>=0.5.1
-typer>=0.12
-python-dotenv>=1.0
 
-# Supabase + DB layer
+# Market data sources
+yfinance==0.2.40
+pykrx>=1.0.45
+finance-datareader>=0.9.96
+fredapi>=0.5.1
+
+# Local cache / staging (PIT db — slated for removal in Phase 7)
+duckdb>=1.4
+
+# Supabase + DB layer (cron writes here)
 supabase>=2.30
 psycopg[binary]>=3.2
 psycopg-pool>=3.2
 
+# Telegram bot + web-push delivery
+python-dotenv>=1.0
+cryptography>=42                # VAPID key generation
+pywebpush>=2                    # optional — webpush.py is a no-op without it

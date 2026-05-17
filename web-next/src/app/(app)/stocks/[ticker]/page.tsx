@@ -18,7 +18,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
-import type { AnalysisResult } from "@/lib/api";
+import type { AnalysisResult } from "@/lib/types/analysis";
 
 export const dynamic = "force-dynamic";
 

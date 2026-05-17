@@ -1,6 +1,6 @@
-import type { AnalysisResult } from "@/lib/api";
+import type { AnalysisResult } from "@/lib/types/analysis";
 import { ActionBadge } from "@/components/action-badge";
-import { formatNumber, formatPct, cn } from "@/lib/utils";
+import { formatNumber, cn } from "@/lib/utils";
 
 function TrendTile({
   name,
