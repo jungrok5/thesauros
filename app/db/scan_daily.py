@@ -404,23 +404,6 @@ def _flush_analyze_chunk(chunk: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
-def _publish_chart_for(tickers: Iterable[str]) -> int:
-    """Build + upsert chart payloads for each ticker across daily/weekly/monthly.
-
-    Same precompute pattern as analyze_results — keeps the site
-    backend-free.
-    """
-    from app.db.publish_chart import publish_for
-    n = 0
-    for t in tickers:
-        try:
-            s = publish_for(t)
-            n += s.get("upserts", 0)
-        except Exception as e:                           # noqa: BLE001
-            log.warning("chart publish failed for %s: %s", t, e)
-    return n
-
-
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--markets", nargs="+", default=None,
@@ -459,7 +442,7 @@ def main(argv: Optional[List[str]] = None) -> int:
              len(tickers), args.years, args.batch)
     t0 = time.time()
     stats = {"scanned": 0, "with_signals": 0, "inserted": 0,
-             "analyze_upserted": 0, "chart_upserted": 0,
+             "analyze_upserted": 0,
              "skipped_no_history": 0, "skipped_no_signal": 0, "errors": 0}
     chunk: List[Dict[str, Any]] = []
     # Tickers with no active signal — still get the full analyze result
@@ -478,11 +461,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Both buckets carry `result` from analyze_ticker — store both.
             stats["analyze_upserted"] += _flush_analyze_chunk(
                 chunk + no_signal_chunk
-            )
-            # Also pre-render the chart payload (daily/weekly/monthly) so
-            # /stocks/[ticker] can render without FastAPI.
-            stats["chart_upserted"] += _publish_chart_for(
-                [c["ticker"] for c in (chunk + no_signal_chunk)]
             )
         chunk = []
         no_signal_chunk = []
