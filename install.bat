@@ -55,12 +55,12 @@ echo ============================================================
 echo  설치 완료
 echo ============================================================
 echo  다음 단계:
-echo   1) ingest.bat - 데이터 적재 (~10분)
-echo   2) train.bat  - 모델 학습 (~5-10분)
-echo   3) run.bat    - 서버 실행
+echo   1) Supabase: python -m app.db.migrate up
+echo   2) 사이트 dev:  run-all.bat       (Next.js on :3000)
+echo   3) 데이터 갱신: GitHub Actions 가 매일 16시 KST 자동 발동
+echo                  (수동: python -m app.db.scan_daily ...)
 echo.
-echo  중요: SEC EDGAR 사용 정책상 User-Agent에 본인 이메일 권장.
-echo  run.bat 파일에서 SEC_USER_AGENT 줄을 수정하세요.
+echo  자세한 배포는 DEPLOY.md 참고 (Vercel + Supabase + GH Actions).
 echo ============================================================
 pause
 

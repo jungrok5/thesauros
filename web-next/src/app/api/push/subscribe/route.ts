@@ -13,7 +13,30 @@ import { ensureUserId, getServerClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const URL_RE = /^https:\/\/[A-Za-z0-9.\-_/:%?=&]+$/;
+/**
+ * Web-Push endpoints live on a handful of vendor domains. Allowlist
+ * the protocol + parse with WHATWG URL so we don't accept arbitrary
+ * `https://...` strings (even ones containing percent-encoded nulls).
+ */
+const PUSH_HOST_ALLOWLIST = [
+  /\.googleapis\.com$/,                      // FCM (Chrome, Edge, Brave, Opera)
+  /\.mozilla\.com$/,                         // autopush.services.mozilla.com etc.
+  /\.push\.services\.mozilla\.com$/,
+  /\.windows\.com$/,                         // legacy Edge WNS
+  /\.notify\.windows\.com$/,
+  /\.push\.apple\.com$/,                     // Safari (WebPush)
+];
+
+function isAllowedPushEndpoint(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  return PUSH_HOST_ALLOWLIST.some((re) => re.test(u.hostname));
+}
 
 async function currentUserId(): Promise<string | null> {
   const session = await auth();
@@ -32,7 +55,7 @@ export async function POST(req: NextRequest) {
   const endpoint = String(body.endpoint ?? "");
   const p256dh = String(body.keys?.p256dh ?? "");
   const authKey = String(body.keys?.auth ?? "");
-  if (!URL_RE.test(endpoint) || !p256dh || !authKey) {
+  if (!isAllowedPushEndpoint(endpoint) || !p256dh || !authKey) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
   const userAgent = (req.headers.get("user-agent") ?? "").slice(0, 255);
@@ -58,7 +81,7 @@ export async function DELETE(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const endpoint = String(body.endpoint ?? "");
-  if (!URL_RE.test(endpoint)) {
+  if (!isAllowedPushEndpoint(endpoint)) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
   const sb = getServerClient();

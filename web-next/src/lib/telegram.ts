@@ -63,6 +63,22 @@ export async function consumeLinkToken(
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
 
+/**
+ * HTML-escape user-controlled content before placing it inside a
+ * Telegram parse_mode='HTML' message. Telegram supports a narrow tag
+ * subset (`<b>`, `<i>`, `<code>`, etc.); unescaped user input could
+ * inject tags or break message rendering.
+ *
+ * Use in callers when interpolating untrusted strings:
+ *   sendTelegram(chat, `Hello ${escapeTgHtml(userName)}`)
+ */
+export function escapeTgHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export async function sendTelegram(
   chatId: number | string,
   text: string,

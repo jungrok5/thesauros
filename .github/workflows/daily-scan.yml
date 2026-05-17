@@ -42,7 +42,6 @@ jobs:
           KIS_ENV: "vts"
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python -m app.db.scan_daily --markets KOSPI KOSDAQ NASDAQ --years 5
 
