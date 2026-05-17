@@ -37,7 +37,7 @@ test.describe("Dashboard from Supabase", () => {
     await page.goto("/dashboard");
 
     await expect(
-      page.getByRole("heading", { name: "Macro", exact: true }),
+      page.getByRole("heading", { name: "거시 환경", exact: true }),
     ).toBeVisible();
 
     // The old FastAPI error banner must NOT appear

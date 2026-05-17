@@ -1,6 +1,41 @@
 import type { AnalysisResult } from "@/lib/types/analysis";
 import { ActionBadge } from "@/components/action-badge";
+import { HelpTip } from "@/components/help-tip";
 import { formatNumber, cn } from "@/lib/utils";
+
+// pattern.kind comes from the Python analyzer as Korean strings. Map them
+// (partial-match) to glossary slugs so users can tap to learn what each
+// pattern actually means.
+const PATTERN_KEYWORD_TERM: ReadonlyArray<[RegExp, string]> = [
+  [/단기.*쌍바닥/, "short_term_double_bottom"],
+  [/쌍바닥/, "ssang_badak"],
+  [/cup.*handle|원형\s*바닥|컵.*핸들/i, "cup_with_handle"],
+  [/240\s*MA|돌반지/i, "dolbanji_240ma"],
+  [/역.*헤드|inverse.*head/i, "reverse_h_and_s"],
+  [/깃발|flag/i, "flag"],
+  [/상승\s*삼각|ascending.*triangle/i, "ascending_triangle"],
+];
+
+function patternTerm(kind: string): string | null {
+  for (const [re, term] of PATTERN_KEYWORD_TERM) {
+    if (re.test(kind)) return term;
+  }
+  return null;
+}
+
+// Candle tags emitted by the analyzer ("양봉", "장대양봉", "눈썹캔들" ...).
+const CANDLE_TAG_TERM: Record<string, string> = {
+  "장대양봉": "jangdae_yangbong",
+  "눈썹캔들": "nunsseop_candle",
+  "양봉": "yangbong",
+  "음봉": "eumbong",
+};
+
+const TF_TERM: Record<string, string> = {
+  daily: "tf_daily",
+  weekly: "tf_weekly",
+  monthly: "tf_monthly",
+};
 
 function TrendTile({
   name,
@@ -59,7 +94,9 @@ function TrendTile({
           </dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-muted-foreground">240MA</dt>
+          <dt className="text-muted-foreground">
+            <HelpTip term="dolbanji_240ma">240MA</HelpTip>
+          </dt>
           <dd className="font-mono">
             {tf.ma_240 !== null ? formatNumber(tf.ma_240) : "—"}
           </dd>
@@ -87,11 +124,14 @@ function PatternCard({
     weekly: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
     daily: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
   };
+  const term = patternTerm(p.kind);
   return (
     <article className="rounded-lg border border-border bg-card p-3">
       <header className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{p.kind}</span>
+          <span className="font-medium text-sm">
+            {term ? <HelpTip term={term}>{p.kind}</HelpTip> : p.kind}
+          </span>
           {p.timeframe && (
             <span
               className={cn(
@@ -99,7 +139,9 @@ function PatternCard({
                 tfBadge[p.timeframe] ?? tfBadge.daily,
               )}
             >
-              {p.timeframe}
+              <HelpTip term={TF_TERM[p.timeframe] ?? "tf_daily"}>
+                {p.timeframe}
+              </HelpTip>
             </span>
           )}
           <span className={cn("text-xs", dir)}>
@@ -176,16 +218,21 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
                   : "border-rose-500/40 text-rose-700 dark:text-rose-300",
               )}
             >
-              {r.last_candle.is_bullish ? "양봉" : "음봉"}
+              <HelpTip term={r.last_candle.is_bullish ? "yangbong" : "eumbong"}>
+                {r.last_candle.is_bullish ? "양봉" : "음봉"}
+              </HelpTip>
             </span>
-            {r.last_candle.tags.map((t) => (
-              <span
-                key={t}
-                className="text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground"
-              >
-                {t}
-              </span>
-            ))}
+            {r.last_candle.tags.map((t) => {
+              const tagTerm = CANDLE_TAG_TERM[t];
+              return (
+                <span
+                  key={t}
+                  className="text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground"
+                >
+                  {tagTerm ? <HelpTip term={tagTerm}>{t}</HelpTip> : t}
+                </span>
+              );
+            })}
           </div>
           {r.last_candle.in_safe_zone_75 !== null && (
             <p
@@ -196,9 +243,11 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
                   : "text-amber-600 dark:text-amber-400",
               )}
             >
-              {r.last_candle.in_safe_zone_75
-                ? "✓ 4등분선 75% 안전지대 (책: 다음 봉 상승 확률 高)"
-                : "⚠ 4등분선 75% 아래 — 추세 약화 가능"}
+              <HelpTip term="safe_zone_75">
+                {r.last_candle.in_safe_zone_75
+                  ? "✓ 4등분선 75% 안전지대 — 다음 봉 상승 확률 高"
+                  : "⚠ 4등분선 75% 아래 — 추세 약화 가능"}
+              </HelpTip>
             </p>
           )}
         </section>
@@ -234,10 +283,20 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
         {r.volume_case && (
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-              거래량 분류
+              <HelpTip term="volume_case_generic">거래량 분류</HelpTip>
             </div>
             <div className="font-medium text-sm mb-1">
-              Case {r.volume_case.case} · {r.volume_case.label_kr}
+              <HelpTip
+                term={
+                  r.volume_case.case === 0
+                    ? "volume_case_0"
+                    : r.volume_case.case === 9
+                      ? "volume_case_9"
+                      : "volume_case_generic"
+                }
+              >
+                Case {r.volume_case.case} · {r.volume_case.label_kr}
+              </HelpTip>
             </div>
             <p className="text-xs text-muted-foreground mb-1">
               {r.volume_case.reason}
@@ -261,7 +320,7 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
         {r.reverse_accumulation && (
           <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
             <div className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
-              ⭐ 역매집 감지
+              ⭐ <HelpTip term="reverse_accumulation">역매집 감지</HelpTip>
             </div>
             <p className="text-sm">{r.reverse_accumulation.reason}</p>
             <p className="text-xs text-muted-foreground mt-1">

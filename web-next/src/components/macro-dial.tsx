@@ -5,13 +5,14 @@
  * signal + one-line guidance. Updated by `python -m app.db.publish_macro`.
  */
 import { getServerClient, type MacroStateRow } from "@/lib/supabase";
+import { HelpTip } from "@/components/help-tip";
 
-const AXIS_LABELS: Record<string, { label: string; book: string }> = {
-  liquidity: { label: "통화·유동성", book: "1부 1장" },
-  rate:      { label: "금리",       book: "1부 3장" },
-  cycle:     { label: "경기",       book: "1부 4장" },
-  price:     { label: "물가",       book: "1부 5장" },
-  fear:      { label: "시장 심리",   book: "1부 6장" },
+const AXIS_LABELS: Record<string, { label: string; term: string }> = {
+  liquidity: { label: "통화·유동성", term: "macro_liquidity" },
+  rate:      { label: "금리",       term: "macro_rate" },
+  cycle:     { label: "경기",       term: "macro_cycle" },
+  price:     { label: "물가",       term: "macro_price" },
+  fear:      { label: "시장 심리",   term: "macro_fear" },
 };
 
 function dotColor(score: number): string {
@@ -59,8 +60,8 @@ export async function MacroDial() {
             const score = (dial as Record<string, number>)[k] ?? 0;
             return (
               <div key={k} className="text-center">
-                <div className="text-xs text-muted-foreground mb-2">
-                  {meta.label}
+                <div className="text-xs text-muted-foreground mb-2 inline-flex items-center justify-center">
+                  <HelpTip term={meta.term}>{meta.label}</HelpTip>
                 </div>
                 <div className="flex justify-center gap-1">
                   {[1, 2, 3, 4, 5].map((i) => (
@@ -74,9 +75,6 @@ export async function MacroDial() {
                   ))}
                 </div>
                 <div className="mt-1 text-xs font-mono">{score}/5</div>
-                <div className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  {meta.book}
-                </div>
               </div>
             );
           })}
@@ -85,7 +83,9 @@ export async function MacroDial() {
 
       {row.mv_pq_signal && (
         <div className="text-xs text-muted-foreground border-t border-border/60 pt-3">
-          <span className="font-medium">MV=PQ 시그널:</span>{" "}
+          <span className="font-medium">
+            <HelpTip term="mv_pq">MV=PQ 시그널</HelpTip>:
+          </span>{" "}
           {row.mv_pq_signal}
         </div>
       )}

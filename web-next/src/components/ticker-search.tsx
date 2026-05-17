@@ -58,13 +58,51 @@ export function TickerSearch({ autoFocus = false }: { autoFocus?: boolean }) {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const submit = (raw: string) => {
+  // ASCII letters / digits / dot / dash only — Korean characters fail.
+  const CANONICAL_TICKER_RE = /^[A-Z0-9.\-]+$/;
+
+  const submit = async (raw: string) => {
     const t = raw.trim();
     if (!t) return;
-    let ticker = t.toUpperCase();
-    if (/^\d{6}$/.test(t)) ticker = `${t}.KS`;
+
+    // 6-digit Korean code → assume KS.
+    if (/^\d{6}$/.test(t)) {
+      setOpen(false);
+      router.push(`/stocks/${t}.KS`);
+      return;
+    }
+
+    const upper = t.toUpperCase();
+
+    // Already canonical (ASCII)? Navigate directly.
+    if (CANONICAL_TICKER_RE.test(upper)) {
+      setOpen(false);
+      router.push(`/stocks/${encodeURIComponent(upper)}`);
+      return;
+    }
+
+    // Otherwise it's a Korean name or free-form query. Resolve via search
+    // API first so we never push a non-canonical ticker into the URL —
+    // that would 400 the watchlist endpoint.
+    try {
+      const r = await fetch(`/api/search?q=${encodeURIComponent(t)}&limit=1`);
+      if (r.ok) {
+        const data = await r.json();
+        const first = (data.items ?? [])[0];
+        if (first?.ticker) {
+          setOpen(false);
+          router.push(`/stocks/${encodeURIComponent(first.ticker)}`);
+          return;
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+
+    // No match found — still navigate so the detail page can show a
+    // friendly "not found" message.
     setOpen(false);
-    router.push(`/stocks/${encodeURIComponent(ticker)}`);
+    router.push(`/stocks/${encodeURIComponent(t)}`);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

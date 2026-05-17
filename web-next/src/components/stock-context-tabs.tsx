@@ -9,6 +9,7 @@
  */
 import { getServerClient, type NewsRow, type DisclosureRow,
          type FinancialsEvalRow, type FactorsEvalRow } from "@/lib/supabase";
+import { HelpTip } from "@/components/help-tip";
 import { StockTabs } from "./stock-tabs";
 
 interface Props {
@@ -276,10 +277,10 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <AxisCard label="가치 (Value)" score={fac.value_score} />
-        <AxisCard label="성장 (Growth)" score={fac.growth_score} />
-        <AxisCard label="안전 (Safety)" score={fac.safety_score} />
-        <AxisCard label="수익 (Quality)" score={fac.quality_score} />
+        <AxisCard label="가치 (Value)" score={fac.value_score} term="axis_value" />
+        <AxisCard label="성장 (Growth)" score={fac.growth_score} term="axis_growth" />
+        <AxisCard label="안전 (Safety)" score={fac.safety_score} term="axis_safety" />
+        <AxisCard label="수익 (Quality)" score={fac.quality_score} term="axis_quality" />
       </div>
 
       <div className="rounded-lg border border-border overflow-hidden">
@@ -304,19 +305,39 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
       </div>
 
       <div className="rounded-lg border border-border bg-card p-4">
-        <div className="text-sm font-medium mb-2">책 + 학계 기준 통과</div>
+        <div className="text-sm font-medium mb-2">유명 가치투자 기준 통과 여부</div>
+        <div className="text-xs text-muted-foreground mb-3">
+          널리 알려진 4가지 가치투자 스크리닝 기준을 이 종목이 통과하는지 표시합니다.
+          각 라벨에 마우스를 올리거나 탭하면 출처와 의미를 볼 수 있습니다.
+        </div>
         <div className="flex flex-wrap gap-2">
-          <GateBadge label="강환국 가치 (PBR<1.5 & ROE>10%)" passed={fac.passes_kang_value} />
-          <GateBadge label="그레이엄 (PER<15 & 부채<50%)" passed={fac.passes_graham} />
-          <GateBadge label="마법공식 (PER<12 & 영업이익률>10%)" passed={fac.passes_magic_formula} />
-          <GateBadge label="버핏형 (ROE>15% & 부채<50%)" passed={fac.passes_buffett} />
+          <GateBadge
+            label="강환국 가치 (PBR<1.5 & ROE>10%)"
+            passed={fac.passes_kang_value}
+            term="gate_kang_value"
+          />
+          <GateBadge
+            label="그레이엄 (PER<15 & 부채<50%)"
+            passed={fac.passes_graham}
+            term="gate_graham"
+          />
+          <GateBadge
+            label="마법공식 (PER<12 & 영업이익률>10%)"
+            passed={fac.passes_magic_formula}
+            term="gate_magic_formula"
+          />
+          <GateBadge
+            label="버핏형 (ROE>15% & 부채<50%)"
+            passed={fac.passes_buffett}
+            term="gate_buffett"
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function AxisCard({ label, score }: { label: string; score: number | null }) {
+function AxisCard({ label, score, term }: { label: string; score: number | null; term?: string }) {
   const s = score ?? 0;
   const tone =
     s >= 8 ? "text-emerald-600 dark:text-emerald-400"
@@ -324,7 +345,9 @@ function AxisCard({ label, score }: { label: string; score: number | null }) {
         : "text-rose-600 dark:text-rose-400";
   return (
     <div className="rounded-lg border border-border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">
+        {term ? <HelpTip term={term}>{label}</HelpTip> : label}
+      </div>
       <div className={`mt-1 text-2xl font-mono ${tone}`}>{s}<span className="text-sm text-muted-foreground">/10</span></div>
     </div>
   );
@@ -340,14 +363,15 @@ function FactorRow({ label, value, display, evl }: { label: string; value: numbe
   );
 }
 
-function GateBadge({ label, passed }: { label: string; passed: boolean | null }) {
+function GateBadge({ label, passed, term }: { label: string; passed: boolean | null; term?: string }) {
+  const content = term ? <HelpTip term={term}>{label}</HelpTip> : label;
   if (passed === true) {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-3 py-1 text-xs">✅ {label}</span>;
+    return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-3 py-1 text-xs">✅ {content}</span>;
   }
   if (passed === false) {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 px-3 py-1 text-xs">❌ {label}</span>;
+    return <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 px-3 py-1 text-xs">❌ {content}</span>;
   }
-  return <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground px-3 py-1 text-xs">— {label}</span>;
+  return <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground px-3 py-1 text-xs">— {content}</span>;
 }
 
 export async function StockContextTabs({ ticker }: Props) {

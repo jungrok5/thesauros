@@ -1,0 +1,338 @@
+/**
+ * Plain-Korean glossary for the UI tooltips.
+ *
+ * Each entry: { title, body, link? }. Keys are stable slugs the UI can
+ * reference by string. Definitions are intentionally self-contained — no
+ * references to outside sources beyond optional public encyclopedia links.
+ */
+
+export type GlossaryEntry = {
+  title: string;
+  body: string;
+  link?: { href: string; label?: string };
+};
+
+export const GLOSSARY: Record<string, GlossaryEntry> = {
+  // ─────────── Chart patterns ───────────
+  ssang_badak: {
+    title: "쌍바닥 (Double Bottom)",
+    body:
+      "비슷한 가격대에서 두 번 바닥을 찍고 반등하는 W 모양 패턴.\n" +
+      "두 번째 바닥이 첫 번째보다 살짝 낮거나 같으면 신뢰도가 올라가고, " +
+      "두 바닥을 잇는 저항선(목선)을 거래량과 함께 돌파하면 추세 전환 신호로 본다.",
+    link: {
+      href: "https://en.wikipedia.org/wiki/Double_top_and_double_bottom",
+      label: "Wikipedia (영문) →",
+    },
+  },
+  cup_with_handle: {
+    title: "원형바닥 (Cup with Handle)",
+    body:
+      "주가가 U자(컵) 모양으로 천천히 바닥을 다진 뒤, 컵 우측 끝에서 " +
+      "짧고 얕은 조정(손잡이)을 거쳐 다시 상승하는 패턴.\n" +
+      "손잡이의 조정 폭이 작을수록 신뢰도가 높다. 미국식 성장주 매수 시점으로 " +
+      "널리 쓰인다.",
+    link: {
+      href: "https://en.wikipedia.org/wiki/Cup_and_handle",
+      label: "Wikipedia (영문) →",
+    },
+  },
+  dolbanji_240ma: {
+    title: "돌반지 (240MA 돌파-지지-반등)",
+    body:
+      "240일 이동평균선(약 1년 평균가)을 위로 돌파한 뒤 → 다시 240MA 근처까지 " +
+      "눌렸다가 → 그 자리에서 지지를 받아 반등하는 3단계 시퀀스.\n" +
+      "장기 추세 전환 후 첫 번째 눌림목 매수 자리로 본다.",
+  },
+  short_term_double_bottom: {
+    title: "단기 쌍바닥",
+    body:
+      "쌍바닥 중 두 바닥 사이 간격이 며칠~몇 주로 짧은 형태. " +
+      "단타/스윙 매매에서 매수 시점으로 활용된다.",
+  },
+  reverse_h_and_s: {
+    title: "역헤드앤숄더 (Inverse H&S)",
+    body:
+      "왼쪽 어깨 - 머리(더 깊은 저점) - 오른쪽 어깨 형태로 세 번 바닥을 만든 뒤, " +
+      "목선을 돌파하면 상승 추세로 전환되는 패턴. 하락에서 상승으로 가는 대표 반전형.",
+    link: {
+      href: "https://en.wikipedia.org/wiki/Head_and_shoulders_(chart_pattern)",
+      label: "Wikipedia (영문) →",
+    },
+  },
+  flag: {
+    title: "깃발형 (Flag)",
+    body:
+      "강한 상승(깃대) 후 짧고 좁은 박스권(깃발)을 만들며 잠시 쉬는 패턴. " +
+      "박스 상단을 돌파하면 직전 상승폭만큼 한 번 더 가는 경우가 많아 계속형(continuation) 패턴으로 분류된다.",
+  },
+  ascending_triangle: {
+    title: "상승 삼각형 (Ascending Triangle)",
+    body:
+      "저점은 계속 높아지고 고점은 일정한 저항선을 만드는 삼각수렴. " +
+      "저항선을 거래량 동반 돌파 시 상승 지속 신호.",
+    link: {
+      href: "https://en.wikipedia.org/wiki/Triangle_(chart_pattern)",
+      label: "Wikipedia (영문) →",
+    },
+  },
+
+  // ─────────── Candle / zone terms ───────────
+  yangbong: {
+    title: "양봉 (상승 캔들)",
+    body: "종가가 시가보다 높은 캔들 — 그 날(또는 기간) 매수세가 우세했음을 의미한다.",
+  },
+  eumbong: {
+    title: "음봉 (하락 캔들)",
+    body: "종가가 시가보다 낮은 캔들 — 그 날(또는 기간) 매도세가 우세했음을 의미한다.",
+  },
+  jangdae_yangbong: {
+    title: "장대양봉",
+    body:
+      "몸통이 평균보다 훨씬 긴 양봉. 강한 매수 유입을 시사하며, 추세 시작 또는 " +
+      "재가속의 신호로 본다. 다만 고점에서 나타나면 단기 과열 후 조정 가능성도 있다.",
+  },
+  nunsseop_candle: {
+    title: "눈썹 캔들",
+    body:
+      "위쪽 꼬리(윗그림자)가 몸통보다 훨씬 긴 캔들. " +
+      "상승 시도 후 매물에 눌려 종가가 다시 내려간 모습 → 단기 매도 압력을 의미한다.",
+  },
+  safe_zone_75: {
+    title: "4등분선 75% 안전지대",
+    body:
+      "최근 캔들의 시가–고가–저가–종가 범위를 4등분 했을 때, " +
+      "종가가 위쪽 75% 구간 안에 들어와 있는 상태.\n" +
+      "그 날 중·상위권에서 마감했다는 뜻으로, 매수세가 살아 있다는 시그널로 활용한다.",
+  },
+
+  // ─────────── Timeframes ───────────
+  tf_daily: {
+    title: "DAILY (일봉)",
+    body: "캔들 1개 = 하루. 단기 매매 / 진입·이탈 타이밍을 보는 시간 단위.",
+  },
+  tf_weekly: {
+    title: "WEEKLY (주봉)",
+    body:
+      "캔들 1개 = 1주일. 중기 추세 판단에 사용. " +
+      "일봉 노이즈를 걸러 큰 흐름을 보고 싶을 때 본다.",
+  },
+  tf_monthly: {
+    title: "MONTHLY (월봉)",
+    body:
+      "캔들 1개 = 1개월. 장기 추세 판단에 사용. " +
+      "수년에 걸친 사이클·바닥권 확인에 유용.",
+  },
+
+  // ─────────── Volume cases ───────────
+  volume_case_0: {
+    title: "Case 0 · 분류 불명확",
+    body:
+      "거래량 패턴이 명확한 의미를 띠지 않는 상태. 추세·구간·거래량 비율 어느 쪽도 " +
+      "강한 시그널을 주지 못해 중립으로 본다.",
+  },
+  volume_case_9: {
+    title: "Case 9 · 상투권 거래량 증가",
+    body:
+      "이미 많이 오른 자리(상투권)에서 평균 대비 거래량이 크게 늘어남.\n" +
+      "기관·세력이 보유 물량을 개인에게 넘기는 '분산' 가능성을 시사 → 단기 약세 경계.",
+  },
+  volume_case_generic: {
+    title: "거래량 분류 (Case 0–9)",
+    body:
+      "현재 구간(저점/중간/고점)과 추세 방향, 그리고 평균 대비 거래량 비율을 조합해 " +
+      "10가지 패턴 중 하나로 분류한 결과. " +
+      "각 Case 는 신뢰도(%)와 방향(bullish/bearish/neutral)을 함께 가진다.",
+  },
+  reverse_accumulation: {
+    title: "역매집 (Reverse Accumulation)",
+    body:
+      "장중 저점을 반복적으로 지지받으며 거래량은 늘어나는데 가격은 크게 빠지지 않는 모습.\n" +
+      "큰손이 조용히 물량을 쓸어 담는다고 추정되는 구간이라 바닥 시그널로 본다.",
+  },
+
+  // ─────────── Macro dial axes ───────────
+  macro_liquidity: {
+    title: "통화·유동성",
+    body:
+      "시중에 풀린 돈의 양과 흐름. 통화량(M2), 본원통화, 신용 증가율 등으로 측정. " +
+      "유동성이 풍부하면 위험자산(주식)으로 자금이 더 잘 흘러들어와 강세장이 형성되기 쉽다.",
+    link: { href: "https://ko.wikipedia.org/wiki/통화량", label: "위키 통화량 →" },
+  },
+  macro_rate: {
+    title: "금리",
+    body:
+      "기준금리·국채금리 수준. 금리가 낮을수록 자금 조달 비용이 싸지고 주식의 상대적 매력이 올라간다.\n" +
+      "다만 금리 하락이 급격하면 경기 둔화 신호일 수 있어 단순히 낮다고 좋은 것은 아니다.",
+    link: { href: "https://ko.wikipedia.org/wiki/기준금리", label: "위키 기준금리 →" },
+  },
+  macro_cycle: {
+    title: "경기",
+    body:
+      "실물 경제 사이클. ISM 제조업/서비스 PMI, 산업생산, 소매판매, 고용 등으로 측정.\n" +
+      "확장 국면일수록 기업 이익이 늘어 주가에 긍정적.",
+    link: { href: "https://ko.wikipedia.org/wiki/경기변동", label: "위키 경기변동 →" },
+  },
+  macro_price: {
+    title: "물가",
+    body:
+      "인플레이션(CPI, PPI, 기대 인플레) 수준. " +
+      "완만한 인플레는 자산 가격에 우호적이지만, 너무 높으면 금리 인상을 유발해 주식에 부정적.",
+    link: { href: "https://ko.wikipedia.org/wiki/인플레이션", label: "위키 인플레이션 →" },
+  },
+  macro_fear: {
+    title: "시장 심리",
+    body:
+      "공포·탐욕 지수, 변동성지수(VIX), 풋콜비율 등으로 측정한 투자자 심리.\n" +
+      "극단적 공포 구간은 역설적으로 매수 기회가 되는 경우가 많다(역발상 지표).",
+    link: { href: "https://ko.wikipedia.org/wiki/VIX", label: "위키 VIX →" },
+  },
+
+  // ─────────── Regime ───────────
+  regime_hope: {
+    title: "HOPE — 본격 상승",
+    body:
+      "경기 회복 + 유동성 풍부 + 심리 우호. 다수 종목이 동반 상승하는 강세장 국면. " +
+      "추세 추종 매수에 가장 우호적인 환경.",
+  },
+  regime_fear: {
+    title: "FEAR — 공포 (위기=기회)",
+    body:
+      "지표는 약하지만 극단적 매도세로 가격이 과도하게 빠진 구간. " +
+      "장기적으로는 매수 기회가 되는 경우가 많아 분할매수 시점으로 본다.",
+  },
+  regime_despair: {
+    title: "DESPAIR — 침체",
+    body: "경기 + 유동성 + 심리 모두 약세. 현금 비중 늘리고 보수적으로 운용.",
+  },
+
+  // ─────────── Macro indicators ───────────
+  mv_pq: {
+    title: "MV=PQ 시그널",
+    body:
+      "화폐수량설(MV=PQ)에 기반한 자산가격 환경 평가.\n" +
+      "M(통화량) × V(유통속도) = P(물가) × Q(실질생산)\n" +
+      "M, V 가 늘어나면 자산 가격(P) 으로 압력이 가해진다는 단순 모델. " +
+      "유동성/물가 흐름이 자산시장에 우호적인지를 한눈에 평가하는 데 쓴다.",
+    link: { href: "https://ko.wikipedia.org/wiki/화폐수량설", label: "위키 화폐수량설 →" },
+  },
+  tips_spread: {
+    title: "TIPS spread (기대 인플레이션)",
+    body:
+      "일반 국채 수익률 - 물가연동국채(TIPS) 수익률.\n" +
+      "시장이 향후 10년 평균 인플레이션을 얼마로 보는지를 가격에 반영한 지표. " +
+      "2~3% 안팎이 정상, 4% 이상이면 인플레이션 우려.",
+    link: { href: "https://en.wikipedia.org/wiki/Treasury_inflation-protected_security", label: "Wikipedia TIPS →" },
+  },
+  ppi_yoy: {
+    title: "PPI YoY (생산자물가 전년대비)",
+    body:
+      "기업이 출하하는 도매단계 물가의 전년 동월 대비 변화율. " +
+      "원자재·중간재 가격을 빨리 반영해 CPI(소비자물가) 보다 1~3개월 선행하는 경우가 많다.",
+    link: { href: "https://ko.wikipedia.org/wiki/생산자물가지수", label: "위키 PPI →" },
+  },
+  cpi_yoy: {
+    title: "CPI YoY (소비자물가 전년대비)",
+    body:
+      "소비자가 실제 구매하는 상품·서비스 가격의 전년 동월 대비 변화율. " +
+      "중앙은행 통화정책 결정의 핵심 지표. 미국 기준 2% 부근을 목표로 한다.",
+    link: { href: "https://ko.wikipedia.org/wiki/소비자물가지수", label: "위키 CPI →" },
+  },
+  vix_state: {
+    title: "VIX 상태",
+    body:
+      "S&P 500 옵션의 30일 내재변동성. '공포 지수'로 불린다.\n" +
+      "20 미만 = 평온, 20~30 = 경계, 30 이상 = 패닉. " +
+      "급등 후 빠르게 안정되면 바닥 시그널로 본다.",
+    link: { href: "https://ko.wikipedia.org/wiki/VIX", label: "위키 VIX →" },
+  },
+  yield_curve: {
+    title: "수익률곡선 (Yield Curve)",
+    body:
+      "단기 국채 vs 장기 국채 금리의 차이. " +
+      "정상: 장기 > 단기. 역전: 장기 < 단기 → 경기 침체를 12~18개월 선행한 사례가 많아 주요 경계 시그널.",
+    link: { href: "https://en.wikipedia.org/wiki/Yield_curve", label: "Wikipedia (영문) →" },
+  },
+
+  // ─────────── Actions ───────────
+  action_strong_buy: {
+    title: "STRONG BUY",
+    body:
+      "여러 시간프레임(일/주/월봉)에서 상승 정배열 + 책 17종 매수 패턴 중 다수가 동시에 발현된 최강 매수 시그널.\n" +
+      "엔트리/스탑/타겟이 함께 산정된다.",
+  },
+  action_buy: {
+    title: "BUY",
+    body:
+      "추세와 패턴이 모두 매수 우호로 정렬되었지만 STRONG BUY 만큼의 다중 확인은 부족한 상태.\n" +
+      "기본적인 진입 자리로 본다.",
+  },
+  action_avoid: {
+    title: "AVOID",
+    body:
+      "추세 약화 + 거래량 패턴(예: 상투권 분산) + 단기 매도 캔들 등 부정적 시그널이 우세한 종목.\n" +
+      "보유는 가능해도 신규 매수는 권장하지 않는다.",
+  },
+  action_sell: {
+    title: "SELL",
+    body:
+      "매도 우위 시그널. 손절 라인 이탈, 추세 종료, 약세 패턴 완성 등이 겹친 상태.",
+  },
+  action_hold: {
+    title: "HOLD",
+    body: "특별한 매수/매도 우위 시그널이 없는 중립 상태.",
+  },
+
+  // ─────────── Factor gates (학계/유명 전략) ───────────
+  gate_kang_value: {
+    title: "강환국 가치 (PBR<1.5 & ROE>10%)",
+    body:
+      "한국의 가치투자 저자 강환국이 백테스트로 검증한 단순 가치 스크리닝.\n" +
+      "PBR(주가순자산비율)이 1.5 미만(저평가) + ROE(자기자본이익률)가 10% 초과(수익성 양호)인 종목을 사면 " +
+      "장기적으로 시장을 이긴다는 룰.",
+  },
+  gate_graham: {
+    title: "그레이엄 (PER<15 & 부채비율<50%)",
+    body:
+      "현대 가치투자의 아버지 벤저민 그레이엄이 제시한 안전마진 스크리닝의 단순화 버전.\n" +
+      "PER(주가수익비율) 15 미만(저평가) + 부채비율 50% 미만(재무 건전성) 종목을 사 모으는 전략.",
+    link: { href: "https://ko.wikipedia.org/wiki/벤저민_그레이엄", label: "위키 그레이엄 →" },
+  },
+  gate_magic_formula: {
+    title: "마법공식 (PER<12 & 영업이익률>10%)",
+    body:
+      "조엘 그린블라트의 '주식 시장을 이기는 작은 책' 에 나온 마법공식의 단순화 버전.\n" +
+      "원래 공식: 자본이익률(ROC) + 이익수익률(EBIT/EV) 상위 종목. 여기서는 비슷한 의미의 " +
+      "PER 12 미만(싸고) + 영업이익률 10% 초과(잘 버는) 으로 근사.",
+    link: { href: "https://en.wikipedia.org/wiki/Magic_formula_investing", label: "Wikipedia →" },
+  },
+  gate_buffett: {
+    title: "버핏형 (ROE>15% & 부채비율<50%)",
+    body:
+      "워런 버핏이 강조한 '꾸준히 높은 자본수익률 + 보수적 재무구조' 기준의 근사.\n" +
+      "ROE 15% 이상(자본을 잘 굴리는 기업) + 부채비율 50% 미만(재무 건전) 으로 필터.",
+    link: { href: "https://ko.wikipedia.org/wiki/워런_버핏", label: "위키 버핏 →" },
+  },
+
+  // ─────────── Factor axes ───────────
+  axis_value: {
+    title: "가치 (Value)",
+    body: "PER, PBR 등 '얼마나 싼가' 지표 종합 점수 (10점 만점). 낮은 PER/PBR 일수록 점수 높음.",
+  },
+  axis_growth: {
+    title: "성장 (Growth)",
+    body: "매출 성장률, 이익 성장률 등 '얼마나 빠르게 크고 있나' 종합 점수 (10점 만점).",
+  },
+  axis_safety: {
+    title: "안전 (Safety)",
+    body: "부채비율, 유동비율 등 '재무가 얼마나 튼튼한가' 종합 점수 (10점 만점). 부채 낮을수록 높음.",
+  },
+  axis_quality: {
+    title: "수익 (Quality)",
+    body: "ROE, ROA, 영업이익률 등 '자본을 얼마나 잘 굴리는가' 종합 점수 (10점 만점).",
+  },
+};
+
+export function getGlossary(term: string): GlossaryEntry | null {
+  return GLOSSARY[term] ?? null;
+}

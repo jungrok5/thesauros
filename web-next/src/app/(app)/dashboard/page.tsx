@@ -5,8 +5,22 @@
 import { RegimeBadge } from "@/components/regime-badge";
 import { StatePill } from "@/components/state-pill";
 import { MacroDial } from "@/components/macro-dial";
+import { HelpTip } from "@/components/help-tip";
+import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
+
+// Map indicator key (from `macro_state.macro_indicators`) → glossary slug.
+// Anything not in this map falls back to plain text (no tooltip).
+const INDICATOR_TIPS: Record<string, string> = {
+  tips_10y: "tips_spread",
+  tips_spread: "tips_spread",
+  ppi_yoy: "ppi_yoy",
+  cpi_yoy: "cpi_yoy",
+  vix: "vix_state",
+  yield_curve: "yield_curve",
+  mv_pq: "mv_pq",
+};
 
 // Macro state changes once per day via cron; 60s ISR is a generous
 // upper bound that lets the page serve from cache to subsequent users.
@@ -108,9 +122,9 @@ export default async function DashboardPage() {
     <div className="space-y-8 max-w-7xl">
       <header className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Macro</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">거시 환경</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            책 1부 거시 지표 · 자동 상태 분류 · 시장 레짐 · 업데이트{" "}
+            34개 거시 지표 자동 집계 · 시장 레짐 분류 · 갱신{" "}
             <span className="font-mono opacity-70" suppressHydrationWarning>
               {updatedAt}
             </span>
@@ -131,9 +145,13 @@ export default async function DashboardPage() {
         </div>
         <div className="text-xs text-muted-foreground mt-2 flex items-center gap-4 flex-wrap">
           <span>지표 {regime.n_indicators}개 종합</span>
-          {regime.vix_state && <span>VIX 상태: {regime.vix_state}</span>}
+          {regime.vix_state && (
+            <span>
+              <HelpTip term="vix_state">VIX 상태</HelpTip>: {regime.vix_state}
+            </span>
+          )}
           <span>
-            수익률곡선:{" "}
+            <HelpTip term="yield_curve">수익률곡선</HelpTip>:{" "}
             {regime.yield_curve_inverted ? (
               <span className="text-rose-600 dark:text-rose-400">
                 역전 (침체 예고)
@@ -144,7 +162,11 @@ export default async function DashboardPage() {
               </span>
             )}
           </span>
-          {row.mv_pq_signal && <span>MV=PQ: {row.mv_pq_signal}</span>}
+          {row.mv_pq_signal && (
+            <span>
+              <HelpTip term="mv_pq">MV=PQ</HelpTip>: {row.mv_pq_signal}
+            </span>
+          )}
           {row.one_line_guidance && (
             <span className="basis-full text-foreground/70">
               {row.one_line_guidance}
@@ -166,7 +188,11 @@ export default async function DashboardPage() {
               >
                 <header className="flex items-start justify-between gap-2 mb-1">
                   <div className="font-medium text-sm text-foreground">
-                    {it.name_kr}
+                    {INDICATOR_TIPS[it.key] && GLOSSARY[INDICATOR_TIPS[it.key]] ? (
+                      <HelpTip term={INDICATOR_TIPS[it.key]}>{it.name_kr}</HelpTip>
+                    ) : (
+                      it.name_kr
+                    )}
                   </div>
                   <StatePill state={it.state} />
                 </header>
@@ -192,10 +218,7 @@ export default async function DashboardPage() {
                 <p className="text-xs text-muted-foreground mb-2">
                   {it.verdict}
                 </p>
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/60">
-                  <span className="text-[10px] text-muted-foreground/70 font-mono">
-                    {it.book_ref}
-                  </span>
+                <div className="flex items-center justify-end mt-2 pt-2 border-t border-border/60">
                   <span className="text-[10px] text-muted-foreground/70">
                     {it.as_of ?? "—"}
                   </span>
