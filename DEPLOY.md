@@ -1,20 +1,31 @@
 # 배포 가이드
 
-> **요약**: Vercel (Next.js) + Supabase (Postgres) + GitHub Actions (cron) +
-> 선택적으로 Render Worker (텔레그램 봇). FastAPI 서버는 없습니다.
+> **요약**: Vercel (사이트) + Supabase (DB) + GitHub Actions (cron · 알림 발송)
+> = 필수 4종. **텔레그램 봇 long-poll 워커는 새 사용자 셀프 연동이 필요할 때만**
+> 추가로 호스팅합니다 (옵션). FastAPI 백엔드는 없습니다.
 
----
+## 컴포넌트 책임 (헷갈리기 쉬운 부분)
+
+| 컴포넌트 | 책임 | 동작 | 어디서? |
+|---|---|---|---|
+| **GitHub Actions cron** | 매일 16시 KST 발동 → scan_daily / publish_macro / publish_chart / **telegram_worker (알림 발송)** 순차 실행 | 매번 짧게 (수 분), 끝나면 종료 | GitHub Actions (필수) |
+| **텔레그램 알림 발송** (`telegram_worker.py`) | scan_results 보고 사용자에게 텔레그램 메시지 push (아웃바운드) | cron 안에서 1회 실행 | 위 GitHub Actions 가 호출 |
+| **텔레그램 봇 워커** (`telegram_bot.py`) | 사용자가 봇에게 보낸 `/link <토큰>` 같은 메시지 수신 (인바운드, long-poll) | 25초 timeout 으로 무한 반복 → 24/7 떠 있어야 함 | Render Worker / 본인 PC / 다른 long-running 호스트 |
+| **PWA 푸시 발송** | telegram_worker 가 텔레그램과 함께 호출 | cron 안에서 한 번 | 위 GitHub Actions |
+
+핵심: 알림 **발송** 은 GitHub Actions 만으로 됩니다. 봇 **수신** (사용자 셀프 연동
+용) 은 long-poll 이라 GitHub Actions 로 안 됩니다 — 별도 호스팅 필요.
 
 ## 0. 사전 준비
 
-| 서비스 | 무엇 |
-|---|---|
-| **Vercel** | https://vercel.com — Next.js 호스팅 (Hobby 무료) |
-| **Supabase** | https://supabase.com — Postgres (무료 500MB) |
-| **GitHub** | 이 repo 가 푸시되어 있어야 함 |
-| **Google Cloud Console** | OAuth 2.0 클라이언트 (무료) |
-| **Telegram BotFather** | (선택) 봇 토큰 — @candle_trend_bot 같은 봇 1개 생성 |
-| **Render** | (선택) 텔레그램 봇 워커 호스팅 — 무료 Worker |
+| 서비스 | 무엇 | 필수 여부 |
+|---|---|---|
+| **Vercel** | https://vercel.com — Next.js 호스팅 (Hobby 무료) | 필수 |
+| **Supabase** | https://supabase.com — Postgres (무료 500MB) | 필수 |
+| **GitHub Actions** | repo 의 `.github/workflows/*.yml` cron (Public repo 무제한) | 필수 — 사이트의 데이터/알림 발동기 |
+| **Google Cloud Console** | OAuth 2.0 클라이언트 (무료) | 필수 (로그인) |
+| **Telegram BotFather** | 봇 토큰 — `@candle_trend_bot` 같은 봇 1개 | 텔레그램 알림 원하면 필수 |
+| **Render Worker** | https://render.com 무료 Worker — 봇 long-poll | **새 사용자 셀프 연동을 받을 때만** (자세히는 §5) |
 
 ---
 
@@ -104,9 +115,14 @@ Vercel 이 자동으로 빌드 → 배포. 5분 이내 `https://thesauros.vercel
 
 ---
 
-## 4. GitHub Actions cron
+## 4. GitHub Actions cron (필수)
 
-`.github/workflows/` 안에 이미 정의되어 있습니다. Repository 의 Settings → Secrets and variables → Actions 에 다음 환경변수 추가:
+> **이게 사이트의 발동기입니다.** 매일 16시 KST 에 워크플로가 발동되어
+> 모든 데이터 갱신과 **텔레그램/푸시 알림 발송**이 이 안에서 일어납니다.
+> 봇 워커 없이도 알림은 여기서 다 보내집니다.
+
+`.github/workflows/` 에 이미 정의됨. Repository → Settings → Secrets and
+variables → Actions 에 다음 환경변수 추가:
 
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `DATABASE_URL`
 - `FRED_API_KEY`, `DART_API_KEY`
@@ -114,15 +130,23 @@ Vercel 이 자동으로 빌드 → 배포. 5분 이내 `https://thesauros.vercel
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LINK_SECRET`
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`
 
-워크플로 활성화 후 `Actions` 탭에서 첫 실행을 수동으로 트리거 (워크플로 페이지 → Run workflow) 해서 정상 동작 확인.
+활성화 후 `Actions` 탭에서 첫 실행 수동 트리거 (Run workflow) → 정상 동작 확인.
 
 ---
 
-## 5. (선택) 텔레그램 봇 워커
+## 5. 텔레그램 봇 long-poll 워커
 
-사용자 셀프 연동 (`/link <token>`) 을 처리하려면 long-poll 워커가 24/7 떠 있어야 합니다.
+> **언제 필요한가:**
+> - ✅ **필요함**: 새 사용자가 사이트에서 `/settings/alerts → 토큰 발급` 누른 다음
+>   본인 텔레그램에서 `/link <토큰>` 보내서 자동 연동시키려면.
+> - ❌ **불필요**: 본인만 쓰거나, 새 사용자의 `chat_id` 를 본인이 직접 DB 에
+>   `UPDATE users SET telegram_chat_id='...' WHERE email='...'` 로 넣어줄 거면.
+>   알림 발송은 GitHub Actions cron 이 다 합니다.
 
-### 옵션 A: Render Free Worker
+GitHub Actions 로는 할 수 없습니다 — long-poll 은 25초 timeout 으로 무한 반복하는
+24/7 프로세스이고, GH Actions 의 잡 수명/quota 모델과 안 맞습니다.
+
+### 옵션 A: Render Free Worker (클라우드)
 
 1. render.com → New → Background Worker → GitHub repo 연결
 2. **Root Directory**: 빈 값 (repo root)
@@ -131,8 +155,10 @@ Vercel 이 자동으로 빌드 → 배포. 5분 이내 `https://thesauros.vercel
 5. **Start command**: `python -m app.db.telegram_bot --verbose`
 6. Environment variables:
    - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_LINK_SECRET` (Vercel 과 동일 값)
+   - `TELEGRAM_LINK_SECRET` (Vercel 의 값과 동일해야 함)
    - `WEB_BASE_URL=https://<your-vercel-domain>` (consume endpoint 호출용)
+
+무료 750h/월 — 한 달 720h 라서 충분.
 
 ### 옵션 B: 본인 PC
 
@@ -193,7 +219,7 @@ python -m app.db.vapid_keys
 | Vercel Hobby | 무제한 (개인 비상업) |
 | Supabase Free | DB 500MB / Auth 50,000 MAU / 50K Edge calls |
 | GitHub Actions | Public repo 무제한 / Private 2,000분/월 |
-| Render Worker | 750시간/월 (24h × 31일 = 744h, 빠듯하지만 가능) |
+| Render Worker | (셀프 연동 쓸 때만) 750시간/월 — 24h×31=744h 라 1워커는 가능 |
 | Google OAuth | 무료 |
 | Telegram Bot API | 무료 (rate limit 30 msg/sec) |
 
