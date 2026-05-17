@@ -78,23 +78,84 @@ export function TelegramLink({ connected }: { connected: boolean }) {
       <div className="font-medium text-amber-700 dark:text-amber-300">
         🔔 텔레그램 연동
       </div>
-      <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-        <li>
-          텔레그램에서{" "}
-          <a
-            href="https://t.me/candle_trend_bot"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono underline"
-          >
-            @candle_trend_bot
-          </a>{" "}
-          열기
-        </li>
-        <li>아래 버튼을 눌러 일회용 연동 토큰 발급</li>
-        <li>발급된 명령을 봇 채팅창에 그대로 붙여넣기</li>
-        <li>이 페이지를 새로고침 → ✅ 연동됨 확인</li>
-      </ol>
+
+      <details className="text-sm text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground/80 hover:text-foreground">
+          텔레그램이 처음이신가요? (눌러서 펼치기)
+        </summary>
+        <ol className="list-decimal pl-5 space-y-1.5 mt-2 text-xs">
+          <li>
+            <a
+              href="https://telegram.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              텔레그램
+            </a>{" "}
+            앱 설치 — 모바일 (App Store / Google Play) 또는 데스크톱
+            (Windows / Mac).
+          </li>
+          <li>
+            전화번호로 가입 (무료). 카카오톡과 별개의 앱입니다.
+          </li>
+          <li>
+            로그인 후 검색창에{" "}
+            <code className="font-mono bg-muted px-1 rounded">@candle_trend_bot</code>{" "}
+            입력 → 결과의 봇 클릭.
+          </li>
+          <li>
+            아래 <strong>1단계</strong>의 링크로 바로 열면 검색 생략 가능합니다.
+          </li>
+        </ol>
+      </details>
+
+      <div>
+        <div className="font-medium text-sm mb-2 text-foreground/80">
+          연동 순서
+        </div>
+        <ol className="list-decimal pl-5 space-y-2 text-sm">
+          <li>
+            <a
+              href="https://t.me/candle_trend_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono underline text-blue-600 dark:text-blue-400"
+            >
+              t.me/candle_trend_bot
+            </a>{" "}
+            클릭 → 텔레그램이 열리면{" "}
+            <strong>SAVE / 시작 / START</strong> 버튼 누르기.
+          </li>
+          <li>
+            봇 채팅창에{" "}
+            <code className="font-mono bg-muted px-1 rounded">/start</code>{" "}
+            입력 후 전송 — 봇이 도움말로 응답합니다.
+          </li>
+          <li>
+            아래 <strong>토큰 발급</strong> 버튼 클릭. 발급된{" "}
+            <code className="font-mono bg-muted px-1 rounded">/link 토큰값</code>{" "}
+            형태의 명령이 나타납니다.
+          </li>
+          <li>
+            <strong>복사</strong> 버튼 누르고 → 텔레그램 봇 채팅창에 붙여넣고
+            → 전송.
+          </li>
+          <li>
+            봇이{" "}
+            <span className="text-emerald-700 dark:text-emerald-300">
+              ✅ 연동 완료!
+            </span>{" "}
+            라고 답하면 끝. 이 페이지를 새로고침하면 위 상태가 바뀝니다.
+          </li>
+        </ol>
+      </div>
+
+      <div className="text-xs text-muted-foreground bg-muted/40 rounded p-2">
+        💡 <strong>텔레그램을 안 쓰신다면?</strong> 이 단계를 건너뛰고 아래의{" "}
+        <strong>📱 브라우저 푸시</strong> 만 켜셔도 됩니다. PC/모바일 브라우저로
+        직접 알림이 옵니다.
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
