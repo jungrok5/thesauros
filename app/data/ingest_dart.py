@@ -77,15 +77,14 @@ def _have_key() -> bool:
 def fetch_corp_code_map() -> pd.DataFrame:
     """Download the full corpCode.xml zip and return (corp_code, stock_code, name).
 
-    Cached on first call into models_store/dart_corp_code.parquet.
+    Cached on first call into data/dart_corp_code.parquet.
     """
-    from pathlib import Path
     from io import BytesIO
     import zipfile
     import xml.etree.ElementTree as ET
-    from app.config import MODEL_DIR
+    from app.config import DATA_DIR
 
-    cache = MODEL_DIR / "dart_corp_code.parquet"
+    cache = DATA_DIR / "dart_corp_code.parquet"
     if cache.exists():
         return pd.read_parquet(cache)
 
