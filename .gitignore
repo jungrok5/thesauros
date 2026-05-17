@@ -48,3 +48,8 @@ _archive_v1_web/
 
 # telegram bot long-poll offset state (runtime, per-machine)
 app/db/telegram_bot_state.txt
+
+# Personal working docs (local-only)
+WORK_LOG.md
+TODO.md
+PLAN_BOOK_SITE.md
