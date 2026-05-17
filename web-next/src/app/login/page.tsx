@@ -46,7 +46,8 @@ export default function LoginPage() {
         </form>
 
         <p className="text-xs text-muted-foreground mt-6">
-          관리자가 미리 등록한 이메일만 접근할 수 있습니다.
+          누구나 로그인할 수 있습니다. 처음 로그인하면 사용 요청을 보내고,
+          관리자 승인 후 모든 기능을 사용할 수 있습니다.
         </p>
       </div>
     </div>

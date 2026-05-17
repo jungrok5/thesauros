@@ -10,6 +10,7 @@ import {
   Moon,
   Search,
   Settings,
+  Shield,
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,8 +26,13 @@ const NAV = [
   { href: "/settings", label: "설정", icon: Settings },
 ];
 
-export function Sidebar() {
+const ADMIN_NAV = [
+  { href: "/admin/access", label: "관리자 — 접근", icon: Shield },
+];
+
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
+  const items = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
   return (
     <aside className="w-56 border-r border-border bg-background px-3 py-6 hidden md:flex md:flex-col gap-1">
       <Link href="/dashboard" className="px-3 mb-6 block">
@@ -35,8 +41,8 @@ export function Sidebar() {
           book × ML
         </div>
       </Link>
-      <nav className="flex flex-col gap-0.5">
-        {NAV.map((item) => {
+      <nav className="flex flex-col gap-0.5" data-testid="sidebar-nav">
+        {items.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
