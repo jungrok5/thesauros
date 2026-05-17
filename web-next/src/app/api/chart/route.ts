@@ -1,14 +1,20 @@
 /**
- * Proxy /api/chart → Python backend /api/book/chart.
+ * GET /api/chart?ticker=...&timeframe=daily|weekly|monthly&years=N
  *
- * Keeps the FastAPI URL server-only (BACKEND_URL is not NEXT_PUBLIC_).
+ * Reads precomputed chart payload from Supabase `chart_data` (populated
+ * daily by app.db.scan_daily → app.db.publish_chart). No FastAPI hop.
+ *
+ * Response shape (unchanged from the old FastAPI proxy):
+ *   { ticker, timeframe, bars, mas, patterns, quarter_lines, last_candle }
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { getServerClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const BACKEND = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
+const TICKER_RE = /^[A-Z0-9._-]{1,16}$/i;
+const TIMEFRAME_RE = /^(daily|weekly|monthly)$/;
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -16,32 +22,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const url = new URL(req.url);
-  const ticker = url.searchParams.get("ticker") ?? "";
+  const ticker = (url.searchParams.get("ticker") ?? "").toUpperCase();
   const timeframe = url.searchParams.get("timeframe") ?? "weekly";
-  const years = url.searchParams.get("years") ?? "2";
-  if (!/^[A-Z0-9._-]{1,16}$/i.test(ticker)) {
+  const yearsStr = url.searchParams.get("years") ?? "2";
+
+  if (!TICKER_RE.test(ticker)) {
     return NextResponse.json({ error: "invalid ticker" }, { status: 400 });
   }
-  if (!/^(daily|weekly|monthly)$/.test(timeframe)) {
+  if (!TIMEFRAME_RE.test(timeframe)) {
     return NextResponse.json({ error: "invalid timeframe" }, { status: 400 });
   }
-  if (!/^\d{1,2}$/.test(years)) {
+  const years = Number(yearsStr);
+  if (!Number.isInteger(years) || years < 1 || years > 20) {
     return NextResponse.json({ error: "invalid years" }, { status: 400 });
   }
-  const target = `${BACKEND}/api/book/chart?ticker=${encodeURIComponent(ticker)}&timeframe=${timeframe}&years=${years}`;
-  try {
-    const r = await fetch(target, { cache: "no-store" });
-    const text = await r.text();
-    return new NextResponse(text, {
-      status: r.status,
-      headers: { "content-type": r.headers.get("content-type") ?? "application/json" },
-    });
-  } catch (e) {
-    console.error("chart proxy error:", e);
-    const detail = process.env.NODE_ENV === "production" ? undefined : String(e);
+
+  const sb = getServerClient();
+  const { data, error } = await sb
+    .from("chart_data")
+    .select("payload, updated_at")
+    .eq("ticker", ticker)
+    .eq("timeframe", timeframe)
+    .eq("years", years)
+    .maybeSingle();
+
+  if (error) {
+    console.error("chart_data read:", error.message);
+    return NextResponse.json({ error: "db error" }, { status: 500 });
+  }
+  if (!data) {
     return NextResponse.json(
-      { error: "backend unreachable", ...(detail && { detail }) },
-      { status: 502 },
+      {
+        error: "no precomputed chart for this ticker/timeframe",
+        hint: `run: python -m app.db.publish_chart --ticker ${ticker}`,
+      },
+      { status: 404 },
     );
   }
+  return NextResponse.json(data.payload);
 }

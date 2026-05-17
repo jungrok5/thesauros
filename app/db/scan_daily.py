@@ -284,23 +284,80 @@ def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
 def scan_one_local(ticker: str, years: int = 5) -> Dict[str, Any]:
     """Compute the scan result for one ticker without touching the DB.
 
-    Returns: {ticker, status, as_of?, signals?}
+    Returns: {ticker, status, as_of?, signals?, result?}
       status ∈ {"ok", "insufficient_history", "no_active_signal"}
+      `result` is the full analyze_ticker() output (used to populate
+      analyze_results so the site can render without FastAPI).
     """
     df = load_ticker_data(ticker, years=years)
     if df is None or len(df) < 250:
         return {"ticker": ticker, "status": "insufficient_history"}
     result = analyze_ticker(ticker, df)
     signals = extract_signals(result)
-    if not signals:
-        return {"ticker": ticker, "status": "no_active_signal",
-                "as_of": pd.Timestamp(result.get("as_of"))}
-    return {
+    base = {
         "ticker": ticker,
-        "status": "ok",
         "as_of": pd.Timestamp(result.get("as_of")),
-        "signals": signals,
+        "result": result,
     }
+    if not signals:
+        return {**base, "status": "no_active_signal"}
+    return {**base, "status": "ok", "signals": signals}
+
+
+def _flush_analyze_chunk(chunk: List[Dict[str, Any]]) -> int:
+    """Upsert full analyze_ticker() outputs into analyze_results."""
+    import json
+    rows: List[Tuple[Any, ...]] = []
+    for c in chunk:
+        result = c.get("result")
+        if not result:
+            continue
+        as_of = pd.Timestamp(result.get("as_of")).date()
+        rows.append((
+            c["ticker"],
+            as_of,
+            float(result.get("last_close") or 0),
+            result.get("action"),
+            float(result.get("book_score") or 0),
+            json.dumps(result, ensure_ascii=False, default=str),
+        ))
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO analyze_results
+                  (ticker, as_of, last_close, action, book_score, result, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, now())
+                ON CONFLICT (ticker) DO UPDATE SET
+                  as_of = EXCLUDED.as_of,
+                  last_close = EXCLUDED.last_close,
+                  action = EXCLUDED.action,
+                  book_score = EXCLUDED.book_score,
+                  result = EXCLUDED.result,
+                  updated_at = now()
+                """,
+                rows,
+            )
+    return len(rows)
+
+
+def _publish_chart_for(tickers: Iterable[str]) -> int:
+    """Build + upsert chart payloads for each ticker across daily/weekly/monthly.
+
+    Same precompute pattern as analyze_results — keeps the site
+    backend-free.
+    """
+    from app.db.publish_chart import publish_for
+    n = 0
+    for t in tickers:
+        try:
+            s = publish_for(t)
+            n += s.get("upserts", 0)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("chart publish failed for %s: %s", t, e)
+    return n
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -328,22 +385,31 @@ def main(argv: Optional[List[str]] = None) -> int:
              len(tickers), args.years, args.batch)
     t0 = time.time()
     stats = {"scanned": 0, "with_signals": 0, "inserted": 0,
+             "analyze_upserted": 0, "chart_upserted": 0,
              "skipped_no_history": 0, "skipped_no_signal": 0, "errors": 0}
     chunk: List[Dict[str, Any]] = []
-    # Ensure even tickers that had a signal yesterday but no signal today get
-    # deactivated (the chunk UPDATE only touches the chunk's tickers).
-    no_signal_chunk: List[str] = []
+    # Tickers with no active signal — still get the full analyze result
+    # stored so the /stocks/[ticker] page can render their trend/candles.
+    no_signal_chunk: List[Dict[str, Any]] = []
 
     def flush() -> None:
         nonlocal chunk, no_signal_chunk
         if chunk or no_signal_chunk:
-            # Deactivate "no signal today" tickers by passing an empty-signals
-            # row so the UPDATE in _flush_chunk runs for them.
-            all_chunk = chunk + [
-                {"ticker": t, "as_of": pd.Timestamp.now(), "signals": []}
-                for t in no_signal_chunk
+            # Deactivate "no signal today" tickers via empty-signals rows.
+            all_for_scan = chunk + [
+                {"ticker": c["ticker"], "as_of": pd.Timestamp.now(), "signals": []}
+                for c in no_signal_chunk
             ]
-            stats["inserted"] += _flush_chunk(all_chunk)
+            stats["inserted"] += _flush_chunk(all_for_scan)
+            # Both buckets carry `result` from analyze_ticker — store both.
+            stats["analyze_upserted"] += _flush_analyze_chunk(
+                chunk + no_signal_chunk
+            )
+            # Also pre-render the chart payload (daily/weekly/monthly) so
+            # /stocks/[ticker] can render without FastAPI.
+            stats["chart_upserted"] += _publish_chart_for(
+                [c["ticker"] for c in (chunk + no_signal_chunk)]
+            )
         chunk = []
         no_signal_chunk = []
 
@@ -357,8 +423,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 # Don't bother queueing for deactivate — likely never had rows.
             elif status == "no_active_signal":
                 stats["skipped_no_signal"] += 1
-                # Still queue to deactivate any stale rows.
-                no_signal_chunk.append(t)
+                # Still queue: deactivate scan_results AND store the
+                # full analyze result.
+                no_signal_chunk.append(res)
             else:  # ok
                 stats["with_signals"] += 1
                 chunk.append(res)
