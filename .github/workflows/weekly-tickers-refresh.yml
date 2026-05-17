@@ -1,0 +1,29 @@
+name: Weekly Tickers Refresh
+# Refreshes the tickers master from authoritative sources (FDR for KR,
+# Nasdaq Trader for US) once a week. New listings get inserted, removed
+# listings get is_active = false.
+on:
+  schedule:
+    - cron: "0 1 * * 0"   # Sunday 01:00 UTC = 10:00 KST
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - run: |
+          pip install -r requirements.txt
+          pip install supabase "psycopg[binary]" psycopg-pool
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          python -m app.db.seed_tickers --markets kospi kosdaq us --refresh
