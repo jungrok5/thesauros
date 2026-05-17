@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Thesauros — 캔들차트 × ML 종합 분석",
+  title: "Thesauros — 추세추종 캔들 분석",
   description:
-    "저자 『추세추종 매매 룰』 룰 기반 자동화 + ML 랭킹.",
+    "추세추종 캔들 분석 자동화 매매 보조 도구.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

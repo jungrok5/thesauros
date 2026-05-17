@@ -1,7 +1,7 @@
 {
   "name": "Thesauros — 캔들 추세 추종",
   "short_name": "Thesauros",
-  "description": "저자 『추세추종 매매 룰』 룰 기반 자동화 + ML 랭킹",
+  "description": "추세추종 캔들 분석 자동화 매매 보조 도구",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
