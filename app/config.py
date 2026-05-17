@@ -23,6 +23,9 @@ DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR = ROOT / ".cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
+# DuckDB local staging path — kept as a config knob because some legacy
+# `app/data/ingest_*` modules still default to it for one-shot backfills.
+# All canonical reads happen against Supabase now.
 DUCKDB_PATH = str(DATA_DIR / "pit.duckdb")
 
 # SEC EDGAR identification — required by SEC fair use policy

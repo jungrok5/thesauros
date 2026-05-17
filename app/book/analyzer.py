@@ -196,20 +196,42 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
 
 
 def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
-    """Try DB first, fall back to yfinance live fetch."""
-    from app.data.pit_db import cursor
-    from datetime import date, timedelta
-    with cursor() as con:
-        df = con.execute(
-            "SELECT date, open, high, low, close, adj_close, volume FROM prices "
-            "WHERE ticker = ? ORDER BY date",
-            [ticker],
-        ).df()
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-        return df
+    """Load OHLCV for the requested ticker.
 
-    # Live fallback
+    Source order:
+      1. Supabase bars_daily (canonical, populated by cron)
+      2. yfinance live fetch (only when Supabase has nothing — useful for
+         brand-new tickers in dev)
+
+    DuckDB is no longer consulted — all bars are migrated to Supabase
+    (see migrations/007 + app.db.migrate_duckdb_to_supabase).
+    """
+    from datetime import date, timedelta
+    from app.db import get_conn
+
+    # 1) Supabase bars_daily
+    try:
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT bar_date, open, high, low, close, adj_close, volume "
+                    "FROM bars_daily WHERE ticker = %s ORDER BY bar_date",
+                    (ticker,),
+                )
+                rows = cur.fetchall()
+        if rows:
+            df = pd.DataFrame(rows, columns=[
+                "date", "open", "high", "low", "close", "adj_close", "volume",
+            ])
+            df["date"] = pd.to_datetime(df["date"])
+            for col in ("open", "high", "low", "close", "adj_close", "volume"):
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            return df
+    except Exception:
+        # Supabase unreachable in dev — fall through to live fetch.
+        pass
+
+    # 2) Live fallback (yfinance)
     import yfinance as yf
     start = (date.today() - timedelta(days=years * 365 + 30)).isoformat()
     try:
