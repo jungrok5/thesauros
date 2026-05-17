@@ -153,6 +153,29 @@ class KISClient:
         res.raise_for_status()
         return res.json().get("output2", [])[:count]
 
+    def investor_flow(self, code: str) -> List[Dict]:
+        """일별 외국인/기관/개인 매매 동향 (recent 30 trading days).
+
+        KIS endpoint: /uapi/domestic-stock/v1/quotations/inquire-investor
+        TR-ID: FHKST01010900
+
+        Returns list of dicts; relevant fields per row:
+          stck_bsop_date    YYYYMMDD
+          frgn_ntby_qty     외국인 순매수 수량
+          frgn_ntby_tr_pbmn 외국인 순매수 거래대금 (KRW)
+          orgn_ntby_qty     기관 순매수 수량
+          orgn_ntby_tr_pbmn 기관 순매수 거래대금
+          prsn_ntby_qty     개인 순매수 수량
+          prsn_ntby_tr_pbmn 개인 순매수 거래대금
+        """
+        path = "/uapi/domestic-stock/v1/quotations/inquire-investor"
+        url = f"{self.base}{path}"
+        params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}
+        res = requests.get(url, headers=self._headers("FHKST01010900"),
+                           params=params, timeout=10)
+        res.raise_for_status()
+        return res.json().get("output", [])
+
     # ----- account -----
     def balance(self) -> Dict:
         """Account balance (positions + cash)."""

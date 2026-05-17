@@ -29,6 +29,11 @@ test.describe("Book-faithful site — public routes redirect", () => {
     await page.goto("/closing-trade");
     await expect(page).toHaveURL(/\/login$/);
   });
+
+  test("themes redirects to /login", async ({ page }) => {
+    await page.goto("/themes");
+    await expect(page).toHaveURL(/\/login$/);
+  });
 });
 
 test.describe("Chart proxy auth", () => {

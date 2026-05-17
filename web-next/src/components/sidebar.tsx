@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Compass,
+  LayoutGrid,
   LineChart,
   Moon,
   Search,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
   { href: "/recommendations", label: "추천 종목", icon: BarChart3 },
+  { href: "/themes", label: "테마 (탑다운)", icon: LayoutGrid },
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/closing-trade", label: "종가매매 모드", icon: Moon },

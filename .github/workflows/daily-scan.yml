@@ -54,3 +54,29 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           python -m app.db.publish_macro
+
+      - name: Ingest themes (Naver)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # --themes-only on weekdays (fast). Full membership refresh weekly.
+          if [ "$(date -u +%u)" = "5" ]; then
+            python -m app.db.ingest_themes
+          else
+            python -m app.db.ingest_themes --themes-only
+          fi
+
+      - name: Ingest investor flow (KIS)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          KIS_ACCOUNT_NO: ${{ secrets.KIS_ACCOUNT_NO }}
+          KIS_ACCOUNT_PROD_CODE: ${{ secrets.KIS_ACCOUNT_PROD_CODE }}
+          KIS_ENV: "vts"
+        run: |
+          python -m app.db.ingest_investor_flow
