@@ -1,4 +1,4 @@
-"""Book analysis modules (저자, 추세추종 매매 룰, 2026).
+"""Book analysis modules — trend-following / candle pattern rules.
 
 Submodules:
   trend     — 월봉/주봉 10MA 추세 판정, 정배열/역배열 점수
