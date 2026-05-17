@@ -219,6 +219,42 @@ def extract_signals(result: Dict[str, Any]) -> List[Dict[str, Any]]:
     return signals
 
 
+def _filter_movers(tickers: List[str], min_pct: float) -> List[str]:
+    """Keep only tickers whose latest bar moved at least ``min_pct`` percent
+    (absolute) vs the previous close. Used by --changed-pct.
+
+    A single SQL window query computes |close - prev_close| / prev_close
+    for every requested ticker's latest bar, then we filter Python-side.
+    """
+    if not tickers:
+        return []
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH ranked AS (
+                  SELECT ticker, bar_date, close,
+                         LAG(close) OVER (PARTITION BY ticker ORDER BY bar_date) AS prev_close,
+                         ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY bar_date DESC) AS rn
+                    FROM bars_daily
+                   WHERE ticker = ANY(%s)
+                )
+                SELECT ticker, close, prev_close
+                  FROM ranked
+                 WHERE rn = 1
+                """,
+                (tickers,),
+            )
+            rows = cur.fetchall()
+    out: List[str] = []
+    for t, close, prev in rows:
+        if close is None or prev in (None, 0):
+            continue
+        if abs(float(close) - float(prev)) / float(prev) * 100.0 >= min_pct:
+            out.append(t)
+    return out
+
+
 def _list_tickers(markets: Optional[List[str]] = None,
                   tickers: Optional[List[str]] = None,
                   limit: Optional[int] = None) -> List[str]:
@@ -370,6 +406,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--years", type=int, default=5)
     p.add_argument("--batch", type=int, default=100,
                    help="flush DB rows every N tickers (default 100)")
+    p.add_argument("--changed-pct", type=float, default=0.0,
+                   help="incremental mode: only scan tickers whose latest |change vs prev close| ≥ this %% "
+                        "(default 0 = full scan). E.g. 1.0 ≈ 'movers only'.")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -381,6 +420,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     tickers = _list_tickers(markets=args.markets,
                             tickers=args.tickers,
                             limit=args.limit)
+
+    if args.changed_pct > 0:
+        before = len(tickers)
+        tickers = _filter_movers(tickers, args.changed_pct)
+        log.info("changed-pct=%.2f: %d → %d movers", args.changed_pct, before, len(tickers))
+
     log.info("scanning %d tickers (years=%d, batch=%d)",
              len(tickers), args.years, args.batch)
     t0 = time.time()

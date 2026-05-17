@@ -404,7 +404,12 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
             stats["new_alerts"] += 1
             if sent:
                 stats["sent"] += 1
-                time.sleep(0.3)
+                # Telegram global limit: ~30 msg/sec for all chats. With ~20
+                # msg/sec we stay safely under (and per-chat limit of 1 msg/sec
+                # is naturally respected — we only send 1 message per
+                # ticker×alert_type per user, so a single user almost never
+                # gets 2 messages back-to-back).
+                time.sleep(0.05)
     return stats
 
 

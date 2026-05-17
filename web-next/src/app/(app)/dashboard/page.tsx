@@ -8,7 +8,9 @@ import { MacroDial } from "@/components/macro-dial";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// Macro state changes once per day via cron; 60s ISR is a generous
+// upper bound that lets the page serve from cache to subsequent users.
+export const revalidate = 60;
 
 type IndicatorState = {
   key: string;

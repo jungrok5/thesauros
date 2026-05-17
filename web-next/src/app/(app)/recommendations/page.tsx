@@ -13,7 +13,8 @@ import { ActionBadge } from "@/components/action-badge";
 import { formatNumber } from "@/lib/utils";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// Updated daily by scan_daily cron; 60s ISR for the common case.
+export const revalidate = 60;
 
 interface SearchParams {
   market?: string;

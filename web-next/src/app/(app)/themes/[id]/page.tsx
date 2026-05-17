@@ -8,7 +8,8 @@ import { notFound } from "next/navigation";
 import { ActionBadge } from "@/components/action-badge";
 import { getServerClient } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// Daily-refreshed; 60s ISR.
+export const revalidate = 60;
 
 interface PageProps {
   params: Promise<{ id: string }>;

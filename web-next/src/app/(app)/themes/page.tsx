@@ -7,7 +7,8 @@
 import Link from "next/link";
 import { getServerClient } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// Theme daily ingest runs once per day; 60s ISR.
+export const revalidate = 60;
 
 interface Row {
   theme_id: number;
