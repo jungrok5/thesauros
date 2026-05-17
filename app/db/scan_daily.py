@@ -257,8 +257,14 @@ def _filter_movers(tickers: List[str], min_pct: float) -> List[str]:
 
 def _list_tickers(markets: Optional[List[str]] = None,
                   tickers: Optional[List[str]] = None,
-                  limit: Optional[int] = None) -> List[str]:
-    """Pick tickers from `tickers` master table."""
+                  limit: Optional[int] = None,
+                  sp500_only: bool = False) -> List[str]:
+    """Pick tickers from `tickers` master table.
+
+    sp500_only: for the US side (NASDAQ/NYSE/AMEX) restrict to S&P 500
+    constituents only. Keeps Supabase storage bounded — full US universe
+    is ~7K tickers vs S&P 500's 500. KR markets are unaffected.
+    """
     where = "is_active = true"
     params: List[Any] = []
     if tickers:
@@ -267,13 +273,32 @@ def _list_tickers(markets: Optional[List[str]] = None,
     elif markets:
         where += " AND market = ANY(%s)"
         params.append([m.upper() for m in markets])
-    sql = f"SELECT ticker FROM tickers WHERE {where} ORDER BY ticker"
+
+    sql = f"SELECT ticker, market FROM tickers WHERE {where} ORDER BY ticker"
     if limit:
         sql += f" LIMIT {int(limit)}"
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            return [r[0] for r in cur.fetchall()]
+            rows = cur.fetchall()
+
+    if not sp500_only:
+        return [r[0] for r in rows]
+
+    # Filter US rows to S&P 500 constituents; keep KR/etc as-is.
+    from app.data.universe import fetch_sp500_table
+    try:
+        sp500 = set(fetch_sp500_table()["ticker"].tolist())
+    except Exception:
+        log.warning("S&P 500 fetch failed; falling back to full US universe")
+        return [r[0] for r in rows]
+    US = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"}
+    out: List[str] = []
+    for t, m in rows:
+        if m in US and t not in sp500:
+            continue
+        out.append(t)
+    return out
 
 
 def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
@@ -409,6 +434,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--changed-pct", type=float, default=0.0,
                    help="incremental mode: only scan tickers whose latest |change vs prev close| ≥ this %% "
                         "(default 0 = full scan). E.g. 1.0 ≈ 'movers only'.")
+    p.add_argument("--sp500-only", action="store_true",
+                   help="restrict US markets (NASDAQ/NYSE/AMEX) to S&P 500 constituents — "
+                        "keeps Supabase storage bounded")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -419,7 +447,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     tickers = _list_tickers(markets=args.markets,
                             tickers=args.tickers,
-                            limit=args.limit)
+                            limit=args.limit,
+                            sp500_only=args.sp500_only)
 
     if args.changed_pct > 0:
         before = len(tickers)
