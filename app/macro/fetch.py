@@ -1,10 +1,11 @@
-"""Fetch macro indicators from FRED + yfinance and cache in DuckDB.
+"""Fetch macro indicators from FRED + yfinance and cache in Supabase.
 
-Schema (new table `macro`):
-  series_id  VARCHAR
-  date       DATE
-  value      DOUBLE
-  PRIMARY KEY (series_id, date)
+Cache table is `macro_series` (migration 007):
+    series_id VARCHAR(40), date DATE, value NUMERIC, PRIMARY KEY (series_id, date)
+
+The macro state cron (`app.db.publish_macro`) calls `latest_value` / `history`
+which read from Supabase. `ingest_all` is also called from the same cron to
+refresh the cache before publishing.
 """
 from __future__ import annotations
 
@@ -14,24 +15,8 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from app.config import FRED_API_KEY
-from app.data.pit_db import connect, cursor
-from app.macro.indicators import INDICATORS, get_indicator
-
-
-MACRO_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS macro (
-    series_id VARCHAR,
-    date      DATE,
-    value     DOUBLE,
-    PRIMARY KEY (series_id, date)
-);
-CREATE INDEX IF NOT EXISTS idx_macro_date ON macro(date);
-"""
-
-
-def ensure_macro_schema() -> None:
-    with cursor() as con:
-        con.execute(MACRO_SCHEMA_SQL)
+from app.db import get_conn
+from app.macro.indicators import INDICATORS
 
 
 def _fetch_fred(series_id: str, start: Optional[str] = None) -> pd.DataFrame:
@@ -69,16 +54,18 @@ def _fetch_yf(series_id: str, start: Optional[str] = None) -> pd.DataFrame:
 
 
 def _last_date(series_id: str) -> Optional[date]:
-    with cursor() as con:
-        row = con.execute(
-            "SELECT MAX(date) FROM macro WHERE series_id = ?", [series_id]
-        ).fetchone()
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT MAX(date) FROM macro_series WHERE series_id = %s",
+                (series_id,),
+            )
+            row = cur.fetchone()
     return row[0] if row and row[0] else None
 
 
 def ingest_one(series_id: str, source: str, years: int = 8) -> int:
     """Fetch + upsert a single macro series. Returns rows inserted."""
-    ensure_macro_schema()
     last = _last_date(series_id)
     if last is not None:
         start = (last + timedelta(days=1)).isoformat()
@@ -95,17 +82,18 @@ def ingest_one(series_id: str, source: str, years: int = 8) -> int:
     if df.empty:
         return 0
 
-    df = df.assign(series_id=series_id)[["series_id", "date", "value"]]
-    con = connect()
-    try:
-        con.register("df_in", df)
-        con.execute("""
-            INSERT OR REPLACE INTO macro(series_id, date, value)
-            SELECT series_id, date, value FROM df_in
-        """)
-    finally:
-        con.close()
-    return len(df)
+    rows = [(series_id, r.date, float(r.value)) for r in df.itertuples()]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO macro_series (series_id, date, value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (series_id, date) DO UPDATE SET value = EXCLUDED.value
+                """,
+                rows,
+            )
+    return len(rows)
 
 
 def ingest_all(years: int = 8, indicators: Optional[List[Dict]] = None,
@@ -136,21 +124,28 @@ def ingest_all(years: int = 8, indicators: Optional[List[Dict]] = None,
 
 def latest_value(series_id: str) -> Optional[Dict]:
     """Most recent (date, value) for a series."""
-    with cursor() as con:
-        row = con.execute(
-            "SELECT date, value FROM macro WHERE series_id = ? ORDER BY date DESC LIMIT 1",
-            [series_id],
-        ).fetchone()
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT date, value FROM macro_series WHERE series_id = %s "
+                "ORDER BY date DESC LIMIT 1",
+                (series_id,),
+            )
+            row = cur.fetchone()
     if not row:
         return None
-    return {"date": row[0], "value": row[1]}
+    return {"date": row[0], "value": float(row[1]) if row[1] is not None else None}
 
 
 def history(series_id: str, years: int = 5) -> pd.DataFrame:
-    """Pull cached history for a series as DataFrame."""
+    """Pull cached history for a series as DataFrame (date, value)."""
     start = date.today() - timedelta(days=years * 365)
-    with cursor() as con:
-        return con.execute(
-            "SELECT date, value FROM macro WHERE series_id=? AND date >= ? ORDER BY date",
-            [series_id, start],
-        ).df()
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT date, value FROM macro_series "
+                "WHERE series_id = %s AND date >= %s ORDER BY date",
+                (series_id, start),
+            )
+            rows = cur.fetchall()
+    return pd.DataFrame(rows, columns=["date", "value"])

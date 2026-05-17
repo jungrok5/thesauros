@@ -17,23 +17,25 @@
 ## 아키텍처
 
 ```
-GitHub Actions (cron, 매일 16시 KST)
-  ├─ app.db.scan_daily        ─►  scan_results + analyze_results + chart_data
-  ├─ app.db.publish_macro     ─►  macro_state
-  ├─ app.db.ingest_themes     ─►  themes / theme_daily / theme_members
-  ├─ app.db.ingest_investor_flow ─► investor_flow (KIS)
-  ├─ app.db.seed_tickers      ─►  tickers master (KOSPI/KOSDAQ/US 9,570종)
-  └─ app.db.telegram_worker   ─►  alerts (텔레그램 + 웹 푸시)
+GitHub Actions (cron)
+  ├─ daily-scan.yml (16시 KST, Mon-Fri)
+  │    ├─ scan_daily      ─► scan_results + analyze_results + chart_data
+  │    ├─ publish_macro   ─► macro_state + macro_series (FRED/yfinance fetch)
+  │    ├─ ingest_themes   ─► themes / theme_daily / theme_members
+  │    ├─ ingest_news     ─► news / disclosures
+  │    ├─ ingest_investor_flow ─► investor_flow (KIS)
+  │    └─ telegram_worker ─► alerts (Telegram + Web Push)
+  ├─ weekly-tickers-refresh.yml (일 10시) ─► tickers (신규/폐지 마킹)
+  ├─ weekly-fundamentals.yml (토 11시)    ─► fundamentals + financials/factors_eval
+  └─ keepalive.yml (매일 10:30)           ─► Supabase ping
 
-                          ┌────► Supabase Postgres (single source of truth)
-                          │
-Next.js 16 (Vercel)  ─────┼────► NextAuth (Google OAuth)
-  - Server Components 가  │
-    Supabase 직접 조회    └────► (FastAPI 없음)
-
-Render Worker (long-poll, 선택)
-  └─ app.db.telegram_bot      ─►  사용자 셀프 연동 (/link <token>)
+                          ┌────► Supabase Postgres (단일 store)
+Next.js 16 (Vercel)  ─────┼────► Google OAuth
+  - Server Components 가  ├────► Telegram webhook (/api/telegram/webhook)
+    Supabase 직접 조회    └────► FastAPI 없음 / DuckDB 없음 / 24/7 봇 워커 없음
 ```
+
+자세한 데이터 흐름: [ARCHITECTURE.md](ARCHITECTURE.md). 배포: [DEPLOY.md](DEPLOY.md).
 
 | 컴포넌트 | 위치 |
 |---|---|

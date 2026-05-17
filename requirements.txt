@@ -25,9 +25,6 @@ pykrx>=1.0.45
 finance-datareader>=0.9.96
 fredapi>=0.5.1
 
-# Local cache / staging (PIT db — slated for removal in Phase 7)
-duckdb>=1.4
-
 # Supabase + DB layer (cron writes here)
 supabase>=2.30
 psycopg[binary]>=3.2
