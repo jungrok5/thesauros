@@ -1,41 +1,96 @@
-import { api, type MacroSnapshot } from "@/lib/api";
+/**
+ * Dashboard — macro overview. Reads everything from Supabase `macro_state`
+ * (populated daily by the `publish_macro` cron). Pure Supabase, no FastAPI.
+ */
 import { RegimeBadge } from "@/components/regime-badge";
 import { StatePill } from "@/components/state-pill";
 import { MacroDial } from "@/components/macro-dial";
 import { formatNumber, formatPct } from "@/lib/utils";
+import { getServerClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-async function fetchSnapshot(): Promise<{
-  data: MacroSnapshot | null;
-  error: string | null;
-}> {
-  try {
-    const data = await api.macroSnapshot();
-    return { data, error: null };
-  } catch (e) {
-    return { data: null, error: String(e) };
+type IndicatorState = {
+  key: string;
+  name_kr: string;
+  category: string;
+  book_ref: string;
+  desc: string;
+  value: number | null;
+  as_of: string | null;
+  yoy_pct: number | null;
+  state: "BULL" | "NEUTRAL" | "CAUTION" | "BEAR";
+  verdict: string;
+  unit: string;
+};
+
+type Regime = {
+  regime: string;
+  score: number;
+  n_indicators: number;
+  vix_state: string | null;
+  yield_curve_inverted: boolean;
+  note: string;
+};
+
+type MacroStateRow = {
+  global_status: string | null;
+  kr_status: string | null;
+  indices: Record<string, string> | null;
+  macro_indicators: Record<string, IndicatorState> | null;
+  mv_pq_signal: string | null;
+  dial_scores: Record<string, number> | null;
+  one_line_guidance: string | null;
+  regime: Regime | null;
+  updated_at: string;
+};
+
+async function fetchMacro(): Promise<MacroStateRow | null> {
+  const sb = getServerClient();
+  const { data, error } = await sb
+    .from("macro_state")
+    .select(
+      "global_status, kr_status, indices, macro_indicators, mv_pq_signal, " +
+        "dial_scores, one_line_guidance, regime, updated_at",
+    )
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) {
+    console.error("macro_state read:", error.message);
+    return null;
   }
+  return data as MacroStateRow | null;
+}
+
+function categorize(
+  indicators: Record<string, IndicatorState>,
+): Record<string, IndicatorState[]> {
+  const out: Record<string, IndicatorState[]> = {};
+  for (const ind of Object.values(indicators)) {
+    const cat = ind.category || "기타";
+    (out[cat] ??= []).push(ind);
+  }
+  for (const cat of Object.keys(out)) {
+    out[cat].sort((a, b) => a.name_kr.localeCompare(b.name_kr, "ko-KR"));
+  }
+  return out;
 }
 
 export default async function DashboardPage() {
-  const { data, error } = await fetchSnapshot();
+  const row = await fetchMacro();
 
-  if (error || !data) {
+  if (!row || !row.macro_indicators || !row.regime) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Macro</h1>
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-sm">
-          <div className="font-medium text-rose-700 dark:text-rose-300">
-            FastAPI 백엔드에 연결할 수 없습니다.
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+          <div className="font-medium text-amber-700 dark:text-amber-300">
+            거시 데이터가 아직 발행되지 않았습니다.
           </div>
-          <div className="mt-2 text-rose-600/80 dark:text-rose-200/80 font-mono text-xs">
-            {error}
-          </div>
-          <div className="mt-3 text-muted-foreground">
-            백엔드 실행:{" "}
+          <div className="mt-2 text-muted-foreground">
+            매일 자동으로 갱신됩니다. 수동 발행:{" "}
             <code className="bg-muted px-1 rounded">
-              python -m uvicorn app.api.server:app --reload --port 8001
+              python -m app.db.publish_macro
             </code>
           </div>
         </div>
@@ -43,8 +98,9 @@ export default async function DashboardPage() {
     );
   }
 
-  const { regime, indicators } = data;
-  const ts = new Date().toLocaleString("ko-KR");
+  const regime = row.regime;
+  const indicators = categorize(row.macro_indicators);
+  const updatedAt = new Date(row.updated_at).toLocaleString("ko-KR");
 
   return (
     <div className="space-y-8 max-w-7xl">
@@ -52,8 +108,10 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Macro</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            책 1부 거시 지표 25개 · 자동 상태 분류 · 시장 레짐 ·{" "}
-            <span className="font-mono opacity-70">{ts}</span>
+            책 1부 거시 지표 · 자동 상태 분류 · 시장 레짐 · 업데이트{" "}
+            <span className="font-mono opacity-70" suppressHydrationWarning>
+              {updatedAt}
+            </span>
           </p>
         </div>
         <RegimeBadge regime={regime.regime} score={regime.score} />
@@ -69,7 +127,7 @@ export default async function DashboardPage() {
           <RegimeBadge regime={regime.regime} score={regime.score} />
           <span className="text-sm text-foreground/80">{regime.note}</span>
         </div>
-        <div className="text-xs text-muted-foreground mt-2 flex items-center gap-4">
+        <div className="text-xs text-muted-foreground mt-2 flex items-center gap-4 flex-wrap">
           <span>지표 {regime.n_indicators}개 종합</span>
           {regime.vix_state && <span>VIX 상태: {regime.vix_state}</span>}
           <span>
@@ -84,6 +142,12 @@ export default async function DashboardPage() {
               </span>
             )}
           </span>
+          {row.mv_pq_signal && <span>MV=PQ: {row.mv_pq_signal}</span>}
+          {row.one_line_guidance && (
+            <span className="basis-full text-foreground/70">
+              {row.one_line_guidance}
+            </span>
+          )}
         </div>
       </section>
 
@@ -104,7 +168,7 @@ export default async function DashboardPage() {
                   </div>
                   <StatePill state={it.state} />
                 </header>
-                <div className="flex items-baseline gap-2 mb-2">
+                <div className="flex items-baseline gap-2 mb-2 flex-wrap">
                   <span className="text-2xl font-mono font-medium">
                     {formatNumber(it.value)}
                   </span>

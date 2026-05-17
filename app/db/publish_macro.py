@@ -127,6 +127,7 @@ def publish() -> int:
     macro_json = json.dumps(payload["macro_indicators"], ensure_ascii=False, default=str)
     indices_json = json.dumps(payload["indices"], ensure_ascii=False)
     dial_json = json.dumps(payload["dial_scores"])
+    regime_json = json.dumps(payload["_regime"], ensure_ascii=False, default=str)
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -134,8 +135,10 @@ def publish() -> int:
                 """
                 INSERT INTO macro_state
                   (id, global_status, kr_status, indices, macro_indicators,
-                   mv_pq_signal, dial_scores, one_line_guidance, updated_at)
-                VALUES (1, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s, now())
+                   mv_pq_signal, dial_scores, one_line_guidance, regime,
+                   updated_at)
+                VALUES (1, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s,
+                        %s::jsonb, now())
                 ON CONFLICT (id) DO UPDATE SET
                    global_status = EXCLUDED.global_status,
                    kr_status = EXCLUDED.kr_status,
@@ -144,6 +147,7 @@ def publish() -> int:
                    mv_pq_signal = EXCLUDED.mv_pq_signal,
                    dial_scores = EXCLUDED.dial_scores,
                    one_line_guidance = EXCLUDED.one_line_guidance,
+                   regime = EXCLUDED.regime,
                    updated_at = now()
                 """,
                 (
@@ -154,6 +158,7 @@ def publish() -> int:
                     payload["mv_pq_signal"],
                     dial_json,
                     payload["one_line_guidance"],
+                    regime_json,
                 ),
             )
     print(f"  published: global={payload['global_status']}, "
