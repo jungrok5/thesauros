@@ -22,8 +22,6 @@ DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR = ROOT / ".cache"
 CACHE_DIR.mkdir(exist_ok=True)
-MODEL_DIR = ROOT / "models_store"
-MODEL_DIR.mkdir(exist_ok=True)
 
 DUCKDB_PATH = str(DATA_DIR / "pit.duckdb")
 
@@ -69,17 +67,5 @@ def is_korean_ticker(ticker: str) -> bool:
 TRADING_DAYS = 252
 RF_ANNUAL = 0.035
 
-# Forward-return horizon for ML target (in trading days)
-FORWARD_HORIZON = 21          # ~1 month
-EMBARGO_DAYS = FORWARD_HORIZON  # Embargo gap for PurgedKFold
-
-# Default train/test split anchor
+# Default lookback for daily-bar ingest (in years)
 LOOKBACK_YEARS = 8
-
-# Top-K stocks to hold each rebalance
-DEFAULT_TOP_K = 20
-DEFAULT_REBALANCE_DAYS = 21
-
-# Realistic transaction cost (bps per side)
-COST_BPS = 10.0
-SLIPPAGE_BPS = 5.0  # additional bps for large-cap mid-day execution
