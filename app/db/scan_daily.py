@@ -301,6 +301,21 @@ def _list_tickers(markets: Optional[List[str]] = None,
     return out
 
 
+def _watchlist_tickers() -> List[str]:
+    """Every ticker that at least one user has added to their watchlist.
+    Lets the daily cron pick up user-chosen out-of-universe names
+    (e.g. NASDAQ mid-caps not in S&P 500) on its next run."""
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT w.ticker "
+                "  FROM watchlist w "
+                "  JOIN tickers t ON t.ticker = w.ticker "
+                " WHERE t.is_active = true"
+            )
+            return [r[0] for r in cur.fetchall()]
+
+
 def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
     """Write a chunk of (ticker, as_of, signals) results in one transaction.
 
@@ -432,6 +447,19 @@ def main(argv: Optional[List[str]] = None) -> int:
                             tickers=args.tickers,
                             limit=args.limit,
                             sp500_only=args.sp500_only)
+
+    # Always include every ticker that any user has added to their watchlist
+    # — even if it's outside the configured universe (e.g. NASDAQ mid-cap
+    # not in S&P 500). Cost is bounded by the user count × ~10 picks each.
+    # Only applies when scanning a market filter (not explicit --tickers).
+    if not args.tickers:
+        wl = _watchlist_tickers()
+        if wl:
+            before = len(tickers)
+            tickers = sorted(set(tickers) | set(wl))
+            added = len(tickers) - before
+            if added > 0:
+                log.info("+%d tickers from user watchlists", added)
 
     if args.changed_pct > 0:
         before = len(tickers)
