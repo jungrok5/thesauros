@@ -2,14 +2,17 @@
  * Stock context tabs (server component data loader → client tabs widget).
  *
  * Reads from Supabase:
- *  - news (latest 30 by ticker)
- *  - disclosures (latest 30 by ticker)
+ *  - disclosures (latest 30 by ticker, from DART)
  *  - financials_eval (3y trend + rule labels)
  *  - factors_eval (4-axis dial + book/academia gates)
+ *
+ * News is fetched in real-time from Naver Finance via /api/news/[ticker]
+ * (5-minute ISR cache). See <NewsTabClient/>.
  */
-import { getServerClient, type NewsRow, type DisclosureRow,
+import { getServerClient, type DisclosureRow,
          type FinancialsEvalRow, type FactorsEvalRow } from "@/lib/supabase";
 import { HelpTip } from "@/components/help-tip";
+import { NewsTabClient } from "@/components/news-tab-client";
 import { StockTabs } from "./stock-tabs";
 
 interface Props {
@@ -18,12 +21,7 @@ interface Props {
 
 async function fetchAll(ticker: string) {
   const sb = getServerClient();
-  const [newsR, discR, finR, facR] = await Promise.all([
-    sb.from("news")
-      .select("id, title, url, source, published_at")
-      .eq("ticker", ticker)
-      .order("published_at", { ascending: false })
-      .limit(30),
+  const [discR, finR, facR] = await Promise.all([
     sb.from("disclosures")
       .select("id, rcept_no, report_nm, report_type, filed_date, url")
       .eq("ticker", ticker)
@@ -40,7 +38,6 @@ async function fetchAll(ticker: string) {
   ]);
 
   return {
-    news: (newsR.data ?? []) as NewsRow[],
     disclosures: (discR.data ?? []) as DisclosureRow[],
     fin: finR.data as FinancialsEvalRow | null,
     fac: facR.data as FactorsEvalRow | null,
@@ -86,36 +83,6 @@ function computeStale(updatedAt: string | undefined, nowMs: number): boolean {
   return age > STALE_THRESHOLD_DAYS;
 }
 
-function NewsTab({ items }: { items: NewsRow[] }) {
-  if (items.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-        뉴스가 아직 적재되지 않았습니다. (한국 종목만 지원, 매일 자동 갱신)
-      </div>
-    );
-  }
-  return (
-    <ul className="divide-y divide-border rounded-lg border border-border">
-      {items.map((n) => (
-        <li key={n.id} className="p-3 hover:bg-muted/30 transition-colors">
-          <a href={n.url} target="_blank" rel="noopener" className="block group">
-            <div className="text-sm group-hover:text-foreground transition-colors">
-              {n.title}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground flex gap-3">
-              <span>{n.source ?? "—"}</span>
-              <span>
-                {n.published_at
-                  ? new Date(n.published_at).toLocaleDateString("ko-KR")
-                  : "—"}
-              </span>
-            </div>
-          </a>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function DisclosuresTab({ items }: { items: DisclosureRow[] }) {
   if (items.length === 0) {
@@ -375,7 +342,7 @@ function GateBadge({ label, passed, term }: { label: string; passed: boolean | n
 }
 
 export async function StockContextTabs({ ticker }: Props) {
-  const { news, disclosures, fin, fac } = await fetchAll(ticker);
+  const { disclosures, fin, fac } = await fetchAll(ticker);
   // Server component runs once per request; Date.now() here is the request
   // timestamp, which is the correct reference for staleness vs updated_at.
   // eslint-disable-next-line react-hooks/purity
@@ -387,7 +354,7 @@ export async function StockContextTabs({ ticker }: Props) {
     <StockTabs
       defaultKey="news"
       tabs={[
-        { key: "news",        label: "뉴스",     content: <NewsTab items={news} /> },
+        { key: "news",        label: "뉴스",     content: <NewsTabClient ticker={ticker} /> },
         { key: "disclosures", label: "공시",     content: <DisclosuresTab items={disclosures} /> },
         { key: "financials",  label: "재무제표", content: <FinancialsTab fin={fin} isStale={finStale} /> },
         { key: "factors",     label: "팩터",     content: <FactorsTab fac={fac} isStale={facStale} /> },

@@ -1,11 +1,9 @@
-"""News + DART disclosures → Supabase (links only, no LLM summary).
+"""DART disclosures → Supabase `disclosures` table.
 
-Sources:
-  - News: NaverFinance per-ticker RSS (KR), no-op for US (TBD).
-  - Disclosures: DART OpenAPI `list.json` per stock_code (KR only).
-
-Phase-1 conservative: ~3,000 KR tickers × 1 fetch each is ~3k RPS-day —
-NaverFinance is friendly; DART has a 1000 req/min cap which we throttle.
+News is fetched in real-time by the web app via `/api/news/[ticker]`
+(Naver Finance 종목 뉴스 tab, 5-minute ISR cache), so this module no
+longer touches the `news` table — only disclosures, which use a rate-
+limited DART API key and benefit from the DB cache.
 
 Usage:
     python -m app.db.ingest_news              # all KR tickers
@@ -19,13 +17,11 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from xml.etree import ElementTree as ET
 
 import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -35,80 +31,7 @@ from app.db import get_conn   # noqa: E402
 
 log = logging.getLogger("ingest_news")
 
-# 종목 뉴스 (curated "stock-specific" tab) on the desktop Naver Finance.
-# The mobile API at m.stock.naver.com mixed market-wide articles into the
-# per-stock feed; the desktop news tab only lists items genuinely tagged to
-# this ticker. URL params: code=6digit, page=1, sm=title_entity_id.basic.
-NAVER_STOCK_NEWS_TAB = (
-    "https://finance.naver.com/item/news_news.naver"
-    "?code={code}&page=1&sm=title_entity_id.basic&clusterId="
-)
 DART_LIST = "https://opendart.fss.or.kr/api/list.json"
-
-
-# ----------------------------------------------------------------------------
-# Naver Finance news (KR) — desktop "종목 뉴스" tab (HTML)
-# ----------------------------------------------------------------------------
-
-def fetch_naver_news(stock_code: str) -> List[Dict[str, Any]]:
-    """Latest news titles+links for a KR 6-digit `stock_code`.
-
-    Scrapes the curated 종목 뉴스 tab on Naver Finance (not the broader
-    mobile feed, which surfaced market-wide stories that merely mentioned
-    the ticker name).
-    """
-    url = NAVER_STOCK_NEWS_TAB.format(code=stock_code)
-    try:
-        r = requests.get(
-            url, timeout=15,
-            headers={
-                "User-Agent": "Mozilla/5.0 (research)",
-                "Referer": "https://finance.naver.com/",
-            },
-        )
-        r.raise_for_status()
-        # Page is EUC-KR despite the modern Korean web defaulting to UTF-8.
-        r.encoding = r.apparent_encoding or "euc-kr"
-        html = r.text
-    except Exception as e:
-        log.debug("naver fetch %s: %s", stock_code, e)
-        return []
-
-    soup = BeautifulSoup(html, "lxml")
-    rows = soup.select("table.type5 tr")
-    out: List[Dict[str, Any]] = []
-    for tr in rows:
-        title_cell = tr.select_one("td.title a")
-        info_cell = tr.select_one("td.info")
-        date_cell = tr.select_one("td.date")
-        if not title_cell:
-            continue
-        title = title_cell.get_text(strip=True)
-        if not title:
-            continue
-        href = title_cell.get("href") or ""
-        article_url = (
-            f"https://finance.naver.com{href}" if href.startswith("/") else href
-        )
-        source = info_cell.get_text(strip=True) if info_cell else None
-        published_iso: Optional[str] = None
-        if date_cell:
-            dt_text = date_cell.get_text(strip=True)
-            for fmt in ("%Y.%m.%d %H:%M", "%Y.%m.%d"):
-                try:
-                    dt = datetime.strptime(dt_text, fmt)
-                    dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
-                    published_iso = dt.isoformat()
-                    break
-                except ValueError:
-                    continue
-        out.append({
-            "title": title,
-            "url": article_url,
-            "source": source or None,
-            "published_at": published_iso,
-        })
-    return out
 
 
 # ----------------------------------------------------------------------------
@@ -205,24 +128,6 @@ def fetch_dart_disclosures(stock_code: str, days_back: int = 90,
 # DB upsert
 # ----------------------------------------------------------------------------
 
-def upsert_news(ticker: str, items: List[Dict[str, Any]]) -> int:
-    if not items:
-        return 0
-    rows = [(ticker, it["title"], it["url"], it.get("source"), it.get("published_at"))
-            for it in items]
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO news (ticker, title, url, source, published_at)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (url) DO NOTHING
-                """,
-                rows,
-            )
-    return len(rows)
-
-
 def upsert_disclosures(ticker: str, items: List[Dict[str, Any]]) -> int:
     if not items:
         return 0
@@ -271,8 +176,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--tickers", nargs="+", default=None)
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--days-back", type=int, default=30)
-    p.add_argument("--skip-news", action="store_true")
-    p.add_argument("--skip-disclosures", action="store_true")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -284,25 +187,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     tickers = args.tickers or _kr_tickers(limit=args.limit)
     log.info("processing %d tickers", len(tickers))
     t0 = time.time()
-    n_news = n_disc = 0
+    n_disc = 0
     for i, t in enumerate(tickers, 1):
         code = t.split(".")[0]
-        if not args.skip_news:
-            try:
-                items = fetch_naver_news(code)
-                n_news += upsert_news(t, items)
-            except Exception as e:
-                log.warning("news %s: %s", t, e)
-        if not args.skip_disclosures and t.endswith((".KS", ".KQ")):
-            try:
-                items = fetch_dart_disclosures(code, days_back=args.days_back)
-                n_disc += upsert_disclosures(t, items)
-                time.sleep(0.06)   # DART 1000 req/min cap
-            except Exception as e:
-                log.warning("dart %s: %s", t, e)
+        if not t.endswith((".KS", ".KQ")):
+            continue
+        try:
+            items = fetch_dart_disclosures(code, days_back=args.days_back)
+            n_disc += upsert_disclosures(t, items)
+            time.sleep(0.06)   # DART 1000 req/min cap
+        except Exception as e:
+            log.warning("dart %s: %s", t, e)
         if i % 100 == 0:
-            log.info("  [%d/%d] news=%d disclosures=%d", i, len(tickers), n_news, n_disc)
-    log.info("done in %.1fs: news=%d disclosures=%d", time.time() - t0, n_news, n_disc)
+            log.info("  [%d/%d] disclosures=%d", i, len(tickers), n_disc)
+    log.info("done in %.1fs: disclosures=%d", time.time() - t0, n_disc)
     return 0
 
 
