@@ -1,26 +1,77 @@
+import Link from "next/link";
+import { Bell, Shield, ChevronRight } from "lucide-react";
 import { auth } from "@/auth";
+
+export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const session = await auth();
+  const u = session?.user as { role?: string } | undefined;
+  const isAdmin = u?.role === "admin";
+
   return (
-    <div className="space-y-4 max-w-2xl">
-      <h1 className="text-2xl font-semibold">Settings</h1>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-        <h2 className="text-sm font-medium text-zinc-300 mb-2">계정</h2>
+    <div className="space-y-6 max-w-2xl">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">설정</h1>
+      </header>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-medium text-muted-foreground mb-2">계정</h2>
         <dl className="space-y-1 text-sm">
           <div className="flex justify-between">
-            <dt className="text-zinc-500">이름</dt>
+            <dt className="text-muted-foreground">이름</dt>
             <dd>{session?.user?.name ?? "—"}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-zinc-500">이메일</dt>
+            <dt className="text-muted-foreground">이메일</dt>
             <dd className="font-mono">{session?.user?.email ?? "—"}</dd>
           </div>
+          {isAdmin && (
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">권한</dt>
+              <dd className="text-blue-700 dark:text-blue-300 font-medium">
+                ADMIN
+              </dd>
+            </div>
+          )}
         </dl>
-      </div>
-      <p className="text-xs text-zinc-500">
-        텔레그램 알림 채널, 관심 종목 동기화 등은 M5에서 추가.
-      </p>
+      </section>
+
+      <nav className="space-y-2">
+        <Link
+          href="/settings/alerts"
+          className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-muted/30 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <Bell className="h-5 w-5 mt-0.5 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium">알림 설정</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                텔레그램 연동 · 웹 푸시 · 알림 종류 (매수/매도/추세 변경 등)
+              </div>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </Link>
+
+        {isAdmin && (
+          <Link
+            href="/admin/access"
+            className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <Shield className="h-5 w-5 mt-0.5 text-muted-foreground" />
+              <div>
+                <div className="text-sm font-medium">접근 관리 (관리자)</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  새 사용자 승인/반려
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        )}
+      </nav>
     </div>
   );
 }
