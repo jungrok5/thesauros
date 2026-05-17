@@ -1,12 +1,13 @@
 @echo off
 REM ===================================================================
-REM  Thesauros - dev stack (frontend + telegram bot)
+REM  Thesauros - dev frontend launcher
 REM
-REM  After Phase 6 cleanup there is no FastAPI backend — the site reads
-REM  Supabase directly. Daily/weekly cron is GitHub Actions in prod.
+REM  Site reads Supabase directly (no FastAPI). Daily cron lives in
+REM  GitHub Actions in prod. Telegram bot uses webhook in prod (Vercel
+REM  route /api/telegram/webhook), so no long-poll worker needed.
 REM
-REM  Opens 2 separate console windows so each process's logs are
-REM  isolated; Ctrl+C in this window will cleanly stop BOTH.
+REM  For LOCAL bot testing only (no public HTTPS), open a separate
+REM  window and run `run-bot.bat`.
 REM ===================================================================
 setlocal
 cd /d "%~dp0"
@@ -40,14 +41,11 @@ netstat -ano | findstr :%FRONTEND_PORT% | findstr LISTENING >nul
 if not errorlevel 1 echo [WARN] Port %FRONTEND_PORT% already in use. Frontend may fail.
 
 REM --- start frontend ---
-echo [1/2] Starting Next.js frontend on :%FRONTEND_PORT% ...
+echo Starting Next.js frontend on :%FRONTEND_PORT% ...
+echo (Production uses Telegram Webhook → no long-poll bot needed.
+echo  For local bot testing run `run-bot.bat` in a separate window.)
 start "thesauros-frontend" cmd /k "cd web-next && npm run dev -- --port %FRONTEND_PORT%"
 timeout /t 6 /nobreak >nul
-
-REM --- start telegram bot worker ---
-echo [2/2] Starting Telegram bot worker (long-poll) ...
-start "thesauros-bot" cmd /k ".venv\Scripts\python.exe -m app.db.telegram_bot --verbose"
-timeout /t 2 /nobreak >nul
 
 REM --- open browser ---
 echo.
@@ -56,8 +54,7 @@ start http://localhost:%FRONTEND_PORT%
 
 echo.
 echo =====================================================
-echo   Both processes running in their own windows.
-echo   Press any key in THIS window to STOP both.
+echo   Frontend running. Press any key in THIS window to STOP.
 echo =====================================================
 echo.
 pause >nul
@@ -70,7 +67,6 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%FRONTEND_PORT% ^| findstr L
     taskkill /F /PID %%a /T >nul 2>&1
 )
 
-taskkill /F /FI "WINDOWTITLE eq thesauros-bot*" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq thesauros-frontend*" /T >nul 2>&1
 
 echo Stopped. Bye.

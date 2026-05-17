@@ -10,7 +10,7 @@
 |---|---|---|---|
 | **GitHub Actions cron** | 매일 16시 KST 발동 → scan_daily / publish_macro / publish_chart / **telegram_worker (알림 발송)** 순차 실행 | 매번 짧게 (수 분), 끝나면 종료 | GitHub Actions (필수) |
 | **텔레그램 알림 발송** (`telegram_worker.py`) | scan_results 보고 사용자에게 텔레그램 메시지 push (아웃바운드) | cron 안에서 1회 실행 | 위 GitHub Actions 가 호출 |
-| **텔레그램 봇 워커** (`telegram_bot.py`) | 사용자가 봇에게 보낸 `/link <토큰>` 같은 메시지 수신 (인바운드, long-poll) | 25초 timeout 으로 무한 반복 → 24/7 떠 있어야 함 | Render Worker / 본인 PC / 다른 long-running 호스트 |
+| **텔레그램 봇 메시지 수신** (`/api/telegram/webhook`) | 사용자가 봇에게 보낸 `/link <토큰>` 같은 메시지 수신 (인바운드) | Telegram → Vercel route 로 push (webhook 방식) | Vercel 안에 통합 — 별도 호스팅 X |
 | **PWA 푸시 발송** | telegram_worker 가 텔레그램과 함께 호출 | cron 안에서 한 번 | 위 GitHub Actions |
 
 핵심: 알림 **발송** 은 GitHub Actions 만으로 됩니다. 봇 **수신** (사용자 셀프 연동
@@ -25,7 +25,6 @@
 | **GitHub Actions** | repo 의 `.github/workflows/*.yml` cron (Public repo 무제한) | 필수 — 사이트의 데이터/알림 발동기 |
 | **Google Cloud Console** | OAuth 2.0 클라이언트 (무료) | 필수 (로그인) |
 | **Telegram BotFather** | 봇 토큰 — `@candle_trend_bot` 같은 봇 1개 | 텔레그램 알림 원하면 필수 |
-| **Render Worker** | https://render.com 무료 Worker — 봇 long-poll | **새 사용자 셀프 연동을 받을 때만** (자세히는 §5) |
 
 ---
 
@@ -134,39 +133,57 @@ variables → Actions 에 다음 환경변수 추가:
 
 ---
 
-## 5. 텔레그램 봇 long-poll 워커
+## 5. 텔레그램 봇 — Webhook (권장, 추가 호스팅 불필요)
 
-> **언제 필요한가:**
-> - ✅ **필요함**: 새 사용자가 사이트에서 `/settings/alerts → 토큰 발급` 누른 다음
->   본인 텔레그램에서 `/link <토큰>` 보내서 자동 연동시키려면.
-> - ❌ **불필요**: 본인만 쓰거나, 새 사용자의 `chat_id` 를 본인이 직접 DB 에
->   `UPDATE users SET telegram_chat_id='...' WHERE email='...'` 로 넣어줄 거면.
->   알림 발송은 GitHub Actions cron 이 다 합니다.
+> 봇이 사용자 메시지를 받는 방식 두 가지:
+> - **Webhook (권장)**: 텔레그램이 메시지를 우리 Vercel 의 `/api/telegram/webhook`
+>   으로 POST. **별도 호스팅 0**.
+> - **Long-poll (레거시)**: `app/db/telegram_bot.py` 가 24/7 떠서 폴링. 별도
+>   호스팅 필요 (Render Worker / 본인 PC). 새 배포에서는 안 씁니다.
 
-GitHub Actions 로는 할 수 없습니다 — long-poll 은 25초 timeout 으로 무한 반복하는
-24/7 프로세스이고, GH Actions 의 잡 수명/quota 모델과 안 맞습니다.
+### 5.1 환경변수 추가
 
-### 옵션 A: Render Free Worker (클라우드)
+| 변수 | 어디에 | 값 |
+|---|---|---|
+| `TELEGRAM_WEBHOOK_SECRET` | **Vercel 만** | `openssl rand -hex 32` (32 hex chars) |
+| `TELEGRAM_BOT_TOKEN` | Vercel + GitHub Actions | BotFather 의 봇 토큰 |
+| `TELEGRAM_LINK_SECRET` | (long-poll 안 쓰면 불필요) | 레거시 |
 
-1. render.com → New → Background Worker → GitHub repo 연결
-2. **Root Directory**: 빈 값 (repo root)
-3. **Runtime**: Python 3.x
-4. **Build command**: `pip install -r requirements.txt`
-5. **Start command**: `python -m app.db.telegram_bot --verbose`
-6. Environment variables:
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_LINK_SECRET` (Vercel 의 값과 동일해야 함)
-   - `WEB_BASE_URL=https://<your-vercel-domain>` (consume endpoint 호출용)
+### 5.2 Telegram 에 webhook 등록 (한 번만)
 
-무료 750h/월 — 한 달 720h 라서 충분.
+다음 cURL 을 본인 PC 에서 실행. `<BOT_TOKEN>` 과 `<SECRET>` 자리에 위에서 생성한
+값을 넣으세요.
 
-### 옵션 B: 본인 PC
+```bash
+curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://<your-vercel-domain>/api/telegram/webhook",
+    "secret_token": "<SECRET>",
+    "allowed_updates": ["message"]
+  }'
+```
+
+응답이 `{"ok":true,"result":true,"description":"Webhook was set"}` 이면 끝.
+
+### 5.3 확인
+
+1. 텔레그램에서 `@your_bot` 에게 `/start` 보내기 → 봇이 도움말 응답하면 성공
+2. 웹사이트 `/settings/alerts` → "토큰 발급" → 텔레그램에서 `/link <토큰>` →
+   "✅ 연동 완료!" 응답 + DB `users.telegram_chat_id` 채워짐 확인
+
+### 5.4 (참고) Long-poll 봇으로 돌아가야 할 때
+
+Webhook 은 외부에서 접근 가능한 HTTPS URL 이 필수입니다. 로컬 개발 (Vercel 배포
+전) 에서 봇을 시험해보려면 long-poll 이 편합니다:
 
 ```cmd
+:: 로컬 dev 전용
 run-bot.bat
 ```
 
-PC 가 꺼지면 자동 연동도 멈추지만, 이미 연동된 계정의 알림 발송은 영향 없습니다.
+(`app/db/telegram_bot.py` 는 dev 편의용으로 유지됩니다. 프로덕션 배포에는 위
+webhook 만 쓰세요.)
 
 ---
 
@@ -219,7 +236,7 @@ python -m app.db.vapid_keys
 | Vercel Hobby | 무제한 (개인 비상업) |
 | Supabase Free | DB 500MB / Auth 50,000 MAU / 50K Edge calls |
 | GitHub Actions | Public repo 무제한 / Private 2,000분/월 |
-| Render Worker | (셀프 연동 쓸 때만) 750시간/월 — 24h×31=744h 라 1워커는 가능 |
+| Telegram Bot API | 무료 (rate limit 30 msg/sec), webhook 으로 Vercel 안에 통합 |
 | Google OAuth | 무료 |
 | Telegram Bot API | 무료 (rate limit 30 msg/sec) |
 
