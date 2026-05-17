@@ -109,7 +109,12 @@ export function HelpTip({
           id={id}
           role="tooltip"
           className={cn(
-            "absolute z-50 w-72 max-w-[90vw] rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-3 text-xs leading-relaxed",
+            // bg-card uses --card token defined in globals.css; bg-popover
+            // was undefined → looked transparent and let underlying page
+            // text bleed through. z-30 keeps the popover above normal
+            // page content but below the mobile drawer (z-50) + backdrop
+            // (z-40), so opening the drawer occludes any open tooltip.
+            "absolute z-30 w-72 max-w-[90vw] rounded-md border border-border bg-card text-card-foreground shadow-xl p-3 text-xs leading-relaxed",
             side === "top"
               ? "bottom-full mb-1 left-0"
               : "top-full mt-1 left-0",

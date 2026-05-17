@@ -77,7 +77,7 @@ function Brand() {
     <Link href="/dashboard" className="px-3 block">
       <div className="text-lg font-semibold tracking-tight">Thesauros</div>
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-        book × ML
+        추세추종 매매 도구
       </div>
     </Link>
   );
