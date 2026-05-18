@@ -92,6 +92,18 @@ jobs:
           # caps (SK하이닉스/기아) so we replaced it.
           python -m app.db.ingest_investor_flow
 
+      - name: Ingest DART disclosures (KR)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: |
+          # DART OpenAPI — only the 공시 (corporate filings) flow. News
+          # text is fetched in real-time from Naver via /api/news/[ticker]
+          # so this step covers disclosures only.
+          python -m app.db.ingest_news --days-back 7
+
       - name: Data-quality assertions
         if: always()   # run even if a preceding step failed, so we surface what landed
         env:

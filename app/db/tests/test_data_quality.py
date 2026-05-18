@@ -157,13 +157,22 @@ def test_tickers_universe_size():
 
 def test_bars_daily_ticker_coverage():
     """Bars should cover at least the KR universe (≈2,700) on the most
-    recent trading day."""
+    recent *settled* trading day. A partial in-progress day at the top
+    (e.g. local smoke-test that only touched 100 tickers) is ignored —
+    we look at the most recent day with at least 1,000 rows."""
     n = _scalar(
-        "SELECT COUNT(DISTINCT ticker) FROM bars_daily "
-        "WHERE bar_date = (SELECT MAX(bar_date) FROM bars_daily)"
+        """
+        SELECT COUNT(DISTINCT ticker) FROM bars_daily
+        WHERE bar_date = (
+            SELECT bar_date FROM bars_daily
+            GROUP BY bar_date HAVING COUNT(*) >= 1000
+            ORDER BY bar_date DESC LIMIT 1
+        )
+        """
     )
-    assert n >= 2000, (
-        f"bars_daily last-day coverage = {n} tickers, expected ≥ 2000"
+    assert n is not None and n >= 2000, (
+        f"bars_daily most-recent-settled-day coverage = {n} tickers, "
+        "expected ≥ 2000 — ingest_bars_daily not running across full universe?"
     )
 
 
@@ -224,25 +233,20 @@ def test_bars_daily_recent_prices_positive():
     assert bad == 0, f"{bad} bars_daily rows have non-positive close in last week"
 
 
-# ─────────────────────────────────────────────────────────────────────
-# KNOWN-BROKEN — flagged xfail so they fail loudly when fixed
-# ─────────────────────────────────────────────────────────────────────
-
-@pytest.mark.xfail(
-    reason="theme_members is empty — Friday-only full ingest hasn't populated it. "
-           "Remove xfail once ingest_themes (full mode) lands in a cron.",
-    strict=False,
-)
 def test_theme_members_populated():
+    """Naver themes ingest in full mode populates theme_members. Without
+    it, the /themes/[id] pages have no member tickers to show."""
     n = _scalar("SELECT COUNT(*) FROM theme_members")
-    assert n >= 1000, f"theme_members count = {n}, expected ≥ 1000"
+    assert n >= 1000, (
+        f"theme_members count = {n}, expected ≥ 1000 — "
+        "is ingest_themes (full mode) running on Fridays?"
+    )
 
 
-@pytest.mark.xfail(
-    reason="disclosures only has 61 rows / 2 tickers — DART ingest "
-           "(ingest_news.py) is not wired into any cron yet.",
-    strict=False,
-)
 def test_disclosures_populated():
+    """DART OpenAPI 공시 ingest. Needs DART_API_KEY in cron env."""
     n = _scalar("SELECT COUNT(DISTINCT ticker) FROM disclosures")
-    assert n >= 500, f"disclosures coverage = {n} tickers, expected ≥ 500 KR"
+    assert n >= 500, (
+        f"disclosures coverage = {n} tickers, expected ≥ 500 — "
+        "is ingest_news (DART) wired into daily-scan?"
+    )
