@@ -1,20 +1,25 @@
 /**
- * Recommendations — reads from Supabase `scan_results` (populated by the
- * `python -m app.db.scan_daily` cron). No live backend round-trip.
+ * Recommendations — surface the BOOK information that the old single-column
+ * "STRONG_BUY (book_score=1.00)" row hid: which specific patterns fired,
+ * how the monthly/weekly/daily trend stack lines up, what fraction of the
+ * book_score comes from trend vs pattern vs volume, when the signal was
+ * detected (NEW <24h), and what the chart actually looks like (sparkline).
  *
  * Filters via querystring:
- *   ?market=KOSPI|KOSDAQ|NASDAQ|all   (default: all)
- *   ?signal=action|pattern|all        (default: action — overall recos)
- *   ?min_strength=0.7                 (default 0.7)
- *   ?top=50                            (default 50)
- *   ?sort=strength|ticker|name        (default: strength)
+ *   ?market=KOSPI|KOSDAQ|all   (default: all)
+ *   ?signal=buy|action|pattern|all   (default: buy)
+ *   ?min_strength=0.7   ?top=50   ?sort=strength|ticker|name
  */
 import Link from "next/link";
 import { ActionBadge } from "@/components/action-badge";
 import { HelpTip } from "@/components/help-tip";
+import { PatternChips, type PatternBlock } from "@/components/pattern-chips";
+import { MultiTFMatrix } from "@/components/multi-tf-matrix";
+import { ScoreBreakdown } from "@/components/score-breakdown";
+import { NewBadge } from "@/components/new-badge";
+import { Sparkline } from "@/components/sparkline";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
 
-// Updated daily by scan_daily cron; 60s ISR for the common case.
 export const revalidate = 60;
 
 interface SearchParams {
@@ -44,12 +49,37 @@ const ACTION_TERM: Record<ActionType, string> = {
   HOLD: "action_hold",
 };
 
+interface TrendState {
+  label?: string | null;
+  above_ma_10?: boolean | null;
+  above_ma_240?: boolean | null;
+  alignment_score?: number | null;
+  overall_score?: number | null;
+}
+
+interface AnalyzeResultBlob {
+  trend?: {
+    daily?: TrendState | null;
+    weekly?: TrendState | null;
+    monthly?: TrendState | null;
+    book_signal?: string;
+    book_reason?: string;
+  } | null;
+  patterns?: PatternBlock[];
+  volume_case?: {
+    case?: number;
+    label_kr?: string;
+    direction?: string;
+    confidence?: number;
+  } | null;
+  book_score?: number;
+}
+
 type ScanParams = {
   book_score?: number;
   trend_signal?: string;
   last_close?: number;
   kind?: string;
-  direction?: string;
   confidence?: number;
   timeframe?: string;
 };
@@ -58,41 +88,62 @@ type Row = ScanResultRow & {
   name?: string | null;
   market?: string | null;
   params?: ScanParams | null;
+  analyze?: AnalyzeResultBlob | null;
+  recent_closes?: number[];
 };
 
-/**
- * Turn the raw `STRONG_BUY (book_score=+1.00)` reason into a human-readable
- * Korean explanation, using params + signal_type for extra context.
- */
-function humanReason(it: Row): string {
-  const p = it.params ?? {};
-  const score = typeof p.book_score === "number" ? p.book_score : null;
-  const scoreStr = score !== null ? ` · 종합점수 ${score >= 0 ? "+" : ""}${score.toFixed(2)}` : "";
+function actionFor(signalType: string): ActionType {
+  return ACTION_BY_SIGNAL[signalType] ?? "HOLD";
+}
 
-  if (it.signal_type === "action_strong_buy") {
-    return `여러 시간프레임에서 매수 정렬 + 책 패턴 다중 발현${scoreStr}`;
-  }
-  if (it.signal_type === "action_buy") {
-    return `매수 우호 정렬${scoreStr}`;
-  }
-  if (it.signal_type === "action_avoid") {
-    return `추세 약화 또는 약세 패턴 우세${scoreStr}`;
-  }
+/**
+ * Best-effort decomposition of `book_score` into trend / pattern / volume
+ * sub-scores. The current analyzer doesn't store these separately, so we
+ * recover approximations from the rich `analyze_results.result` fields.
+ */
+function decomposeScore(a: AnalyzeResultBlob | null | undefined): {
+  trend: number | null;
+  pattern: number | null;
+  volume: number | null;
+} {
+  if (!a) return { trend: null, pattern: null, volume: null };
+  const tParts = [
+    a.trend?.monthly?.overall_score,
+    a.trend?.weekly?.overall_score,
+    a.trend?.daily?.overall_score,
+  ].filter((x): x is number => typeof x === "number");
+  const trend = tParts.length ? tParts.reduce((s, v) => s + v, 0) / tParts.length : null;
+
+  const bullish = (a.patterns ?? []).filter(
+    (p) => p.direction === "bullish" && p.completed !== false,
+  );
+  const pattern = bullish.length
+    ? Math.min(1, bullish.reduce((s, p) => s + (p.confidence ?? 0), 0) / 2)
+    : null;
+
+  const vc = a.volume_case;
+  const volume = vc?.confidence != null
+    ? (vc.direction === "bullish" ? vc.confidence
+       : vc.direction === "bearish" ? -vc.confidence
+       : vc.confidence * 0.5)
+    : null;
+
+  return { trend, pattern, volume };
+}
+
+function humanReason(it: Row): string {
+  const reason = it.analyze?.trend?.book_reason;
+  if (reason) return reason;
+  const score = it.analyze?.book_score ?? it.params?.book_score;
+  const scoreStr = typeof score === "number"
+    ? ` · 종합점수 ${score >= 0 ? "+" : ""}${score.toFixed(2)}`
+    : "";
+  if (it.signal_type === "action_strong_buy") return `다중 시간프레임 매수 정렬${scoreStr}`;
+  if (it.signal_type === "action_buy") return `매수 우호 정렬${scoreStr}`;
+  if (it.signal_type === "action_avoid") return `추세 약화 또는 약세${scoreStr}`;
   if (it.signal_type === "action_sell" || it.signal_type === "action_sell_short") {
     return `매도 시그널${scoreStr}`;
   }
-  if (it.signal_type?.startsWith("pattern_")) {
-    const kind = p.kind ?? it.signal_type.replace("pattern_", "");
-    const conf = typeof p.confidence === "number"
-      ? ` · 신뢰도 ${(p.confidence * 100).toFixed(0)}%`
-      : "";
-    return `${kind} 패턴 완성${conf}`;
-  }
-  if (it.signal_type?.startsWith("retracement_")) {
-    const kind = p.kind ?? "되돌림";
-    return `되돌림 ${kind} 완성`;
-  }
-  // fall back to raw reason
   return it.reason ?? "—";
 }
 
@@ -116,23 +167,12 @@ async function fetchRecommendations(
       .gte("strength", minStrength)
       .limit(top);
 
-    if (sort === "ticker") {
-      q = q.order("ticker", { ascending: true });
-    } else if (sort === "name") {
-      // name is on the joined table — fall back to strength here, sort
-      // client-side after fetch
-      q = q.order("strength", { ascending: false });
-    } else {
-      q = q.order("strength", { ascending: false });
-    }
+    if (sort === "ticker") q = q.order("ticker", { ascending: true });
+    else q = q.order("strength", { ascending: false });
 
-    if (signalKind === "action") {
-      q = q.like("signal_type", "action_%");
-    } else if (signalKind === "pattern") {
-      q = q.like("signal_type", "pattern_%");
-    } else if (signalKind === "buy") {
-      q = q.in("signal_type", ["action_strong_buy", "action_buy"]);
-    }
+    if (signalKind === "action") q = q.like("signal_type", "action_%");
+    else if (signalKind === "pattern") q = q.like("signal_type", "pattern_%");
+    else if (signalKind === "buy") q = q.in("signal_type", ["action_strong_buy", "action_buy"]);
 
     const { data, count, error } = await q;
     if (error) return { items: [], total: 0, error: error.message };
@@ -156,14 +196,45 @@ async function fetchRecommendations(
       items.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko-KR"));
     }
 
+    // Bulk-fetch analyze_results + recent weekly closes for the visible set.
+    const tickers = items.map((r) => r.ticker);
+    if (tickers.length) {
+      const [ar, bars] = await Promise.all([
+        sb.from("analyze_results").select("ticker, result").in("ticker", tickers),
+        sb
+          .from("bars")
+          .select("ticker, bar_date, close")
+          .in("ticker", tickers)
+          .eq("granularity", "W")
+          .order("bar_date", { ascending: true }),
+      ]);
+      const analyzeByTicker = new Map<string, AnalyzeResultBlob>();
+      for (const row of ar.data ?? []) {
+        analyzeByTicker.set(
+          (row as { ticker: string }).ticker,
+          (row as { result: AnalyzeResultBlob }).result,
+        );
+      }
+      const closesByTicker = new Map<string, number[]>();
+      for (const row of bars.data ?? []) {
+        const t = (row as { ticker: string }).ticker;
+        const c = Number((row as { close: number }).close);
+        if (!Number.isFinite(c)) continue;
+        const arr = closesByTicker.get(t) ?? [];
+        arr.push(c);
+        closesByTicker.set(t, arr);
+      }
+      items = items.map((it) => ({
+        ...it,
+        analyze: analyzeByTicker.get(it.ticker) ?? null,
+        recent_closes: (closesByTicker.get(it.ticker) ?? []).slice(-60),
+      }));
+    }
+
     return { items, total: count ?? items.length, error: null };
   } catch (e) {
     return { items: [], total: 0, error: String(e) };
   }
-}
-
-function actionFor(signalType: string): ActionType {
-  return ACTION_BY_SIGNAL[signalType] ?? "HOLD";
 }
 
 export default async function RecommendationsPage({
@@ -179,20 +250,14 @@ export default async function RecommendationsPage({
   const sort = sp.sort ?? "strength";
 
   const { items, total, error } = await fetchRecommendations(
-    market,
-    signalKind,
-    minStrength,
-    top,
-    sort,
+    market, signalKind, minStrength, top, sort,
   );
 
   return (
     <div className="space-y-6 max-w-7xl">
       <header className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            추천 종목
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">추천 종목</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             매주 금요일 17시 KST 자동 스캔 — 주봉 기반 추세 + 17종 패턴 + 거래량.{" "}
             <span className="font-mono">강도 ≥ {minStrength.toFixed(2)}</span> 만 표시.
@@ -203,24 +268,18 @@ export default async function RecommendationsPage({
       <form className="flex flex-wrap items-end gap-3" method="GET">
         <div>
           <label className="block text-xs text-muted-foreground mb-1">시장</label>
-          <select
-            name="market"
-            defaultValue={market}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-          >
+          <select name="market" defaultValue={market}
+            className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="all">전체</option>
             <option value="KOSPI">KOSPI</option>
             <option value="KOSDAQ">KOSDAQ</option>
-            <option value="NASDAQ">US (S&amp;P 500)</option>
+            <option value="NASDAQ">US (watchlist)</option>
           </select>
         </div>
         <div>
           <label className="block text-xs text-muted-foreground mb-1">신호 유형</label>
-          <select
-            name="signal"
-            defaultValue={signalKind}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-          >
+          <select name="signal" defaultValue={signalKind}
+            className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="buy">매수 신호 (BUY/STRONG_BUY)</option>
             <option value="action">전체 종합 액션</option>
             <option value="pattern">패턴 완성</option>
@@ -229,11 +288,8 @@ export default async function RecommendationsPage({
         </div>
         <div>
           <label className="block text-xs text-muted-foreground mb-1">최소 강도</label>
-          <select
-            name="min_strength"
-            defaultValue={String(minStrength)}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-          >
+          <select name="min_strength" defaultValue={String(minStrength)}
+            className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="0.5">0.50</option>
             <option value="0.7">0.70 (권장)</option>
             <option value="0.85">0.85 (엄격)</option>
@@ -242,11 +298,8 @@ export default async function RecommendationsPage({
         </div>
         <div>
           <label className="block text-xs text-muted-foreground mb-1">정렬</label>
-          <select
-            name="sort"
-            defaultValue={sort}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-          >
+          <select name="sort" defaultValue={sort}
+            className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="strength">강도 (높은 순)</option>
             <option value="ticker">티커 (가나다)</option>
             <option value="name">종목명 (가나다)</option>
@@ -254,29 +307,24 @@ export default async function RecommendationsPage({
         </div>
         <div>
           <label className="block text-xs text-muted-foreground mb-1">Top N</label>
-          <select
-            name="top"
-            defaultValue={String(top)}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-          >
+          <select name="top" defaultValue={String(top)}
+            className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="25">25</option>
             <option value="50">50</option>
             <option value="100">100</option>
             <option value="200">200</option>
           </select>
         </div>
-        <button
-          type="submit"
-          className="px-4 py-2 rounded-md bg-foreground text-background text-sm font-medium hover:opacity-90 transition"
-        >
+        <button type="submit"
+          className="px-4 py-2 rounded-md bg-foreground text-background text-sm font-medium hover:opacity-90 transition">
           새로고침
         </button>
       </form>
 
       <div className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2">
-        <strong>강도</strong>: 0.00–1.00 종합 신뢰도.
-        매수 신호 강도는 (책 종합점수 × 0.4 + 액션별 기본강도 × 0.6) 으로 산출.
-        패턴 신호 강도는 그 패턴 자체의 형성 신뢰도. 0.70 이상이 권장 진입 기준.
+        <strong>강도</strong>: 0.00–1.00 종합 신뢰도. <strong>추/패/거</strong>: 추세·패턴·거래량
+        sub-score (각 0-1). <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립,
+        ↓/✕ 약세). <strong>NEW</strong>: 30시간 이내 새로 잡힌 신호.
       </div>
 
       {error ? (
@@ -288,42 +336,116 @@ export default async function RecommendationsPage({
             {error}
           </div>
         </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border border-border py-12 text-center text-muted-foreground text-sm">
+          조건을 만족하는 신호가 없습니다. 강도 기준을 낮추거나 시장을 바꿔보세요.
+        </div>
       ) : (
         <>
           <div className="text-xs text-muted-foreground">
             전체 {total}개 매치 · 상위 {items.length}개 표시
           </div>
 
-          {items.length === 0 ? (
-            <div className="rounded-lg border border-border py-12 text-center text-muted-foreground text-sm">
-              조건을 만족하는 신호가 없습니다. 강도 기준을 낮추거나 시장을 바꿔보세요.
-            </div>
-          ) : (
-            <>
-              {/* Mobile (<md): card list. Eight columns don't fit a phone
-                  width — vertical cards stay readable + tappable. */}
-              <ul className="md:hidden space-y-2">
-                {items.map((it, i) => {
-                  const action = actionFor(it.signal_type);
-                  const tfTerm =
-                    it.timeframe === "weekly"
-                      ? "tf_weekly"
-                      : it.timeframe === "monthly"
-                        ? "tf_monthly"
-                        : "tf_daily";
-                  return (
-                    <li
-                      key={it.id}
-                      className="rounded-lg border border-border bg-card p-3"
-                    >
-                      <div className="flex items-baseline justify-between gap-2 mb-1">
-                        <Link
-                          href={`/stocks/${encodeURIComponent(it.ticker)}`}
-                          className="font-mono text-base hover:underline truncate"
-                        >
+          {/* Mobile: rich card stack */}
+          <ul className="md:hidden space-y-3">
+            {items.map((it, i) => {
+              const action = actionFor(it.signal_type);
+              const sub = decomposeScore(it.analyze);
+              const patterns = it.analyze?.patterns ?? [];
+              const tr = it.analyze?.trend;
+              return (
+                <li key={it.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Link href={`/stocks/${encodeURIComponent(it.ticker)}`}
+                          className="font-mono text-base hover:underline truncate">
                           {it.ticker}
                         </Link>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs text-muted-foreground">{it.market ?? "—"}</span>
+                        <NewBadge detectedAt={it.detected_at} />
+                      </div>
+                      <div className="text-sm font-medium truncate">{it.name ?? "—"}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {action !== "HOLD" ? (
+                        <div className="flex items-center gap-1">
+                          <ActionBadge action={action} size="sm" />
+                          <HelpTip term={ACTION_TERM[action]} />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        강도 {it.strength != null ? it.strength.toFixed(2) : "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <MultiTFMatrix
+                      monthly={tr?.monthly}
+                      weekly={tr?.weekly}
+                      daily={tr?.daily}
+                    />
+                    <Sparkline closes={it.recent_closes ?? []} width={120} height={28} />
+                  </div>
+                  <ScoreBreakdown
+                    trend={sub.trend}
+                    pattern={sub.pattern}
+                    volume={sub.volume}
+                  />
+                  {patterns.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      <PatternChips patterns={patterns} max={4} />
+                    </div>
+                  )}
+                  <p className="text-[10px] text-muted-foreground/90">{humanReason(it)}</p>
+                  <div className="text-[10px] text-muted-foreground/60 text-right">#{i + 1}</div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop: wide row table */}
+          <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr className="text-left">
+                  <th className="px-2 py-2 font-medium text-muted-foreground w-8">#</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">종목</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">액션 · 강도</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">월/주/일</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">패턴</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">추 · 패 · 거</th>
+                  <th className="px-2 py-2 font-medium text-muted-foreground">차트</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => {
+                  const action = actionFor(it.signal_type);
+                  const sub = decomposeScore(it.analyze);
+                  const patterns = it.analyze?.patterns ?? [];
+                  const tr = it.analyze?.trend;
+                  return (
+                    <tr key={it.id} className="border-t border-border hover:bg-muted/20 align-top">
+                      <td className="px-2 py-2 text-muted-foreground text-xs">{i + 1}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Link href={`/stocks/${encodeURIComponent(it.ticker)}`}
+                              className="font-mono text-sm hover:underline">
+                              {it.ticker}
+                            </Link>
+                            <NewBadge detectedAt={it.detected_at} />
+                          </div>
+                          <span className="text-xs">{it.name ?? "—"}</span>
+                          <span className="text-[10px] text-muted-foreground">{it.market ?? "—"}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1.5">
                           {action !== "HOLD" ? (
                             <>
                               <ActionBadge action={action} size="sm" />
@@ -334,96 +456,37 @@ export default async function RecommendationsPage({
                               {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
                             </span>
                           )}
-                        </div>
-                      </div>
-                      <div className="text-sm mb-1">{it.name ?? "—"}</div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{it.market ?? "—"}</span>
-                        <span>
-                          강도 <span className="font-mono text-foreground">
+                          <span className="text-[11px] font-mono text-muted-foreground">
                             {it.strength != null ? it.strength.toFixed(2) : "—"}
                           </span>
-                        </span>
-                        <HelpTip term={tfTerm}>{it.timeframe}</HelpTip>
-                        <span className="ml-auto text-[10px]">#{i + 1}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground/90">
-                        {humanReason(it)}
-                      </p>
-                    </li>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2">
+                        <MultiTFMatrix
+                          monthly={tr?.monthly}
+                          weekly={tr?.weekly}
+                          daily={tr?.daily}
+                        />
+                      </td>
+                      <td className="px-2 py-2 max-w-[240px]">
+                        <PatternChips patterns={patterns} max={3} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <ScoreBreakdown
+                          trend={sub.trend}
+                          pattern={sub.pattern}
+                          volume={sub.volume}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Sparkline closes={it.recent_closes ?? []} width={88} height={24} />
+                      </td>
+                    </tr>
                   );
                 })}
-              </ul>
-
-              {/* Desktop (md+): full table */}
-              <div className="hidden md:block rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left">
-                      <th className="px-3 py-2 font-medium text-muted-foreground">#</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">티커</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">종목명</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">시장</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">액션</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground text-right">강도</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">TF</th>
-                      <th className="px-3 py-2 font-medium text-muted-foreground">이유</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it, i) => {
-                      const action = actionFor(it.signal_type);
-                      const tfTerm =
-                        it.timeframe === "weekly"
-                          ? "tf_weekly"
-                          : it.timeframe === "monthly"
-                            ? "tf_monthly"
-                            : "tf_daily";
-                      return (
-                        <tr
-                          key={it.id}
-                          className="border-t border-border hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-3 py-2 text-muted-foreground text-xs">{i + 1}</td>
-                          <td className="px-3 py-2 font-mono">
-                            <Link
-                              href={`/stocks/${encodeURIComponent(it.ticker)}`}
-                              className="hover:underline"
-                            >
-                              {it.ticker}
-                            </Link>
-                          </td>
-                          <td className="px-3 py-2">{it.name ?? "—"}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {it.market ?? "—"}
-                          </td>
-                          <td className="px-3 py-2">
-                            {action !== "HOLD" ? (
-                              <span className="inline-flex items-center gap-1">
-                                <ActionBadge action={action} size="sm" />
-                                <HelpTip term={ACTION_TERM[action]} />
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono">
-                            {it.strength != null ? it.strength.toFixed(2) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">
-                            <HelpTip term={tfTerm}>{it.timeframe}</HelpTip>
-                          </td>
-                          <td className="px-3 py-2 text-xs">{humanReason(it)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
