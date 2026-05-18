@@ -25,16 +25,31 @@ jobs:
     name: Python smoke + scan tests (DB-backed)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ secrets.SUPABASE_URL != '' }}
+    # GitHub rejects `if: ${{ secrets.X != '' }}` at job level (entire
+    # workflow gets a 0-second "workflow file issue" failure — all CI
+    # runs from 2026-05-18 morning were silently broken because of this).
+    # Move the gate to a first step that exits 0 when secrets are absent.
     steps:
+      - name: Check secrets present
+        id: secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "no_secrets=true" >> "$GITHUB_OUTPUT"
+            echo "SUPABASE_URL not set — skipping DB-backed tests"
+          fi
       - uses: actions/checkout@v4
+        if: steps.secrets.outputs.no_secrets != 'true'
       - uses: actions/setup-python@v5
+        if: steps.secrets.outputs.no_secrets != 'true'
         with: { python-version: "3.11", cache: "pip" }
       - run: |
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
+        if: steps.secrets.outputs.no_secrets != 'true'
       - run: pip install pytest
-      - env:
+        if: steps.secrets.outputs.no_secrets != 'true'
+      - if: steps.secrets.outputs.no_secrets != 'true'
+        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
