@@ -66,29 +66,28 @@ function makeResult(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
 }
 
 describe("BookVerdict — 매복 (ambush) classification", () => {
-  it("flips a STRONG_BUY into 매복 when setup-pattern + case 12 + indecision-candle all hit", () => {
+  it("flips a STRONG_BUY into 매복 when 2+ of (setup pattern, drying volume, indecision candle, tight box) hit", () => {
+    // 국보디자인 2026-05-22 exact reproduction:
+    //   - no explicit setup pattern (60-MA spread too wide)
+    //   - volume case 7 (drying, bullish accumulation interp)
+    //   - indecision candle (교수형)
+    //   - tight box 4 % over the last 4 weeks
+    //   → 3-of-4 signals → 매복 fires.
     const r = makeResult({
       action: "STRONG_BUY",
       last_close: 24450,
-      patterns: [
-        {
-          kind: "MA 수렴 매복", direction: "neutral", confidence: 0.55,
-          completed: false, detected_at: "2026-05-22",
-          entry: 24450, stop: 22500, target: null, reason: "수렴 setup",
-          timeframe: "weekly",
-          extra: {},
-        },
-      ],
+      patterns: [],
       volume_case: {
-        case: 12, label_kr: "수렴기 거래량 감소 (매물 소진, 폭발 전조)",
-        direction: "bullish", confidence: 0.62,
-        reason: "거래량 -38%, middle/up",
+        case: 7, label_kr: "급등 중 거래량 감소 (세력 매집 완료)",
+        direction: "bullish", confidence: 0.78,
+        reason: "상승 추세인데 거래량 -38%",
       },
       last_candle: {
         date: "2026-05-22", open: 24600, high: 24800, low: 23700, close: 24450,
         volume: 21778, body_pct: 0.14, upper_wick_pct: 0.18, lower_wick_pct: 0.68,
         close_position: 0.32, is_bullish: false, tags: ["교수형"], in_safe_zone_75: null,
       },
+      consolidation_ratio: 0.041,
     });
     render(<BookVerdict result={r} />);
     expect(screen.getByText(/매복.*포킹 대기/)).toBeInTheDocument();
@@ -105,15 +104,15 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
         direction: "bullish", confidence: 0.62,
         reason: "",
       },
-      // No indecision candle, no setup pattern → only 1 hit
+      // No indecision candle, no tight box, no setup pattern → only 1 hit
       last_candle: {
         date: "2026-05-22", open: 100, high: 102, low: 99.5, close: 101.8,
         volume: 50000, body_pct: 0.72, upper_wick_pct: 0.08, lower_wick_pct: 0.20,
         close_position: 0.92, is_bullish: true, tags: ["장대양봉"], in_safe_zone_75: true,
       },
+      consolidation_ratio: 0.15,   // wide swings, not a box
     });
     render(<BookVerdict result={r} />);
-    // Should be a normal BUY verdict, not 매복
     expect(screen.queryByText(/매복.*포킹/)).toBeNull();
   });
 
@@ -161,6 +160,7 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
         volume: 80000, body_pct: 0.81, upper_wick_pct: 0.06, lower_wick_pct: 0.12,
         close_position: 0.94, is_bullish: true, tags: ["장대양봉"], in_safe_zone_75: true,
       },
+      consolidation_ratio: 0.18,  // wide swings during breakout, not a box
     });
     render(<BookVerdict result={r} />);
     expect(screen.getByText(/강한 매수/)).toBeInTheDocument();

@@ -271,6 +271,23 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
                 # Drop the malformed plan instead of surfacing it.
                 entry_block = None
 
+    # Consolidation / 박스권 헤드라인 signal — used by the BookVerdict
+    # 매복 detector. We pre-compute it here so the page doesn't need to
+    # re-fetch bars: the (max-min)/last_close of the most recent N bars.
+    # When this is tight (≤ 6 %) over the last 4 bars, the chart is in
+    # a "기간 조정" box regardless of whether the strict MA-convergence
+    # pattern fires (its 60-MA spread check is too tight for some box
+    # cases like 국보디자인 2026-05-22).
+    try:
+        recent4 = df["close"].iloc[-4:].astype(float)
+        last_close = float(df["close"].iloc[-1])
+        if last_close > 0 and len(recent4) >= 4:
+            cons_ratio = float((recent4.max() - recent4.min()) / last_close)
+        else:
+            cons_ratio = None
+    except Exception:
+        cons_ratio = None
+
     return {
         "ticker": ticker,
         "as_of": str(df["date"].iloc[-1].date()),
@@ -285,6 +302,7 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "volume_case": vc_dict,
         "reverse_accumulation": reverse_accum,
         "entry_plan": entry_block,
+        "consolidation_ratio": cons_ratio,
     }
 
 

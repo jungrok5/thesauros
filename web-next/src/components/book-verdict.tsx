@@ -196,7 +196,12 @@ function isAmbushSetup(r: AnalysisResult): boolean {
   const hasSetupPattern = (r.patterns ?? []).some(
     (p) => typeof p.kind === "string" && p.kind.includes("수렴 매복"),
   );
-  const vc12 = r.volume_case?.case === 12;
+  // Volume "drying up" — case 12 explicitly, OR case 7 (bullish accumulation
+  // complete) which the book also reads as "more sellers exhausted than
+  // buyers exhausted = upcoming break". Case 8 (top + drop) is the
+  // bearish-tilted variant we DON'T want to lump in.
+  const vc = r.volume_case;
+  const dryingVolume = vc?.case === 12 || vc?.case === 7;
   const lc = r.last_candle;
   const indecisionCandle =
     !!lc && (
@@ -206,9 +211,17 @@ function isAmbushSetup(r: AnalysisResult): boolean {
       )
       || lc.body_pct < 0.2
     );
-  // Need at least TWO of three: (setup pattern, case 12, indecision
-  // candle). Single hits are too weak to flip a STRONG_BUY into 매복.
-  const hits = [hasSetupPattern, vc12, indecisionCandle].filter(Boolean).length;
+  // Tight recent box — 4-bar (max-min)/close ≤ 6 %. Computed in
+  // analyzer; protects against the 국보디자인 case where the strict
+  // MA-convergence detector misses because 60-week MA is too far.
+  const tightBox =
+    typeof r.consolidation_ratio === "number"
+    && r.consolidation_ratio <= 0.06;
+  // Need ≥2 of FOUR signals — setup pattern, drying volume, indecision
+  // candle, tight box. Any single hit alone is too weak to flip a
+  // STRONG_BUY into 매복.
+  const hits = [hasSetupPattern, dryingVolume, indecisionCandle, tightBox]
+    .filter(Boolean).length;
   return hits >= 2;
 }
 

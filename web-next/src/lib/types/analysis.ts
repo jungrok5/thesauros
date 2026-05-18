@@ -72,6 +72,10 @@ export type AnalysisResult = {
     confidence: number;
     reason: string;
   } | null;
+  /** (max(close) − min(close)) / last_close over the most recent
+   *  ~4 bars. ≤ 0.06 means the chart is in a tight box (기간 조정 /
+   *  빨래 널기); BookVerdict uses this as one of the 매복 signals. */
+  consolidation_ratio?: number | null;
   reverse_accumulation: {
     detected: boolean;
     occurrences: number;
