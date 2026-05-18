@@ -78,6 +78,21 @@ def active_tickers(market: Optional[str] = None) -> List[Tuple[str, str]]:
             return list(cur.fetchall())
 
 
+def watchlist_tickers() -> List[Tuple[str, str]]:
+    """Tickers any user has added to a watchlist, with their market.
+    Lets the bars ingest pick up user-chosen out-of-default-universe names
+    (e.g. NASDAQ mid-caps) so scan_daily later finds bars in DB."""
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT t.ticker, t.market "
+                "  FROM watchlist w "
+                "  JOIN tickers t ON t.ticker = w.ticker "
+                " WHERE t.is_active = true"
+            )
+            return list(cur.fetchall())
+
+
 def upsert_bars(rows: Sequence[Tuple[Any, ...]]) -> int:
     """Upsert (ticker, bar_date, open, high, low, close, adj_close, volume)."""
     if not rows:
@@ -229,6 +244,11 @@ def _int(v: Any) -> Optional[int]:
 def run_kr(market: str, today: date, backfill_days: int, workers: int) -> int:
     rows = active_tickers(market)
     tickers = [t for t, _ in rows]
+    # Pull in user-watchlisted KR tickers too — defensive, since the
+    # `tickers` master usually already includes them.
+    for t, m in watchlist_tickers():
+        if m == market and t not in tickers:
+            tickers.append(t)
     if not tickers:
         log.info("%s: no active tickers", market)
         return 0
@@ -277,17 +297,29 @@ def run_kr(market: str, today: date, backfill_days: int, workers: int) -> int:
     return n_total
 
 
-def run_us(today: date, backfill_days: int, sp500_only: bool) -> int:
-    us_rows = [t for t, m in active_tickers() if m in US_MARKETS]
-    if sp500_only:
-        try:
-            from app.data.universe import fetch_sp500_table
-            sp = set(fetch_sp500_table()["ticker"].tolist())
-            us_rows = [t for t in us_rows if t in sp]
-        except Exception as e:
-            log.warning("S&P 500 filter failed: %s — using full US set", e)
-    if not us_rows:
-        return 0
+def run_us(today: date, backfill_days: int, sp500_only: bool,
+           watchlist_only: bool = False) -> int:
+    """Ingest US bars. By default (cron path), watchlist_only is True —
+    we only fetch US tickers that at least one user has watchlisted,
+    NOT the full S&P 500. This keeps DB footprint proportional to actual
+    usage."""
+    if watchlist_only:
+        wl_us = [t for t, m in watchlist_tickers() if m in US_MARKETS]
+        if not wl_us:
+            log.info("US: no watchlisted US tickers — skipping")
+            return 0
+        us_rows = wl_us
+    else:
+        us_rows = [t for t, m in active_tickers() if m in US_MARKETS]
+        if sp500_only:
+            try:
+                from app.data.universe import fetch_sp500_table
+                sp = set(fetch_sp500_table()["ticker"].tolist())
+                us_rows = [t for t in us_rows if t in sp]
+            except Exception as e:
+                log.warning("S&P 500 filter failed: %s — using full US set", e)
+        if not us_rows:
+            return 0
     last = latest_bar_date_per_ticker(us_rows)
     earliest = min(last.values()) if last and len(last) == len(us_rows) else None
     start = (
@@ -308,7 +340,9 @@ def run_us(today: date, backfill_days: int, sp500_only: bool) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--markets", nargs="+",
-                   help="subset of KOSPI KOSDAQ NASDAQ NYSE (default: all)")
+                   default=["KOSPI", "KOSDAQ"],
+                   help="markets to ingest (default: KOSPI KOSDAQ; US is "
+                        "user-watchlist-driven and uses the same FDR/yf path)")
     p.add_argument("--backfill-days", type=int, default=7,
                    help="fallback window when a ticker has no rows at all")
     p.add_argument("--workers", type=int, default=12,
@@ -338,9 +372,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             except Exception as e:
                 log.error("%s ingest failed: %s", m, e)
 
-    if not markets or markets & set(US_MARKETS):
+    # US: by default we only ingest watchlisted tickers (site primary
+    # use case = KR). Explicit --markets including US disables this.
+    run_us_now = bool(markets and (markets & set(US_MARKETS)))
+    if not markets:
+        # Default cron path — watchlist-driven US only.
+        run_us_now = True
+    if run_us_now:
         try:
-            n_total += run_us(today, args.backfill_days, args.sp500_only)
+            watchlist_only = not markets   # default mode → watchlist-only
+            n_total += run_us(today, args.backfill_days, args.sp500_only,
+                              watchlist_only=watchlist_only)
         except Exception as e:
             log.error("US ingest failed: %s", e)
 

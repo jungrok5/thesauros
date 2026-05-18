@@ -66,6 +66,60 @@ POLICIES: list[Tuple[str, str, str]] = [
         "DELETE FROM theme_daily WHERE day < CURRENT_DATE - INTERVAL '180 days'",
         "180 days",
     ),
+    # ──────────────────────────────────────────────────────────────────
+    # Generated-data TTL via engagement. The `active set` is the union
+    # of the default scan universe (KOSPI/KOSDAQ — always kept) and any
+    # ticker that has a FRESH watchlist entry (last_accessed_at within
+    # 90 days; `holding` category never goes stale because the user has
+    # money in it). Anything outside that set has its generated data
+    # purged. The watchlist row itself is NEVER touched — the user
+    # owns it. If they view the ticker again, last_accessed_at refreshes
+    # and the next cron regenerates the data from yfinance/FDR.
+    # ──────────────────────────────────────────────────────────────────
+    (
+        "bars_daily",
+        """
+        DELETE FROM bars_daily WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside KR universe ∪ engaged watchlist",
+    ),
+    (
+        "scan_results",
+        """
+        DELETE FROM scan_results WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "same engagement set",
+    ),
+    (
+        "analyze_results",
+        """
+        DELETE FROM analyze_results WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "same engagement set",
+    ),
+    # investor_flow is KR-only by construction (Naver frgn page), so
+    # the date-based 90d rule above already handles it.
 ]
 
 

@@ -53,11 +53,15 @@ jobs:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          # Universe: KOSPI + KOSDAQ + S&P 500 (US 9.5K 전체는 Supabase 한도 초과).
-          # `--sp500-only` confines NASDAQ/NYSE to constituents of S&P 500.
+          # Universe: KOSPI + KOSDAQ only. Site primary purpose = KR 종가매매.
           # `--years 2` keeps bars_daily within the 500MB free tier.
-          python -m app.db.scan_daily --markets KOSPI KOSDAQ NASDAQ NYSE \
-            --sp500-only --years 2
+          # User-watchlisted US tickers (e.g. AAPL) are auto-unioned in
+          # via _watchlist_tickers() inside scan_daily — so personally
+          # tracked US names still get full analysis on the next run.
+          # Non-watchlisted US tickers fall back to /api/chart's live
+          # yfinance path on the stock detail page (chart only, no
+          # 17-pattern analysis).
+          python -m app.db.scan_daily --markets KOSPI KOSDAQ --years 2
 
       - name: Publish macro state
         env:

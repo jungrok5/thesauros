@@ -28,8 +28,8 @@ echo [1/7] ingest_bars_daily (FDR for KR + yfinance for US)...
 if errorlevel 1 echo [WARN] ingest_bars_daily failed
 echo.
 
-echo [2/7] scan_daily (KR + S^&P 500, 2y)...
-".venv\Scripts\python.exe" -m app.db.scan_daily --markets KOSPI KOSDAQ NASDAQ NYSE --sp500-only --years 2
+echo [2/7] scan_daily (KOSPI + KOSDAQ, 2y; user watchlist US auto-unioned)...
+".venv\Scripts\python.exe" -m app.db.scan_daily --markets KOSPI KOSDAQ --years 2
 if errorlevel 1 echo [WARN] scan_daily failed
 echo.
 

@@ -69,17 +69,30 @@ export async function GET(req: NextRequest) {
     console.error("bars_daily read:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
-  if (!rows || rows.length === 0) {
-    return NextResponse.json({ error: "no data", ticker }, { status: 404 });
-  }
 
-  // 2) Resample to the requested timeframe (daily / weekly / monthly).
-  const daily = rows.map((r) => ({
-    date: new Date(r.bar_date),
-    open: Number(r.open), high: Number(r.high), low: Number(r.low),
-    close: Number(r.close), volume: Number(r.volume) || 0,
-  }));
-  const resampled = resample(daily, timeframe as "daily" | "weekly" | "monthly");
+  let daily: DailyBar[];
+  let liveFallback = false;
+  if (!rows || rows.length === 0) {
+    // No bars in DB — try a live yfinance fetch. This is the path for
+    // US tickers not watchlisted (cron doesn't scan them by default).
+    // KR tickers should always be in DB so an empty result means an
+    // invalid ticker or fresh listing not yet picked up by the weekly
+    // tickers-refresh cron.
+    const live = await fetchYahooBars(ticker, years);
+    if (!live.length) {
+      return NextResponse.json({ error: "no data", ticker }, { status: 404 });
+    }
+    daily = live;
+    liveFallback = true;
+  } else {
+    daily = rows.map((r) => ({
+      date: new Date(r.bar_date),
+      open: Number(r.open), high: Number(r.high), low: Number(r.low),
+      close: Number(r.close), volume: Number(r.volume) || 0,
+    }));
+  }
+  // Skip resample for daily timeframe (identity).
+  const resampled: DailyBar[] = resample(daily, timeframe as "daily" | "weekly" | "monthly");
 
   // 3) Compute MAs over the FULL resampled series so warmup is honored,
   //    then slice the visible window.
@@ -127,9 +140,11 @@ export async function GET(req: NextRequest) {
     timeframe,
     bars,
     mas: slicedMas,
-    patterns: completedPatterns,
-    quarter_lines: result.quarter_lines ?? null,
-    last_candle: result.last_candle ?? null,
+    // Live-fallback path has no analyzer output — only chart + MAs.
+    patterns: liveFallback ? [] : completedPatterns,
+    quarter_lines: liveFallback ? null : (result.quarter_lines ?? null),
+    last_candle: liveFallback ? null : (result.last_candle ?? null),
+    source: liveFallback ? "yahoo_live" : "supabase_cron",
   });
 }
 
@@ -207,4 +222,57 @@ function computeMAs(
     out[`ma_${w}`] = series;
   }
   return out;
+}
+
+/**
+ * Live fallback for tickers not yet ingested into bars_daily. Used by US
+ * names the user searched without watchlisting — the daily cron only
+ * ingests KR + watchlisted US. Yahoo v8 chart returns full history with
+ * one HTTP call. Cached per ticker for 1 day via Next.js `revalidate`.
+ */
+async function fetchYahooBars(ticker: string, years: number): Promise<DailyBar[]> {
+  const range = years >= 5 ? "5y" : years >= 2 ? "5y" : "2y";
+  const url =
+    "https://query1.finance.yahoo.com/v8/finance/chart/" +
+    encodeURIComponent(ticker) +
+    `?interval=1d&range=${range}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        Accept: "application/json,*/*;q=0.1",
+      },
+      // Cache for 24h per (ticker, timeframe) URL.
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const r = json?.chart?.result?.[0];
+    if (!r) return [];
+    const ts: number[] = r.timestamp ?? [];
+    const q = r.indicators?.quote?.[0] ?? {};
+    const opens: (number | null)[] = q.open ?? [];
+    const highs: (number | null)[] = q.high ?? [];
+    const lows: (number | null)[] = q.low ?? [];
+    const closes: (number | null)[] = q.close ?? [];
+    const vols: (number | null)[] = q.volume ?? [];
+    const out: DailyBar[] = [];
+    for (let i = 0; i < ts.length; i++) {
+      const c = closes[i];
+      if (c == null) continue;   // skip gaps
+      out.push({
+        date: new Date(ts[i] * 1000),
+        open: opens[i] ?? c,
+        high: highs[i] ?? c,
+        low: lows[i] ?? c,
+        close: c,
+        volume: vols[i] ?? 0,
+      });
+    }
+    return out;
+  } catch (e) {
+    console.error("yahoo chart fallback:", e);
+    return [];
+  }
 }

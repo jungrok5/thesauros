@@ -114,6 +114,16 @@ async function getWatchlistState(
       .eq("ticker", ticker)
       .maybeSingle();
     if (data?.category) {
+      // Touch the TTL anchor — retention purges observing rows that
+      // haven't been touched in 90 days (see app/db/retention.py).
+      // Fire-and-forget so a slow UPDATE never delays the page render.
+      sb.from("watchlist")
+        .update({ last_accessed_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .eq("ticker", ticker)
+        .then(({ error }) => {
+          if (error) console.error("watchlist touch:", error.message);
+        });
       return { added: true, category: data.category as "observing" | "holding" };
     }
   } catch {
