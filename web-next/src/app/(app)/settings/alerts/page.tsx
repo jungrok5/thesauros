@@ -14,20 +14,20 @@ import { PushSubscribe } from "./push-subscribe-client";
 export const dynamic = "force-dynamic";
 
 const FIELDS: Array<{ key: string; label: string; help: string }> = [
-  { key: "enable_enter",    label: "ENTER 신호",
-    help: "관심 종목에 매수 신호 (action_strong_buy / action_buy / pattern_*) 가 등장하면" },
-  { key: "enable_pyramid",  label: "PYRAMID 신호",
-    help: "보유 종목에 추가매수 가능한 패턴 (역H&S / 삼중바닥 / 240MA 후킹) 이 나오면" },
-  { key: "enable_warn",     label: "WARN 신호",
-    help: "보유 종목에 위험 신호 (쌍봉 형성 / 4등분선 50% 깨짐) 가 나오면" },
-  { key: "enable_exit",     label: "EXIT 신호 (강력)",
-    help: "보유 종목 10MA 깨짐 / 240MA 이탈 / 저승사자 캔들. 즉시 청산 권장" },
+  { key: "enable_enter",    label: "🟢 매수 진입 신호",
+    help: "관심 종목에 강한 매수 / 매수 액션 또는 매수 패턴 (쌍바닥 · 역H&S · 컵핸들 등) 이 발현되면" },
+  { key: "enable_pyramid",  label: "🟡 추가 매수 신호 (피라미딩)",
+    help: "보유 종목에 추가 매수 패턴 (역H&S · 삼중바닥 · 240MA 돌반지) 이 신선 영역에서 등장하면" },
+  { key: "enable_warn",     label: "🟠 경고 신호",
+    help: "보유 종목에 매도 반전 패턴 (쌍천장 형성 · 4등분선 50% 깨짐) 이 발현되면" },
+  { key: "enable_exit",     label: "🔴 청산 신호 (강력)",
+    help: "보유 종목 주봉 10MA 깨짐 · 240MA 이탈 · H&S 완성 — 즉시 청산 권장" },
   { key: "enable_ma240_break",       label: "240MA 돌파/이탈",
     help: "관심/보유 종목의 240MA 라인 통과 시" },
   { key: "enable_quarter_25_break",  label: "4등분선 절대자리 (25%) 깨짐",
     help: "직전 장대양봉 몸통 25% 아래로 종가 — 책 시그니처 매도 시그널" },
-  { key: "enable_daily_top5",        label: "주간 추천 Top 5",
-    help: "매주 금요일 17시 종합 추천 Top 5 (관심 종목 외)" },
+  { key: "enable_daily_top5",        label: "⭐ 주간 추천 Top 5",
+    help: "매주 금요일 17시 종합 점수 (강도 × 신선도) 상위 5종목 (관심 종목 외 신선 진입 후보)" },
 ];
 
 async function fetchPrefs(email: string, name: string | null) {

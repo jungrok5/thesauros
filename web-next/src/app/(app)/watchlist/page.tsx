@@ -8,6 +8,11 @@ import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
 import { WatchlistRowClient } from "./row-client";
+import {
+  pickFreshest,
+  type FreshnessPatternInput,
+} from "@/lib/freshness";
+import { labelFor } from "@/lib/signal-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +48,62 @@ async function fetchWatchlist(email: string, name: string | null) {
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as unknown as RawWatchlistRow[];
-  return rows.map((r) => ({
-    ...r,
-    ticker_name: r.tickers?.name ?? null,
-    ticker_market: r.tickers?.market ?? null,
-  }));
+
+  // Bulk-fetch latest active scan signal + analyze_results for each ticker
+  // so the row can display the same freshness chip + Korean signal label
+  // the recommendations / themes / closing-trade pages use. Without this,
+  // a user's holding shows entry/stop/target but no answer to "is the
+  // book still saying BUY this week, or has it shifted to SELL?".
+  const tickers = rows.map((r) => r.ticker);
+  const signalByTicker = new Map<string, { type: string; strength: number }>();
+  const analyzeByTicker = new Map<
+    string,
+    { patterns?: FreshnessPatternInput[]; last_close?: number }
+  >();
+  if (tickers.length > 0) {
+    const [{ data: signals }, { data: ar }] = await Promise.all([
+      sb.from("scan_results")
+        .select("ticker, signal_type, strength")
+        .in("ticker", tickers)
+        .eq("is_active", true)
+        .like("signal_type", "action_%"),
+      sb.from("analyze_results")
+        .select("ticker, result")
+        .in("ticker", tickers),
+    ]);
+    for (const s of signals ?? []) {
+      const t = (s as { ticker: string }).ticker;
+      const cur = {
+        type: String((s as { signal_type: string }).signal_type),
+        strength: Number((s as { strength: number }).strength),
+      };
+      const prev = signalByTicker.get(t);
+      if (!prev || cur.strength > prev.strength) signalByTicker.set(t, cur);
+    }
+    for (const row of ar ?? []) {
+      analyzeByTicker.set(
+        (row as { ticker: string }).ticker,
+        (row as { result: { patterns?: FreshnessPatternInput[]; last_close?: number } }).result,
+      );
+    }
+  }
+
+  return rows.map((r) => {
+    const signal = signalByTicker.get(r.ticker) ?? null;
+    const analyze = analyzeByTicker.get(r.ticker);
+    const lastClose = analyze?.last_close ?? 0;
+    const fresh = lastClose > 0 && analyze?.patterns
+      ? pickFreshest(analyze.patterns, lastClose)
+      : null;
+    return {
+      ...r,
+      ticker_name: r.tickers?.name ?? null,
+      ticker_market: r.tickers?.market ?? null,
+      signal_label: signal ? labelFor(signal.type).label : null,
+      signal_direction: signal ? labelFor(signal.type).direction : null,
+      fresh: fresh ? { kind: fresh.kind, runupPct: fresh.runupPct } : null,
+    };
+  });
 }
 
 export default async function WatchlistPage() {

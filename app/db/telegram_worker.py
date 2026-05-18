@@ -303,6 +303,55 @@ def _analyze_blob(ticker: str) -> Optional[Dict[str, Any]]:
             return r[0] if r and r[0] else None
 
 
+def _freshness_of(blob: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Best fresh bullish pattern (kind + runup% past breakout level).
+
+    Mirrors web-next/src/lib/freshness.ts::pickFreshest — pattern.entry
+    is unreliable for runup since the analyzer sets it to last_close on
+    completion, so we use extra.neckline / rim / ma_240 / ma_value as
+    the real breakout reference. Patterns without one are skipped.
+    """
+    patterns = (blob or {}).get("patterns") or []
+    last_close = (blob or {}).get("last_close")
+    if not isinstance(last_close, (int, float)) or last_close <= 0:
+        return None
+
+    def _bucket(r: float) -> int:
+        if 0 <= r < 5: return 0
+        if 5 <= r < 15: return 1
+        if 15 <= r < 30: return 2
+        if -10 <= r < 0: return 3
+        if r < -10: return 4
+        return 5
+
+    best = None
+    for p in patterns:
+        if not p.get("completed") or p.get("direction") != "bullish":
+            continue
+        extra = p.get("extra") or {}
+        bl = None
+        for k in ("neckline", "rim", "ma_240", "ma_value"):
+            v = extra.get(k)
+            if isinstance(v, (int, float)) and v > 0:
+                bl = v
+                break
+        if bl is None:
+            continue
+        runup = (float(last_close) / float(bl) - 1) * 100
+        if best is None or _bucket(runup) < _bucket(best["runup"]):
+            best = {"kind": p.get("kind", "?"), "runup": runup}
+    return best
+
+
+def _fresh_zone_label(runup: float) -> str:
+    if runup < -10: return "🔴 무효 가능"
+    if runup < 0:   return "풀백 검토"
+    if runup < 5:   return "🟢 지금 진입 자리"
+    if runup < 15:  return "추격 가능"
+    if runup < 30:  return "일부 진입 자리 지남"
+    return "⚠ 진입 자리 끝남"
+
+
 def _flow_5d(ticker: str) -> Optional[Dict[str, float]]:
     """5-day sum of foreign + institution net flow. KR only — returns None
     for US (no data) so the caller can skip the corroboration line."""
@@ -397,6 +446,17 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
         )
     if tf_parts:
         lines.append("📈 " + "  ".join(tf_parts))
+
+    # Freshness line — mirrors the FreshnessChip used on every web page.
+    # Tells the user whether this BUY signal is a "right now" entry or
+    # already +70% past the breakout. Without this a STRONG_BUY alert on
+    # a stale ticker looks identical to one fired on a fresh breakout.
+    fresh = _freshness_of(blob) if (blob and label["dir"] == "bull") else None
+    if fresh:
+        zone = _fresh_zone_label(fresh["runup"])
+        lines.append(
+            f"🎯 {fresh['kind']} 돌파 {fresh['runup']:+.0f}% — {zone}"
+        )
 
     # Strength + confidence row.
     strength = sig.get("strength")

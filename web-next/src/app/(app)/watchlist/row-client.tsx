@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { FreshnessChip } from "@/components/freshness-chip";
 
 type Row = {
   id: number;
@@ -19,6 +20,9 @@ type Row = {
   stop_pct_from_entry: number | null;
   target_hit_at: string | null;
   stop_hit_at: string | null;
+  signal_label?: string | null;
+  signal_direction?: "bullish" | "bearish" | "neutral" | null;
+  fresh?: { kind: string; runupPct: number } | null;
 };
 
 function fmt(n: number | null | undefined): string {
@@ -103,6 +107,21 @@ export function WatchlistRowClient({ row }: { row: Row }) {
                 {row.ticker_market}
               </span>
             )}
+            {row.signal_label && (
+              <span
+                className={`text-xs px-1.5 py-0.5 rounded border font-medium ${
+                  row.signal_direction === "bullish"
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                    : row.signal_direction === "bearish"
+                      ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/40"
+                      : "bg-muted text-muted-foreground border-border"
+                }`}
+                title="현재 스캔 결과의 책 신호"
+              >
+                {row.signal_label}
+              </span>
+            )}
+            {row.fresh && <FreshnessChip fresh={row.fresh} compact />}
             {row.target_hit_at && (
               <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                 🎯 목표 도달
