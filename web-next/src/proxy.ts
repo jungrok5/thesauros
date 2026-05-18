@@ -53,7 +53,13 @@ export default auth((req) => {
 
   // ---- Page routes ---------------------------------------------------
   if (!isLoggedIn) {
-    return NextResponse.redirect(new URL("/login", nextUrl));
+    // Preserve the original path so a shared link like /stocks/017670.KS
+    // routes back to the same page after sign-in, instead of dropping the
+    // recipient on /dashboard. The login page reads `callbackUrl` and
+    // passes it through to NextAuth's signIn() redirect.
+    const loginUrl = new URL("/login", nextUrl);
+    loginUrl.searchParams.set("callbackUrl", pathname + nextUrl.search);
+    return NextResponse.redirect(loginUrl);
   }
 
   // Pending / rejected users get the /pending page only.
