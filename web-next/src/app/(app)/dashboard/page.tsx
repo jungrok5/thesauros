@@ -7,9 +7,21 @@ import { StatePill } from "@/components/state-pill";
 import { MacroDial } from "@/components/macro-dial";
 import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
+import { MarketTicker } from "@/components/market-ticker";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
+
+// macro_state.macro_indicators 에는 'KOSPI 지수' / '환율' / 'VIX' 같은
+// 실시간성 지표도 섞여 들어옵니다 (publish_macro 가 yfinance/FRED 일괄
+// fetch). 하루-stale 가격이 의미 없으니 dashboard 카드에서는 빼고,
+// 실시간 띠 (MarketTicker) 에서만 노출합니다.
+const FAST_INDICATOR_KEYS = new Set<string>([
+  "kospi", "kosdaq", "sp500", "nasdaq", "dow", "djia",
+  "vix", "usdkrw", "usdjpy", "usdcny", "krwusd",
+  "us10y", "us2y", "tnx",
+  "wti", "brent", "gold", "btc", "bitcoin",
+]);
 
 // Map indicator key (from `macro_state.macro_indicators`) → glossary slug.
 // Anything not in this map falls back to plain text (no tooltip).
@@ -83,7 +95,11 @@ function categorize(
   indicators: Record<string, IndicatorState>,
 ): Record<string, IndicatorState[]> {
   const out: Record<string, IndicatorState[]> = {};
-  for (const ind of Object.values(indicators)) {
+  for (const [key, ind] of Object.entries(indicators)) {
+    // Skip fast-moving indicators — they're rendered in <MarketTicker/>
+    // up top with 1-minute freshness. Leaving day-stale duplicates
+    // here would just confuse readers.
+    if (FAST_INDICATOR_KEYS.has(key.toLowerCase())) continue;
     const cat = ind.category || "기타";
     (out[cat] ??= []).push(ind);
   }
@@ -125,14 +141,17 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">거시 환경</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            34개 거시 지표 자동 집계 · 시장 레짐 분류 · 갱신{" "}
+            시세 띠는 실시간 (1분 갱신) · 거시 카드는 월간/분기 지표 (매일 자동 집계 · 마지막 갱신{" "}
             <span className="font-mono opacity-70" suppressHydrationWarning>
               {updatedAt}
             </span>
+            )
           </p>
         </div>
         <RegimeBadge regime={regime.regime} score={regime.score} />
       </header>
+
+      <MarketTicker />
 
       <MacroDial />
 
@@ -177,6 +196,14 @@ export default async function DashboardPage() {
           )}
         </div>
       </section>
+
+      <div className="pt-4 border-t border-border/60">
+        <h2 className="text-sm font-semibold tracking-tight">월간/분기 거시 지표</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          CPI · PPI · M2 · 실업률 등 발표 빈도가 낮은 지표. 매일 16시 KST cron 으로 갱신.
+          실시간 시세는 위 띠를 참고하세요.
+        </p>
+      </div>
 
       {Object.entries(indicators).map(([categoryLabel, items]) => (
         <section key={categoryLabel}>
