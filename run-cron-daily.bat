@@ -23,27 +23,32 @@ echo   Thesauros daily cron - %date% %time%
 echo =====================================================
 echo.
 
-echo [1/5] scan_daily (KR + S^&P 500, 2y)...
+echo [1/6] ingest_bars_daily (FDR for KR + yfinance for US)...
+".venv\Scripts\python.exe" -m app.db.ingest_bars_daily
+if errorlevel 1 echo [WARN] ingest_bars_daily failed
+echo.
+
+echo [2/6] scan_daily (KR + S^&P 500, 2y)...
 ".venv\Scripts\python.exe" -m app.db.scan_daily --markets KOSPI KOSDAQ NASDAQ NYSE --sp500-only --years 2
 if errorlevel 1 echo [WARN] scan_daily failed
 echo.
 
-echo [2/5] publish_macro (FRED + yfinance)...
+echo [3/6] publish_macro (FRED + yfinance)...
 ".venv\Scripts\python.exe" -m app.db.publish_macro
 if errorlevel 1 echo [WARN] publish_macro failed
 echo.
 
-echo [3/5] ingest_themes (Naver)...
+echo [4/6] ingest_themes (Naver)...
 ".venv\Scripts\python.exe" -m app.db.ingest_themes --themes-only
 if errorlevel 1 echo [WARN] ingest_themes failed
 echo.
 
-echo [4/5] ingest_investor_flow (KIS)...
+echo [5/6] ingest_investor_flow (KIS)...
 ".venv\Scripts\python.exe" -m app.db.ingest_investor_flow
 if errorlevel 1 echo [WARN] ingest_investor_flow failed
 echo.
 
-echo [5/5] telegram_worker (send alerts)...
+echo [6/6] telegram_worker (send alerts)...
 ".venv\Scripts\python.exe" -m app.db.telegram_worker
 if errorlevel 1 echo [WARN] telegram_worker failed
 echo.

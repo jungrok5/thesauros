@@ -28,6 +28,16 @@ jobs:
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
 
+      - name: Refresh bars_daily (KR via FDR + US via yfinance)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # Incremental OHLCV catch-up. Must run BEFORE scan_daily — otherwise
+          # the scanner sees yesterday's prices.
+          python -m app.db.ingest_bars_daily
+
       - name: Run scan_daily
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

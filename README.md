@@ -68,8 +68,9 @@ cron 이 외부에서 데이터를 끌어와 Supabase 에 적재. 사이트는 S
 | 외부 | 무엇 | Python 모듈 | Supabase 테이블 | cron |
 |---|---|---|---|---|
 | FRED | 거시 지표 | `app/macro/fetch.py` | `macro_series`, `macro_state` | daily-scan |
-| yfinance | 미국 주가 + VIX/S&P/환율 | `app/book/analyzer.py` | `bars_daily`, `macro_series` | daily-scan |
-| pykrx / FDR | KR 주가 + 종목 마스터 | `app/db/seed_tickers.py`, `app/book/analyzer.py` | `tickers`, `bars_daily` | weekly-tickers-refresh |
+| yfinance | 미국 주가 (S&P 500) + VIX/S&P/환율 | `app/db/ingest_bars_daily.py`, `app/macro/fetch.py` | `bars_daily`, `macro_series` | daily-scan |
+| FDR (FinanceDataReader) | KR 주가 (KOSPI/KOSDAQ) | `app/db/ingest_bars_daily.py` | `bars_daily` | daily-scan |
+| pykrx / FDR | KR 종목 마스터 (신규/폐지) | `app/db/seed_tickers.py` | `tickers` | weekly-tickers-refresh |
 | Wikipedia · Nasdaq Trader | 종목 마스터 (S&P 500, NASDAQ/NYSE) | `app/db/seed_tickers.py`, `app/data/universe.py` | `tickers` | weekly-tickers-refresh |
 | DART OpenAPI | KR 펀더멘털 + 공시 | `app/data/ingest_dart.py`, `app/db/ingest_news.py` | `fundamentals`, `financials_eval`, `factors_eval`, `disclosures` | weekly-fundamentals |
 | Naver Finance | KR 뉴스 + 테마 + 섹터 | `app/db/ingest_news.py`, `ingest_themes.py`, `ingest_kr_sector.py` | `news`, `themes`, `theme_daily`, `theme_members` | daily-scan |
@@ -82,7 +83,7 @@ cron 이 외부에서 데이터를 끌어와 Supabase 에 적재. 사이트는 S
 
 | 워크플로 | 주기 (KST) | 단계 |
 |---|---|---|
-| `daily-scan.yml` | 평일 16:00 | scan_daily → publish_macro → ingest_themes → ingest_investor_flow |
+| `daily-scan.yml` | 평일 16:00 | ingest_bars_daily → scan_daily → publish_macro → ingest_themes → ingest_investor_flow |
 | `weekly-tickers-refresh.yml` | 일요일 10:00 | seed_tickers (신규/폐지 마킹) |
 | `weekly-fundamentals.yml` | 토요일 11:00 | ingest_dart → eval_financials |
 | `keepalive.yml` | 매일 10:30 | Supabase ping (무료 플랜 1주 inactivity pause 방지) |
