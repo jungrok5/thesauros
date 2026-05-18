@@ -7,6 +7,7 @@ import {
   InvestorFlowChip,
   type FlowSummary,
 } from "@/components/investor-flow-chip";
+import { BookVerdict } from "@/components/book-verdict";
 import { formatNumber, cn } from "@/lib/utils";
 
 // pattern.kind comes from the Python analyzer as Korean strings. Map them
@@ -118,8 +119,10 @@ function TrendTile({
 
 function PatternCard({
   p,
+  lastClose,
 }: {
   p: AnalysisResult["patterns"][number];
+  lastClose: number;
 }) {
   const dir =
     p.direction === "bullish"
@@ -131,8 +134,24 @@ function PatternCard({
     daily: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
   };
   const term = patternTerm(p.kind);
+
+  // Freshness — `detected_at` only records "when the scan ran", not when
+  // the formation actually completed. The real staleness signal is how
+  // far price has run past the pattern's intended entry. >30% runup on
+  // a completed bullish pattern = the breakout has played out.
+  let runupPct: number | null = null;
+  if (p.completed && p.entry && p.entry > 0) {
+    runupPct = (lastClose / p.entry - 1) * 100;
+  }
+  const isStale = p.direction === "bullish" && runupPct != null && runupPct > 30;
+
   return (
-    <article className="rounded-lg border border-border bg-card p-3">
+    <article
+      className={cn(
+        "rounded-lg border bg-card p-3",
+        isStale ? "border-amber-500/40 bg-amber-500/5" : "border-border",
+      )}
+    >
       <header className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">
@@ -153,15 +172,31 @@ function PatternCard({
           <span className={cn("text-xs", dir)}>
             {p.direction === "bullish" ? "▲ 상승" : "▼ 하락"}
           </span>
+          {isStale && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium">
+              ⚠ 진입 자리 지남
+            </span>
+          )}
         </div>
         <span className="text-xs text-muted-foreground font-mono shrink-0">
           {(p.confidence * 100).toFixed(0)}%
         </span>
       </header>
       <p className="text-xs text-muted-foreground leading-relaxed">{p.reason}</p>
+      {p.completed && runupPct != null && (
+        <p className={cn(
+          "mt-1.5 text-xs font-medium",
+          isStale ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+        )}>
+          진입 {formatNumber(p.entry!)} → 현재 {formatNumber(lastClose)}
+          <span className="ml-1">
+            ({runupPct >= 0 ? "+" : ""}{runupPct.toFixed(0)}%)
+          </span>
+        </p>
+      )}
       <footer className="flex items-center justify-between text-[10px] text-muted-foreground/70 mt-2 pt-2 border-t border-border/60">
         <span>{p.completed ? "✓ 완성" : "⋯ 미완"}</span>
-        <span>{p.detected_at}</span>
+        <span>스캔 {p.detected_at?.slice(0, 10)}</span>
       </footer>
     </article>
   );
@@ -207,6 +242,8 @@ export function AnalysisView({
         </div>
         <ActionBadge action={r.action} score={r.book_score} size="lg" />
       </header>
+
+      <BookVerdict result={r} />
 
       {r.trend.book_reason && (
         <div className="rounded-lg border border-border bg-card p-4">
@@ -290,7 +327,7 @@ export function AnalysisView({
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {r.patterns.map((p, i) => (
-              <PatternCard key={`${p.kind}-${p.timeframe}-${i}`} p={p} />
+              <PatternCard key={`${p.kind}-${p.timeframe}-${i}`} p={p} lastClose={r.last_close} />
             ))}
           </div>
         </section>
@@ -303,7 +340,7 @@ export function AnalysisView({
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {r.reversals.map((p, i) => (
-              <PatternCard key={`rev-${p.kind}-${i}`} p={p} />
+              <PatternCard key={`rev-${p.kind}-${i}`} p={p} lastClose={r.last_close} />
             ))}
           </div>
         </section>
@@ -361,38 +398,81 @@ export function AnalysisView({
         )}
       </div>
 
-      {r.entry_plan && (
-        <section className="rounded-lg border-2 border-emerald-500/30 bg-emerald-500/5 p-5">
-          <div className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-3">
-            💡 매매 플랜
-          </div>
-          <p className="text-sm text-muted-foreground mb-3">
-            기준: {r.entry_plan.based_on}
-          </p>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">진입</div>
-              <div className="text-xl font-mono">
-                {formatNumber(r.entry_plan.entry)}
+      {r.entry_plan && (() => {
+        const ep = r.entry_plan;
+        const last = r.last_close;
+        const entryGapPct = ep.entry != null && ep.entry > 0
+          ? (last / ep.entry - 1) * 100 : null;
+        const stopPct = ep.entry != null && ep.entry > 0 && ep.stop != null
+          ? (ep.stop / ep.entry - 1) * 100 : null;
+        const targetPct = ep.entry != null && ep.entry > 0 && ep.target != null
+          ? (ep.target / ep.entry - 1) * 100 : null;
+        const rr = stopPct != null && targetPct != null && stopPct < 0
+          ? targetPct / Math.abs(stopPct) : null;
+        return (
+          <section className="rounded-lg border-2 border-emerald-500/30 bg-emerald-500/5 p-5">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                💡 매매 플랜
+              </div>
+              {rr != null && (
+                <div className="text-xs text-muted-foreground">
+                  손익비 <span className="font-mono text-foreground">1:{rr.toFixed(1)}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">
+              기준: {ep.based_on}
+            </p>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">진입</div>
+                <div className="text-xl font-mono">
+                  {ep.entry != null ? formatNumber(ep.entry) : "—"}
+                </div>
+                {entryGapPct != null && Math.abs(entryGapPct) >= 1 && (
+                  <div className={cn(
+                    "text-[10px] mt-0.5",
+                    Math.abs(entryGapPct) > 5
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-muted-foreground",
+                  )}>
+                    현재가 대비 {entryGapPct >= 0 ? "+" : ""}{entryGapPct.toFixed(1)}%
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">손절</div>
+                <div className="text-xl font-mono text-rose-600 dark:text-rose-400">
+                  {ep.stop != null ? formatNumber(ep.stop) : "—"}
+                </div>
+                {stopPct != null && (
+                  <div className="text-[10px] text-rose-600/80 dark:text-rose-300/80 mt-0.5">
+                    {stopPct.toFixed(1)}%
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">목표</div>
+                <div className="text-xl font-mono text-emerald-600 dark:text-emerald-400">
+                  {ep.target != null ? formatNumber(ep.target) : "—"}
+                </div>
+                {targetPct != null && (
+                  <div className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 mt-0.5">
+                    +{targetPct.toFixed(0)}%
+                  </div>
+                )}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">손절</div>
-              <div className="text-xl font-mono text-rose-600 dark:text-rose-400">
-                {formatNumber(r.entry_plan.stop)}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">목표</div>
-              <div className="text-xl font-mono text-emerald-600 dark:text-emerald-400">
-                {r.entry_plan.target !== null
-                  ? formatNumber(r.entry_plan.target)
-                  : "—"}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+            {entryGapPct != null && entryGapPct > 5 && (
+              <p className="mt-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                ⚠ 현재가가 진입가보다 {entryGapPct.toFixed(1)}% 위 — 매수 자리는 이미 지났을 수
+                있습니다. 보유 평가용으로 활용 권장.
+              </p>
+            )}
+          </section>
+        );
+      })()}
     </div>
   );
 }
