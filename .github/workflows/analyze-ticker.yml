@@ -1,0 +1,72 @@
+name: Analyze Single Ticker
+# Triggered by watchlist POST when a user adds a new ticker — the
+# default 17:00 KST cron picks up newcomers automatically, but this
+# workflow gives an "instant analysis" experience (~2-3 min from
+# dispatch to results in DB).
+#
+# Works for both KR and US tickers:
+#   - KR: scan_daily reads from bars_daily (already populated by the
+#         nightly cron). Single-ticker run is fast.
+#   - US: bars_daily may be empty for non-watchlisted US tickers, so
+#         scan_daily's load_ticker_data falls back to a live yfinance
+#         fetch and writes the result to analyze_results + scan_results.
+#
+# Fan-in safety: concurrent dispatches for the same ticker collapse via
+# `concurrency` (per-ticker group). Dispatches for different tickers
+# run in parallel up to the runner pool size.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Canonical ticker (e.g. 005380.KS, AAPL)"
+        required: true
+        type: string
+
+concurrency:
+  group: analyze-ticker-${{ inputs.ticker }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install supabase "psycopg[binary]"
+
+      - name: Scan one ticker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          # scan_daily writes analyze_results + scan_results for this
+          # ticker. load_ticker_data inside is bars_daily → yfinance
+          # fallback for missing US history.
+          python -m app.db.scan_daily --tickers "${{ inputs.ticker }}" --years 2
+
+      - name: Send any new alerts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
+        run: |
+          # Idempotent: dedupes via the `alerts` table so an unchanged
+          # signal from earlier in the day won't fire twice.
+          python -m app.db.telegram_worker

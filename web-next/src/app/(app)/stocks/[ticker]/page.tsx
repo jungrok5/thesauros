@@ -241,18 +241,33 @@ export default async function StockDetailPage({ params }: PageProps) {
           </div>
         </div>
       ) : !result ? (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-          <div className="font-medium text-amber-700 dark:text-amber-300">
-            {resolved?.name ?? ticker} 분석 데이터가 아직 없습니다.
+        watch.added ? (
+          // User just added this ticker to their watchlist — the POST
+          // handler fired `dispatchAnalyzeTicker` which kicks off an
+          // analyze-ticker.yml workflow on GitHub Actions. Typical
+          // wall-clock to results landing in `analyze_results` is 2-3
+          // min (pip install → scan_daily → telegram_worker).
+          <div className="rounded-lg border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
+            <div className="font-medium text-sky-700 dark:text-sky-300">
+              🔄 분석 중입니다 (최대 3분)
+            </div>
+            <div className="mt-2 text-muted-foreground">
+              {resolved?.name ?? ticker} 을(를) 관심 종목에 추가하면서
+              즉시 분석이 시작되었습니다. 잠시 후 페이지를 새로고침하면
+              17 패턴 + 4 등분선 결과를 볼 수 있습니다.
+            </div>
           </div>
-          <div className="mt-2 text-muted-foreground">
-            이 종목은 다음 일일 스캔 (매일 16시 KST) 에 자동으로 분석됩니다.
-            수동으로 즉시 분석하려면:
-            <code className="ml-1 bg-muted px-1 rounded font-mono text-xs">
-              python -m app.db.scan_daily --tickers {ticker} --years 2
-            </code>
+        ) : (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+            <div className="font-medium text-amber-700 dark:text-amber-300">
+              {resolved?.name ?? ticker} 분석 데이터가 아직 없습니다.
+            </div>
+            <div className="mt-2 text-muted-foreground">
+              관심 종목에 추가하면 즉시 분석이 시작됩니다 (~3분).
+              혹은 다음 일일 스캔 (매일 17시 KST) 에 자동으로 분석됩니다.
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <>
           <MarketHoursNotice />

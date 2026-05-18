@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { ensureTickerInMaster } from "@/lib/ensure-ticker";
+import { dispatchAnalyzeTicker } from "@/lib/github-dispatch";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
     .eq("user_id", userId)
     .eq("ticker", ticker)
     .maybeSingle();
+  const wasNewAdd = existing == null;
   const resetTarget =
     existing != null &&
     (Number(existing.target_price) !== Number(targetPrice) ||
@@ -127,6 +129,15 @@ export async function POST(req: NextRequest) {
     .select()
     .single();
   if (error) return dbError(error);
+
+  // Fire-and-forget: only on first add, kick off a single-ticker
+  // analyze run so the user sees results in ~2-3 min instead of
+  // waiting up to 24h for the next 17:00 KST cron. Edits to an
+  // existing watchlist row don't trigger — the data is already there.
+  if (wasNewAdd) {
+    void dispatchAnalyzeTicker(ticker);
+  }
+
   return NextResponse.json({ item: data });
 }
 
