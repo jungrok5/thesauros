@@ -175,8 +175,8 @@ function FinancialsTab({ fin, isStale }: { fin: FinancialsEvalRow | null; isStal
         </div>
       )}
 
-      <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-muted/50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-muted-foreground">
@@ -243,15 +243,15 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <AxisCard label="가치 (Value)" score={fac.value_score} term="axis_value" />
         <AxisCard label="성장 (Growth)" score={fac.growth_score} term="axis_growth" />
         <AxisCard label="안전 (Safety)" score={fac.safety_score} term="axis_safety" />
         <AxisCard label="수익 (Quality)" score={fac.quality_score} term="axis_quality" />
       </div>
 
-      <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-muted/50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-muted-foreground">팩터</th>

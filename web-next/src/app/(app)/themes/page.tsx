@@ -101,7 +101,7 @@ export default async function ThemesPage() {
             {rows.length} themes · 🔴 상승 / 🔵 하락 (1일 등락률 기준 정렬)
           </div>
 
-          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 auto-rows-[100px] gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 auto-rows-[100px] gap-2">
             {rows.slice(0, 60).map((r) => (
               <Link
                 key={r.theme_id}

@@ -78,13 +78,25 @@ interface Props {
   height?: number;
 }
 
-export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, height = 480 }: Props) {
+export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, height }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [tf, setTf] = useState<Timeframe>(initialTf);
   const [data, setData] = useState<ChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Default height: shorter on phones so the rest of the analysis card
+  // (patterns, entry plan, tabs) is reachable without scrolling past
+  // a half-screen chart. SSR-safe — defaults to desktop, then refines
+  // on first client effect.
+  const [chartHeight, setChartHeight] = useState<number>(height ?? 480);
+  useEffect(() => {
+    if (height) return;
+    const apply = () => setChartHeight(window.innerWidth < 640 ? 320 : 480);
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, [height]);
 
   // Fetch chart data — state updates batched inside async to satisfy
   // react-hooks/set-state-in-effect (no synchronous setState in effect body).
@@ -128,7 +140,7 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
       const bg = computed.getPropertyValue("--background").trim() || "#fff";
 
       chart = lwc.createChart(el, {
-        height,
+        height: chartHeight,
         layout: { background: { color: bg }, textColor: fg },
         grid: { vertLines: { color: "rgba(127,127,127,0.1)" }, horzLines: { color: "rgba(127,127,127,0.1)" } },
         rightPriceScale: { borderColor: "rgba(127,127,127,0.2)" },
@@ -208,7 +220,7 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
       try { chart?.remove(); } catch { /* ignore */ }
       chartRef.current = null;
     };
-  }, [data, height]);
+  }, [data, chartHeight]);
 
   return (
     <div className="space-y-3" data-testid="book-chart">
@@ -243,17 +255,17 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
       </div>
       <div className="rounded-lg border border-border overflow-hidden bg-card">
         {loading && (
-          <div className="h-[480px] flex items-center justify-center text-sm text-muted-foreground">
+          <div className="h-[320px] sm:h-[480px] flex items-center justify-center text-sm text-muted-foreground">
             차트 로드 중...
           </div>
         )}
         {error && !loading && (
-          <div className="h-[480px] flex items-center justify-center text-sm text-rose-500">
+          <div className="h-[320px] sm:h-[480px] flex items-center justify-center text-sm text-rose-500">
             차트 불러오기 실패: {error}
           </div>
         )}
         {!loading && !error && (
-          <div ref={containerRef} style={{ height }} />
+          <div ref={containerRef} style={{ height: chartHeight }} />
         )}
       </div>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

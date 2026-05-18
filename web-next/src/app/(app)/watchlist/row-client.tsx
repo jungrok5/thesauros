@@ -170,7 +170,7 @@ export function WatchlistRowClient({ row }: { row: Row }) {
       </div>
 
       {open && (
-        <div className="border-t border-border p-3 grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="border-t border-border p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
           <label className="text-xs space-y-1">
             <span className="text-muted-foreground">진입가</span>
             <input

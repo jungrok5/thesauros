@@ -294,21 +294,15 @@ export default async function RecommendationsPage({
             전체 {total}개 매치 · 상위 {items.length}개 표시
           </div>
 
-          <div className="rounded-lg border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr className="text-left">
-                  <th className="px-3 py-2 font-medium text-muted-foreground">#</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">티커</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">종목명</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">시장</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">액션</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground text-right">강도</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">TF</th>
-                  <th className="px-3 py-2 font-medium text-muted-foreground">이유</th>
-                </tr>
-              </thead>
-              <tbody>
+          {items.length === 0 ? (
+            <div className="rounded-lg border border-border py-12 text-center text-muted-foreground text-sm">
+              조건을 만족하는 신호가 없습니다. 강도 기준을 낮추거나 시장을 바꿔보세요.
+            </div>
+          ) : (
+            <>
+              {/* Mobile (<md): card list. Eight columns don't fit a phone
+                  width — vertical cards stay readable + tappable. */}
+              <ul className="md:hidden space-y-2">
                 {items.map((it, i) => {
                   const action = actionFor(it.signal_type);
                   const tfTerm =
@@ -318,53 +312,118 @@ export default async function RecommendationsPage({
                         ? "tf_monthly"
                         : "tf_daily";
                   return (
-                    <tr
+                    <li
                       key={it.id}
-                      className="border-t border-border hover:bg-muted/30 transition-colors"
+                      className="rounded-lg border border-border bg-card p-3"
                     >
-                      <td className="px-3 py-2 text-muted-foreground text-xs">{i + 1}</td>
-                      <td className="px-3 py-2 font-mono">
+                      <div className="flex items-baseline justify-between gap-2 mb-1">
                         <Link
                           href={`/stocks/${encodeURIComponent(it.ticker)}`}
-                          className="hover:underline"
+                          className="font-mono text-base hover:underline truncate"
                         >
                           {it.ticker}
                         </Link>
-                      </td>
-                      <td className="px-3 py-2">{it.name ?? "—"}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {it.market ?? "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {action !== "HOLD" ? (
-                          <span className="inline-flex items-center gap-1">
-                            <ActionBadge action={action} size="sm" />
-                            <HelpTip term={ACTION_TERM[action]} />
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {action !== "HOLD" ? (
+                            <>
+                              <ActionBadge action={action} size="sm" />
+                              <HelpTip term={ACTION_TERM[action]} />
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-sm mb-1">{it.name ?? "—"}</div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{it.market ?? "—"}</span>
+                        <span>
+                          강도 <span className="font-mono text-foreground">
+                            {it.strength != null ? it.strength.toFixed(2) : "—"}
                           </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {it.strength != null ? it.strength.toFixed(2) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        </span>
                         <HelpTip term={tfTerm}>{it.timeframe}</HelpTip>
-                      </td>
-                      <td className="px-3 py-2 text-xs">{humanReason(it)}</td>
-                    </tr>
+                        <span className="ml-auto text-[10px]">#{i + 1}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground/90">
+                        {humanReason(it)}
+                      </p>
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
-            {items.length === 0 && (
-              <div className="py-12 text-center text-muted-foreground text-sm">
-                조건을 만족하는 신호가 없습니다. 강도 기준을 낮추거나 시장을 바꿔보세요.
+              </ul>
+
+              {/* Desktop (md+): full table */}
+              <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="text-left">
+                      <th className="px-3 py-2 font-medium text-muted-foreground">#</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">티커</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">종목명</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">시장</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">액션</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground text-right">강도</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">TF</th>
+                      <th className="px-3 py-2 font-medium text-muted-foreground">이유</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, i) => {
+                      const action = actionFor(it.signal_type);
+                      const tfTerm =
+                        it.timeframe === "weekly"
+                          ? "tf_weekly"
+                          : it.timeframe === "monthly"
+                            ? "tf_monthly"
+                            : "tf_daily";
+                      return (
+                        <tr
+                          key={it.id}
+                          className="border-t border-border hover:bg-muted/30 transition-colors"
+                        >
+                          <td className="px-3 py-2 text-muted-foreground text-xs">{i + 1}</td>
+                          <td className="px-3 py-2 font-mono">
+                            <Link
+                              href={`/stocks/${encodeURIComponent(it.ticker)}`}
+                              className="hover:underline"
+                            >
+                              {it.ticker}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2">{it.name ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
+                            {it.market ?? "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {action !== "HOLD" ? (
+                              <span className="inline-flex items-center gap-1">
+                                <ActionBadge action={action} size="sm" />
+                                <HelpTip term={ACTION_TERM[action]} />
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {it.strength != null ? it.strength.toFixed(2) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
+                            <HelpTip term={tfTerm}>{it.timeframe}</HelpTip>
+                          </td>
+                          <td className="px-3 py-2 text-xs">{humanReason(it)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </>
       )}
     </div>

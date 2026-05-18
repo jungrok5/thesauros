@@ -114,7 +114,7 @@ export function HelpTip({
             // text bleed through. z-30 keeps the popover above normal
             // page content but below the mobile drawer (z-50) + backdrop
             // (z-40), so opening the drawer occludes any open tooltip.
-            "absolute z-30 w-72 max-w-[90vw] rounded-md border border-border bg-card text-card-foreground shadow-xl p-3 text-xs leading-relaxed",
+            "absolute z-30 w-72 max-w-[calc(100vw-1.5rem)] rounded-md border border-border bg-card text-card-foreground shadow-xl p-3 text-xs leading-relaxed",
             side === "top"
               ? "bottom-full mb-1 left-0"
               : "top-full mt-1 left-0",

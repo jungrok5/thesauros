@@ -83,7 +83,7 @@ export function MarketTicker() {
 function Tile({ q }: { q: Quote | null }) {
   if (!q) {
     return (
-      <div className="min-w-[110px] rounded-md border border-border bg-background/40 p-2">
+      <div className="min-w-[96px] sm:min-w-[110px] rounded-md border border-border bg-background/40 p-2">
         <div className="text-[11px] text-muted-foreground">—</div>
         <div className="mt-1 text-sm font-mono">…</div>
       </div>
@@ -98,7 +98,7 @@ function Tile({ q }: { q: Quote | null }) {
         : "text-muted-foreground";
   const stale = staleLabel(q.as_of);
   return (
-    <div className="min-w-[110px] rounded-md border border-border bg-background/40 p-2">
+    <div className="min-w-[96px] sm:min-w-[110px] rounded-md border border-border bg-background/40 p-2">
       <div className="text-[11px] text-muted-foreground flex items-center justify-between">
         <span>{q.label}</span>
         {stale && <span className="text-[9px] opacity-60">{stale}</span>}

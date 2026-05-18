@@ -105,7 +105,7 @@ export function LastClose({ ticker }: Props) {
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-x-4 text-xs text-muted-foreground">
+        <div className="grid grid-cols-3 gap-x-2 sm:gap-x-4 text-xs text-muted-foreground">
           <div>시 {fmt(quote.open, 2)}</div>
           <div>고 {fmt(quote.high, 2)}</div>
           <div>저 {fmt(quote.low, 2)}</div>

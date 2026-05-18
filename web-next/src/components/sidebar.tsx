@@ -137,13 +137,15 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="md:hidden fixed top-2 left-3 z-40 rounded-md border border-border bg-background p-2 hover:bg-muted"
+        // 44px tap target (Apple HIG / Material guidelines): p-2.5 = 10px
+        // padding × 2 + 24px icon = 44px. Previous p-2 was 36px.
+        className="md:hidden fixed top-2 left-3 z-40 rounded-md border border-border bg-background p-2.5 hover:bg-muted shadow-sm"
         aria-label="메뉴 열기"
         aria-expanded={open}
         aria-controls="mobile-nav-drawer"
         data-testid="mobile-nav-toggle"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-6 w-6" />
       </button>
 
       {open && (

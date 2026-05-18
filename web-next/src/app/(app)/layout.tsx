@@ -29,8 +29,8 @@ export default async function AppLayout({
         <header className="h-14 flex items-center justify-between gap-3 px-4 md:px-6 border-b border-border bg-background/80 backdrop-blur sticky top-0 z-10">
           {/* Spacer that aligns with the hamburger button on mobile — the
               actual button is rendered by <MobileNav> above (positioned
-              with `fixed`, so flow placement is irrelevant). */}
-          <div className="md:hidden w-9" aria-hidden="true" />
+              with `fixed`, 44px tap target). */}
+          <div className="md:hidden w-11" aria-hidden="true" />
           <div className="ml-auto flex items-center gap-3">
             <ThemeToggle />
             <UserMenu />
