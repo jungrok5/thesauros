@@ -59,6 +59,22 @@ test.describe("Search Korean / brand-name fallback", () => {
     const tickers = (body.items ?? []).map((x: { ticker: string }) => x.ticker);
     expect(tickers).toContain("AAPL");
   });
+
+  test("마이크론 returns BOTH the US (MU) and KR sides — not just one", async ({ page }) => {
+    // Regression for the case where a local DB hit (KR 마이크로닉스)
+    // suppressed the Naver fallback, hiding the US Micron (MU) row.
+    // Fix: always merge local + Naver, dedupe by ticker.
+    await signInAs(page, "search-merge@e2e.test");
+    const r = await page.request.get("/api/search?q=" + encodeURIComponent("마이크론"));
+    expect(r.ok()).toBe(true);
+    const body = await r.json();
+    const tickers: string[] = (body.items ?? []).map((x: { ticker: string }) => x.ticker);
+    // The US Micron is "MU" — confirms Naver hit landed in the merged set.
+    expect(tickers, `expected MU in merged results, got: ${JSON.stringify(tickers)}`)
+      .toContain("MU");
+    // We should have ≥2 distinct rows total when both sides exist.
+    expect(tickers.length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 test.describe("Watchlist FK robustness", () => {

@@ -67,26 +67,29 @@ export async function GET(req: NextRequest) {
       return row;
     });
 
-  // Fallback: if the local search returned nothing, ask Naver — covers
-  // Korean brand names ("샌디스크") and English consumer brands
-  // ("GOOGLE") that don't appear inside our canonical corporate names.
-  if (items.length === 0) {
-    const naverHits = await searchNaverStocks(q, limit);
-    if (naverHits.length > 0) {
-      return NextResponse.json({
-        items: naverHits.map((h) => ({
-          ticker: h.ticker,
-          name: h.name,
-          market: h.market,
-          sector: null,
-          // Hint to the client that this row isn't in our master yet —
-          // /api/watchlist will auto-seed it on first POST.
-          external: true,
-        })),
-        source: "naver",
-      });
-    }
+  // Always merge in Naver hits — local DB only knows our seeded
+  // universe + each tickers row's canonical corporate name, so a query
+  // like "마이크론" matches the KR ticker 마이크로닉스 locally but
+  // never reaches the US Micron (MU) row whose name is "Micron
+  // Technology". Without a merge, the KR-side match alone would
+  // suppress the Naver lookup and the user sees only one side.
+  const naverHits = await searchNaverStocks(q, limit);
+  const seen = new Set(items.map((r) => String(r.ticker).toUpperCase()));
+  const merged: unknown[] = [...items];
+  for (const h of naverHits) {
+    const t = h.ticker.toUpperCase();
+    if (seen.has(t)) continue;
+    seen.add(t);
+    merged.push({
+      ticker: h.ticker,
+      name: h.name,
+      market: h.market,
+      sector: null,
+      // Not in our master yet — /api/watchlist auto-seeds on first POST.
+      external: true,
+    });
+    if (merged.length >= limit) break;
   }
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items: merged });
 }

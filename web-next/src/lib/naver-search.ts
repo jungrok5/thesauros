@@ -29,8 +29,11 @@ interface NaverItem {
   category?: string;        // "stock" / "etf" / "index" / ...
 }
 
+// target=stock is more reliable than target=ALL — Naver's `ALL` endpoint
+// returns 400 for certain queries ("구글", "마이크론", "Micron") even
+// when stock-only mode happily returns matches for the same words.
 const NAVER_URL =
-  "https://m.stock.naver.com/front-api/search?q={q}&target=ALL&size={n}&page=1";
+  "https://m.stock.naver.com/front-api/search?q={q}&target=stock&size={n}&page=1";
 
 function toCanonicalTicker(item: NaverItem): string | null {
   const code = (item.code ?? "").toUpperCase();
