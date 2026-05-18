@@ -1,22 +1,10 @@
 import { signIn } from "@/auth";
+import { safeCallback } from "@/lib/safe-redirect";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   searchParams: Promise<{ callbackUrl?: string }>;
-}
-
-/**
- * Sanity-check the callbackUrl from the query string. Must be a
- * relative path on our own site — we never want to accidentally
- * redirect to an attacker-controlled external URL after sign-in.
- */
-function safeCallback(raw: string | undefined): string {
-  if (!raw) return "/dashboard";
-  // Reject anything that looks like an absolute URL or protocol-relative
-  // redirect (//evil.com/...). Allow only paths starting with a single "/".
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
-  return raw;
 }
 
 export default async function LoginPage({ searchParams }: PageProps) {

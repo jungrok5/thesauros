@@ -7,6 +7,16 @@ on:
     branches: [main]
 
 jobs:
+  pitfalls:
+    name: Static pitfall checks (Next.js/GH-Actions/PostgREST traps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    # Fast guard catching the regression family enumerated in CLAUDE.md §5:
+    # middleware.ts × proxy.ts coexistence, job-level secrets gating, etc.
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-known-pitfalls.sh
+
   book:
     name: Book engine unit tests (no DB)
     runs-on: ubuntu-latest
@@ -20,6 +30,26 @@ jobs:
         with: { python-version: "3.11", cache: "pip" }
       - run: pip install -r requirements.txt pytest
       - run: python -m pytest app/book/tests/ -v
+
+  web-unit:
+    name: Web unit tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Pure logic tests — freshness buckets, signal labels, redirect
+    # sanitizer. No browser, no DB. Catches the family of "page-level
+    # data transform" bugs that Playwright is too slow to enumerate.
+    defaults:
+      run:
+        working-directory: web-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web-next/package-lock.json
+      - run: npm ci
+      - run: npm run test:unit
 
   python:
     name: Python smoke + scan tests (DB-backed)

@@ -26,6 +26,7 @@ import {
   directionStyle,
   labelFor,
 } from "@/lib/signal-labels";
+import { bucketScore, pickFreshest } from "@/lib/freshness";
 
 export const revalidate = 60;
 
@@ -163,46 +164,10 @@ function freshness(a: AnalyzeResultBlob | null | undefined, lastClose: number):
   { kind: string; runupPct: number } | null
 {
   if (!a?.patterns?.length) return null;
-  let best: { kind: string; runupPct: number } | null = null;
-  for (const p of a.patterns) {
-    if (!p.completed || p.direction !== "bullish") continue;
-    // Use the REAL breakout level from pattern.extra only — fallback to
-    // `p.entry` is misleading because completed patterns set entry =
-    // last_close, which makes runup always 0% (false freshness).
-    const ex = (p.extra ?? {}) as Record<string, unknown>;
-    let bl: number | null = null;
-    for (const c of [ex.neckline, ex.rim, ex.ma_240, ex.ma_value]) {
-      if (typeof c === "number" && c > 0) { bl = c; break; }
-    }
-    if (bl == null) continue;
-    const runup = (lastClose / bl - 1) * 100;
-    // Pick the freshest meaningful pattern. "Fresh" means runup is in
-    // the 0–5% sweet spot; we rank by absolute distance from that ideal
-    // entry zone, so a +3% pattern beats a +20% pattern beats a -25%
-    // pattern (broken) beats a +140% pattern (long gone).
-    if (!best || bucketScore(runup) < bucketScore(best.runupPct)) {
-      best = { kind: p.kind, runupPct: runup };
-    }
-  }
-  return best;
-}
-
-/**
- * Bucket score for freshness — lower = better entry.
- *   0 :  0–5%   true fresh breakout
- *   1 :  5–15%  recent breakout, still chase-able
- *   2 :  15–30% partial entry zone gone
- *   3 :  -10–0% near breakout, may still be valid pullback
- *   4 :  <-10%  broken below pattern level (invalidated)
- *   5 :  >30%   long-gone breakout
- */
-function bucketScore(r: number): number {
-  if (r >= 0 && r < 5)  return 0;
-  if (r >= 5 && r < 15) return 1;
-  if (r >= 15 && r < 30) return 2;
-  if (r >= -10 && r < 0) return 3;
-  if (r < -10) return 4;
-  return 5;
+  // pickFreshest returns { kind, breakout, runupPct } — page only needs
+  // kind + runupPct downstream.
+  const r = pickFreshest(a.patterns, lastClose);
+  return r ? { kind: r.kind, runupPct: r.runupPct } : null;
 }
 
 /**
