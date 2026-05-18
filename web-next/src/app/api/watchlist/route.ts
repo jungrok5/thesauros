@@ -84,19 +84,39 @@ export async function POST(req: NextRequest) {
 
   const userId = await ensureUserId(user.email, user.name);
   const sb = getServerClient();
+
+  // Re-arm 🎯 target / 🛑 stop alerts when the user actually changed the
+  // threshold. Without this, telegram_worker's one-shot `*_hit_at`
+  // marker would silently suppress alerts at the new level.
+  const { data: existing } = await sb
+    .from("watchlist")
+    .select("target_price, target_pct_from_entry, stop_price, stop_pct_from_entry")
+    .eq("user_id", userId)
+    .eq("ticker", ticker)
+    .maybeSingle();
+  const resetTarget =
+    existing != null &&
+    (Number(existing.target_price) !== Number(targetPrice) ||
+      Number(existing.target_pct_from_entry) !== Number(targetPct));
+  const resetStop =
+    existing != null &&
+    (Number(existing.stop_price) !== Number(stopPrice) ||
+      Number(existing.stop_pct_from_entry) !== Number(stopPct));
+
+  const payload: Record<string, unknown> = {
+    user_id: userId, ticker, category, note,
+    entry_price: entryPrice, entry_date: entryDate,
+    target_price: targetPrice,
+    target_pct_from_entry: targetPct,
+    stop_price: stopPrice,
+    stop_pct_from_entry: stopPct,
+  };
+  if (resetTarget) payload.target_hit_at = null;
+  if (resetStop) payload.stop_hit_at = null;
+
   const { data, error } = await sb
     .from("watchlist")
-    .upsert(
-      {
-        user_id: userId, ticker, category, note,
-        entry_price: entryPrice, entry_date: entryDate,
-        target_price: targetPrice,
-        target_pct_from_entry: targetPct,
-        stop_price: stopPrice,
-        stop_pct_from_entry: stopPct,
-      },
-      { onConflict: "user_id,ticker" },
-    )
+    .upsert(payload, { onConflict: "user_id,ticker" })
     .select()
     .single();
   if (error) return dbError(error);
