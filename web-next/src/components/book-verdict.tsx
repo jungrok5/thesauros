@@ -122,6 +122,25 @@ export function BookVerdict({ result }: Props) {
       return verdictCard("amber", "⚠️", "추세 유효 · 진입 자리 지남", lines, warnings);
     }
 
+    // ── 매복 단계 (Ambush / Forking-setup): book's "기간 조정 / 빨래
+    //    널기" state — MAs converged, volume drying up, no trigger
+    //    candle yet. Even when action says STRONG_BUY (trend is up,
+    //    multi-TF alignment 1.0), a new buyer at this stage is
+    //    chasing a flat box, not entering a fresh breakout. Surface
+    //    as a 🟡 "wait for trigger" verdict before the normal BUY
+    //    branch.
+    if (isAmbushSetup(r)) {
+      const ma10w = weekly?.ma_10;
+      const lines = [
+        "매복 단계 — 이평선 수렴 + 거래량 감소 + 캔들 결정 못함.",
+        "책 표현: 기간 조정 / 빨래 널기. 개미는 뜸 들이다 떨어져 나가는 자리. 지금 매수는 박스권 진입 = 자본 묶임.",
+        ma10w
+          ? `포킹 발사 (장대양봉 + 거래량 증가)가 ${formatPrice(ma10w, ticker)} 위로 터질 때까지 매복.`
+          : "포킹 발사 캔들이 뜰 때까지 매복.",
+      ];
+      return verdictCard("amber", "🟡", "매복 · 포킹 대기", lines, warnings);
+    }
+
     // FRESH or no-pattern bullish — true entry zone.
     const lines: string[] = [];
     if (pat) {
@@ -160,6 +179,40 @@ export function BookVerdict({ result }: Props) {
 }
 
 /**
+ * Detect the "매복 단계 / Forking setup" state — strong-buy action with
+ * the book's accumulation pattern underneath: 이평선 수렴 + 거래량 감소
+ * + 결정 못한 캔들 (도지 / 망치 / 눈썹). User shouldn't enter here;
+ * they should wait for the trigger candle.
+ *
+ * Indicators that combine into the verdict:
+ *   - volume case 12 (수렴기 거래량 감소) OR volume direction neutral/bull
+ *     with vol_ratio interpretation hinting at drying-up
+ *   - a `MA 수렴 매복` pattern in the patterns list (from
+ *     detect_ma_convergence_setup)
+ *   - last candle is small body with single dominant wick (망치 / 교수 /
+ *     역망치 / 유성) OR doji / 눈썹 — i.e., indecision
+ */
+function isAmbushSetup(r: AnalysisResult): boolean {
+  const hasSetupPattern = (r.patterns ?? []).some(
+    (p) => typeof p.kind === "string" && p.kind.includes("수렴 매복"),
+  );
+  const vc12 = r.volume_case?.case === 12;
+  const lc = r.last_candle;
+  const indecisionCandle =
+    !!lc && (
+      (lc.tags ?? []).some((t) =>
+        ["도지", "눈썹캔들", "망치형", "교수형", "역망치형", "유성형",
+         "드래곤플라이도지", "그레이브스톤도지"].includes(t),
+      )
+      || lc.body_pct < 0.2
+    );
+  // Need at least TWO of three: (setup pattern, case 12, indecision
+  // candle). Single hits are too weak to flip a STRONG_BUY into 매복.
+  const hits = [hasSetupPattern, vc12, indecisionCandle].filter(Boolean).length;
+  return hits >= 2;
+}
+
+/**
  * Walks the analyzer output looking for internal dissonances that the
  * single-number `book_score` glosses over — the kinds of things a
  * careful reader would call out in a peer review of the recommendation.
@@ -175,7 +228,8 @@ function collectWarnings(r: AnalysisResult): string[] {
   const out: string[] = [];
   const bullishAction = r.action === "BUY" || r.action === "STRONG_BUY";
 
-  // Volume vs action dissonance
+  // Volume vs action dissonance. Skip case 12 "수렴기 거래량 감소" —
+  // that's bullish (accumulation finishing), not a contradiction.
   if (bullishAction && r.volume_case) {
     const dir = r.volume_case.direction;
     const label = r.volume_case.label_kr ?? "";

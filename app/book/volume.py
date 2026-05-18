@@ -96,7 +96,12 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
 
     UP, DOWN, SIDE = "up", "down", "sideways"
     VOL_UP = vol_ratio >= 1.5
-    VOL_DOWN = vol_ratio <= 0.6
+    # 0.6 was too strict — a borderline drop (e.g., 0.62 for 국보디자인
+    # 2026-05-22) fell through every case and landed in case 0 "분류 불명확",
+    # despite being the textbook "물량 소진 + 매복" pattern. Relax to 0.7
+    # so the obvious convergence-with-drying-volume zone is caught.
+    VOL_DOWN = vol_ratio <= 0.7
+    VOL_DRY = vol_ratio <= 0.5     # severe drop ("씨가 마름")
     VOL_SURGE = vol_ratio >= 3.0
 
     # ---- Case 3: bottom + volume surge → reversal buy ⭐
@@ -171,6 +176,37 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
             confidence=0.50,
             reason="세력이 개인에게 시장 맡김. 다음 움직임 관찰. 책 케이스 8.",
         )
+    # ---- Case 12: 수렴기 거래량 감소 (책: 매물 소진 + 폭발 전조).
+    # Priority over case 2 — when the zone is middle/bottom and the
+    # recent move was up or flat with volume drying up, this is the
+    # "기간 조정 / 빨래 널기" setup (개미 털기 + accumulation finishing),
+    # not the dead-chart case 2 (which is sideways for a long time with
+    # no upthrust hidden in the past). Differentiator: zone.
+    if zone in ("middle", "bottom") and trend in (UP, SIDE) and VOL_DOWN:
+        confidence = 0.70 if VOL_DRY else 0.62
+        return VolumeCase(
+            case=12,
+            label_kr="수렴기 거래량 감소 (매물 소진, 폭발 전조)",
+            direction="bullish",
+            confidence=confidence,
+            reason=(
+                f"거래량 -{(1-vol_ratio)*100:.0f}%, 가격대 {zone}/{trend} — "
+                "책: 기간 조정으로 개미 털고 매물 소진. 포킹 발사 대기."
+            ),
+        )
+
+    # ---- Case 2: top-zone sideways + volume down → true dead chart.
+    # The "buyer interest evaporated AT THE TOP" pattern. Middle/bottom
+    # zone with vol_down is case 12 above (accumulation), not death.
+    if VOL_DOWN and trend == SIDE and zone == "top":
+        return VolumeCase(
+            case=2,
+            label_kr="거래량 감소 횡보 (죽은 차트)",
+            direction="bearish",
+            confidence=0.55,
+            reason="매수세 증발, 추세 사망. 책 케이스 2.",
+        )
+
     # ---- Case 1: sideways + flat volume
     if trend == SIDE and not (VOL_UP or VOL_DOWN):
         return VolumeCase(
@@ -179,15 +215,6 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
             direction="neutral",
             confidence=0.45,
             reason="큰 상승 신호 없음, 분산 상태. 책 케이스 1.",
-        )
-    # ---- Case 2: sideways + volume down
-    if VOL_DOWN and trend == SIDE:
-        return VolumeCase(
-            case=2,
-            label_kr="거래량 감소 횡보 (죽은 차트)",
-            direction="bearish",
-            confidence=0.55,
-            reason="매수세 증발, 추세 사망. 책 케이스 2.",
         )
 
     return VolumeCase(

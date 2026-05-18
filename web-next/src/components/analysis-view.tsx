@@ -127,7 +127,9 @@ function PatternCard({
   const dir =
     p.direction === "bullish"
       ? "text-emerald-600 dark:text-emerald-400"
-      : "text-rose-600 dark:text-rose-400";
+      : p.direction === "bearish"
+        ? "text-rose-600 dark:text-rose-400"
+        : "text-amber-700 dark:text-amber-300";
   const tfBadge: Record<string, string> = {
     monthly: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
     weekly: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
@@ -175,7 +177,11 @@ function PatternCard({
             </span>
           )}
           <span className={cn("text-xs", dir)}>
-            {p.direction === "bullish" ? "▲ 상승" : "▼ 하락"}
+            {p.direction === "bullish"
+              ? "▲ 상승"
+              : p.direction === "bearish"
+                ? "▼ 하락"
+                : "⏸ 매복"}
           </span>
           {isStale && (
             <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium">

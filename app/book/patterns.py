@@ -896,6 +896,89 @@ def detect_pullback_buy(df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# 11. 매복 셋업 (Forking setup — convergence, no trigger yet)
+# ---------------------------------------------------------------------------
+def detect_ma_convergence_setup(
+    df: pd.DataFrame, periods: List[int] = None,
+    spread_max: float = 0.04,
+    flat_bars: int = 4,
+    flat_range_max: float = 0.06,
+) -> Optional[Pattern]:
+    """The "포킹 발사대" / "매복 단계" state: multiple MAs have squeezed
+    together AND price has gone flat AROUND that convergence — but no
+    trigger candle has fired yet (detect_forking handles the fired case).
+
+    Output direction is "neutral" because this is a wait-and-watch state:
+    a fresh entry zone WILL appear when the trigger fires, but right now
+    a buyer would be entering a sideways box. The book name for this is
+    "기간 조정" / "빨래 널기" — supply absorption phase.
+
+    Triggers when:
+      - 10/20/60 MAs spread ≤ `spread_max` (default 4 %) of price
+      - last `flat_bars` closes span ≤ `flat_range_max` (default 6 %)
+      - last close is NOT a strong breakout candle (body small or
+        non-bullish; otherwise detect_forking would already fire)
+    """
+    if periods is None:
+        periods = [10, 20, 60]
+    if df is None or len(df) < max(periods) + flat_bars + 2:
+        return None
+
+    work = add_moving_averages(df, periods).copy().reset_index(drop=True)
+    last = work.iloc[-1]
+    last_close = float(last["close"])
+    ma_vals = [float(last[f"ma_{p}"]) for p in periods if not pd.isna(last.get(f"ma_{p}"))]
+    if len(ma_vals) < 2:
+        return None
+    spread = (max(ma_vals) - min(ma_vals)) / last_close if last_close > 0 else 999
+    if spread > spread_max:
+        return None
+
+    # Price range over the last `flat_bars` closes
+    recent_closes = work["close"].iloc[-flat_bars:].astype(float)
+    flat_range = (recent_closes.max() - recent_closes.min()) / last_close
+    if flat_range > flat_range_max:
+        return None
+
+    # If the latest candle is a strong bullish breakout, Forking-fired
+    # (detect_forking) should match instead — skip here so we don't
+    # double-classify.
+    open_v = float(last.get("open", last_close))
+    body = abs(last_close - open_v) / max(open_v, 1)
+    last_bullish = last_close > open_v
+    if last_bullish and body > 0.05:
+        return None
+
+    conf = 0.55
+    if spread < 0.02:
+        conf += 0.10   # very tight squeeze
+    if flat_range < 0.04:
+        conf += 0.08   # narrow box
+
+    return Pattern(
+        kind="MA 수렴 매복",
+        direction="neutral",
+        confidence=conf,
+        completed=False,    # the entry is the FUTURE breakout — this is setup
+        detected_at=pd.to_datetime(work["date"].iloc[-1]) if "date" in work.columns else pd.to_datetime(work.index[-1]),
+        entry=last_close,   # informational anchor; not a buy-now price
+        stop=min(ma_vals) * 0.95,
+        target=None,        # measured-move comes after the trigger fires
+        reason=(
+            f"이평선 수렴 (spread {spread*100:.1f}%) + {flat_bars}봉 박스 "
+            f"({flat_range*100:.1f}%). 책: 기간 조정 / 매복 단계. "
+            "포킹 발사 (장대양봉 + 거래량 증가) 대기."
+        ),
+        extra={
+            "periods": periods,
+            "spread_pct": float(spread * 100),
+            "flat_range_pct": float(flat_range * 100),
+            "ma_values": {f"ma_{p}": v for p, v in zip(periods, ma_vals)},
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
 def detect_all(df: pd.DataFrame) -> List[Pattern]:
@@ -911,6 +994,7 @@ def detect_all(df: pd.DataFrame) -> List[Pattern]:
         detect_240ma_breakout,
         detect_dolbanji,
         detect_forking,
+        detect_ma_convergence_setup,
     ]
     out: List[Pattern] = []
     for fn in detectors:

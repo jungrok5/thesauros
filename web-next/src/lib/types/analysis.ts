@@ -6,7 +6,10 @@
 
 export type Pattern = {
   kind: string;
-  direction: "bullish" | "bearish";
+  // "neutral" is emitted by setup-state detectors (e.g., MA 수렴 매복)
+  // — a wait-and-watch pattern with no directional bet until the
+  // trigger fires.
+  direction: "bullish" | "bearish" | "neutral";
   confidence: number;
   completed: boolean;
   detected_at: string;

@@ -210,6 +210,12 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
             elif multi.monthly and multi.monthly.ma_10:
                 tight_stop = multi.monthly.ma_10 * 0.97
             effective_stop = max(stop_v, tight_stop) if tight_stop else stop_v
+            # FINAL sanity — the trailing-stop tightening above could in
+            # principle push effective_stop above target_v (for a pattern
+            # whose target is very close to current price). Drop instead
+            # of surfacing a stop > target plan to the user.
+            if not (effective_stop < entry_v < target_v):
+                continue
             entry_block = {
                 "entry": entry_v,
                 "stop": effective_stop,
@@ -245,6 +251,25 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
             "target": None,
             "based_on": "월/주봉 10MA 이탈 → 청산 또는 인버스 진입",
         }
+
+    # Final entry_plan sanity gate — fail-loud rather than fail-confusing.
+    # The picker logic above already checks invariants, but if anyone
+    # changes downstream code (or rebuilds entry_block via a different
+    # branch), this catches it before users see a target-below-entry
+    # plan like the 국보디자인 2026-05-22 bug.
+    if entry_block is not None:
+        e = entry_block.get("entry")
+        s = entry_block.get("stop")
+        t = entry_block.get("target")
+        if e is not None and s is not None:
+            if action in ("BUY", "STRONG_BUY"):
+                ok = s < e and (t is None or e <= t)
+            else:
+                # SELL plan: stop above entry, target (if any) below
+                ok = e <= s and (t is None or t <= e)
+            if not ok:
+                # Drop the malformed plan instead of surfacing it.
+                entry_block = None
 
     return {
         "ticker": ticker,

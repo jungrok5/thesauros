@@ -53,3 +53,13 @@ app/db/telegram_bot_state.txt
 WORK_LOG.md
 TODO.md
 PLAN_BOOK_SITE.md
+
+# Book transcript recovery script — references session log paths
+# and content-recovery flow tied to copyright-cleaned material.
+scripts/restore_book_transcripts.py
+
+# Book transcripts/charts/SUMMARY — kept on disk for reference but
+# never tracked (recovered from session JSONL via the recovery script).
+book_images/**/transcripts/
+book_images/**/charts/
+book_images/**/SUMMARY*.md

@@ -95,25 +95,39 @@ def classify_candle(c: CandleParts, body_avg: float, vol_avg: float) -> List[str
     """
     tags: List[str] = []
 
-    # 도지 — body very small
-    if c.body_pct < 0.10:
-        if c.upper_pct > 0.3 and c.lower_pct > 0.3:
-            tags.append("도지")
-        elif c.upper_pct > 0.5 and c.lower_pct < 0.15:
-            tags.append("드래곤플라이도지")
-        elif c.lower_pct > 0.5 and c.upper_pct < 0.15:
+    # 도지 — body very small (widened threshold to 12% so near-doji
+    # candles like body 0.10–0.12 still register as the indecision
+    # signal the book treats them as).
+    if c.body_pct < 0.12:
+        if c.upper_pct > 0.5 and c.lower_pct < 0.15:
             tags.append("그레이브스톤도지")
+        elif c.lower_pct > 0.5 and c.upper_pct < 0.15:
+            tags.append("드래곤플라이도지")
         else:
             tags.append("도지")
 
-    # 망치형 vs 역망치형 (in 도지 우선순위 이후)
-    elif c.lower_pct > 2 * c.body_pct and c.upper_pct < 0.15:
+    # 망치형 / 역망치형 — long single-side wick rejecting price.
+    # Old rule required `other_wick < 0.15` (too strict — a body-14%
+    # candle with lower-wick 68% and upper-wick 18% was missed entirely
+    # for 국보디자인 2026-05-22). Relax to "dominant wick is at least
+    # 2× the body AND at least 1.5× the other wick".
+    elif (
+        c.lower_pct >= 2 * c.body_pct
+        and c.lower_pct >= 1.5 * max(c.upper_pct, 0.01)
+        and c.lower_pct >= 0.35
+    ):
         tags.append("망치형" if c.is_bullish else "교수형")
-    elif c.upper_pct > 2 * c.body_pct and c.lower_pct < 0.15:
+    elif (
+        c.upper_pct >= 2 * c.body_pct
+        and c.upper_pct >= 1.5 * max(c.lower_pct, 0.01)
+        and c.upper_pct >= 0.35
+    ):
         tags.append("역망치형" if c.is_bullish else "유성형")
 
-    # 눈썹 캔들: small body, both wicks roughly equal (spinning top)
-    elif c.body_pct < 0.35 and c.upper_pct > 0.25 and c.lower_pct > 0.25:
+    # 눈썹 캔들: small body + both wicks roughly equal (spinning top).
+    # If we already tagged 망치/역망치 (asymmetric), this branch is
+    # skipped by the elif chain.
+    elif c.body_pct < 0.35 and c.upper_pct > 0.20 and c.lower_pct > 0.20:
         tags.append("눈썹캔들")
 
     # 장대 양/음봉 — body significantly larger than recent average
