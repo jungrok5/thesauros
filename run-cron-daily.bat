@@ -23,39 +23,39 @@ echo   Thesauros daily cron - %date% %time%
 echo =====================================================
 echo.
 
-echo [1/7] ingest_bars_daily (FDR for KR + yfinance for US)...
+echo [1/7] retention FIRST (free space before ingest — Supabase Free 500MB)
+".venv\Scripts\python.exe" -m app.db.retention
+if errorlevel 1 echo [WARN] retention failed
+echo.
+
+echo [2/7] ingest_bars_daily (FDR for KR + yfinance for US)...
 ".venv\Scripts\python.exe" -m app.db.ingest_bars_daily
 if errorlevel 1 echo [WARN] ingest_bars_daily failed
 echo.
 
-echo [2/7] scan_daily (KOSPI + KOSDAQ, 2y; user watchlist US auto-unioned)...
+echo [3/7] scan_daily (KOSPI + KOSDAQ, 2y; user watchlist US auto-unioned)...
 ".venv\Scripts\python.exe" -m app.db.scan_daily --markets KOSPI KOSDAQ --years 2
 if errorlevel 1 echo [WARN] scan_daily failed
 echo.
 
-echo [3/7] publish_macro (FRED + yfinance)...
+echo [4/7] publish_macro (FRED + yfinance)...
 ".venv\Scripts\python.exe" -m app.db.publish_macro
 if errorlevel 1 echo [WARN] publish_macro failed
 echo.
 
-echo [4/7] ingest_themes (Naver)...
+echo [5/7] ingest_themes (Naver)...
 ".venv\Scripts\python.exe" -m app.db.ingest_themes --themes-only
 if errorlevel 1 echo [WARN] ingest_themes failed
 echo.
 
-echo [5/7] ingest_investor_flow (KIS)...
+echo [6/7] ingest_investor_flow (Naver Finance)...
 ".venv\Scripts\python.exe" -m app.db.ingest_investor_flow
 if errorlevel 1 echo [WARN] ingest_investor_flow failed
 echo.
 
-echo [6/7] telegram_worker (send alerts)...
+echo [7/7] telegram_worker (send alerts)...
 ".venv\Scripts\python.exe" -m app.db.telegram_worker
 if errorlevel 1 echo [WARN] telegram_worker failed
-echo.
-
-echo [7/7] retention (keep DB ^< 500MB Free)...
-".venv\Scripts\python.exe" -m app.db.retention
-if errorlevel 1 echo [WARN] retention failed
 echo.
 
 echo =====================================================

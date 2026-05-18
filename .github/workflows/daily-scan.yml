@@ -28,6 +28,18 @@ jobs:
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
 
+      - name: Apply retention FIRST (free space before ingest)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # Supabase Free 500MB → read-only at the ceiling. Running retention
+          # AFTER ingest risked tipping over the edge during the day's adds
+          # before the post-ingest cleanup got to delete. Cleaning first
+          # keeps the in-day high-water-mark below the limit.
+          python -m app.db.retention
+
       - name: Refresh bars_daily (KR via FDR + US via yfinance)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -107,16 +119,6 @@ jobs:
           # text is fetched in real-time from Naver via /api/news/[ticker]
           # so this step covers disclosures only.
           python -m app.db.ingest_news --days-back 7
-
-      - name: Apply retention (keep DB < 500MB Free tier)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          # bars 2y / investor_flow 90d / disclosures 1y / scan_results
-          # inactive>=30d / theme_daily 180d. See app/db/retention.py.
-          python -m app.db.retention
 
       - name: Data-quality assertions
         if: always()   # run even if a preceding step failed, so we surface what landed
