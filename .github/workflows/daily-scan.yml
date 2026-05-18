@@ -104,6 +104,16 @@ jobs:
           # so this step covers disclosures only.
           python -m app.db.ingest_news --days-back 7
 
+      - name: Apply retention (keep DB < 500MB Free tier)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # bars 2y / investor_flow 90d / disclosures 1y / scan_results
+          # inactive>=30d / theme_daily 180d. See app/db/retention.py.
+          python -m app.db.retention
+
       - name: Data-quality assertions
         if: always()   # run even if a preceding step failed, so we surface what landed
         env:

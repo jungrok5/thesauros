@@ -233,6 +233,23 @@ def test_bars_daily_recent_prices_positive():
     assert bad == 0, f"{bad} bars_daily rows have non-positive close in last week"
 
 
+# ─────────────────────────────────────────────────────────────────────
+# BUDGET — keep DB under Supabase Free 500MB
+# ─────────────────────────────────────────────────────────────────────
+
+def test_db_size_under_free_tier():
+    """Retention policies (app/db/retention.py) should keep the DB
+    indefinitely under 500MB. If this trips, something is bypassing
+    retention or a new table is growing unchecked."""
+    bytes_size = _scalar("SELECT pg_database_size(current_database())")
+    mb = bytes_size / (1024 * 1024)
+    assert mb < 500, (
+        f"DB size = {mb:.1f} MB ≥ 500 MB Free-tier ceiling. "
+        "Either retention stopped running, or a new table is unbounded. "
+        "Run `python -m app.db.retention --dry-run` to inspect."
+    )
+
+
 def test_theme_members_populated():
     """Naver themes ingest in full mode populates theme_members. Without
     it, the /themes/[id] pages have no member tickers to show."""
