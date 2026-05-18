@@ -2,7 +2,27 @@ import { signIn } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
+interface PageProps {
+  searchParams: Promise<{ callbackUrl?: string }>;
+}
+
+/**
+ * Sanity-check the callbackUrl from the query string. Must be a
+ * relative path on our own site — we never want to accidentally
+ * redirect to an attacker-controlled external URL after sign-in.
+ */
+function safeCallback(raw: string | undefined): string {
+  if (!raw) return "/dashboard";
+  // Reject anything that looks like an absolute URL or protocol-relative
+  // redirect (//evil.com/...). Allow only paths starting with a single "/".
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  return raw;
+}
+
+export default async function LoginPage({ searchParams }: PageProps) {
+  const sp = await searchParams;
+  const callbackUrl = safeCallback(sp.callbackUrl);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
       <div className="w-full max-w-md p-8 rounded-2xl border border-border bg-card">
@@ -16,7 +36,7 @@ export default function LoginPage() {
         <form
           action={async () => {
             "use server";
-            await signIn("google", { redirectTo: "/dashboard" });
+            await signIn("google", { redirectTo: callbackUrl });
           }}
         >
           <button
