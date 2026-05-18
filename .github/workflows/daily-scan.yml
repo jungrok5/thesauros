@@ -3,7 +3,10 @@ name: Daily Book-Rule Scan
 # results to Supabase. Cron is in UTC; 07:00 UTC = 16:00 KST (after KR close).
 on:
   schedule:
-    - cron: "0 7 * * 1-5"   # Mon-Fri 16:00 KST
+    # 08:00 UTC = 17:00 KST. Naver Finance's frgn (외국인·기관) page
+    # only fully populates ~1 hour after KRX close (15:30 KST), so
+    # 17:00 catches same-day investor flow data; 16:00 missed it.
+    - cron: "0 8 * * 1-5"
   workflow_dispatch:
 
 concurrency:
@@ -119,6 +122,22 @@ jobs:
           # text is fetched in real-time from Naver via /api/news/[ticker]
           # so this step covers disclosures only.
           python -m app.db.ingest_news --days-back 7
+
+      - name: Send Telegram + Web Push alerts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
+        run: |
+          # Reads scan_results + watchlist + alert_preferences and emits
+          # 🟢 매수 / 🟡 추가매수 / 🟠 경고 / 🔴 청산 / 🎯 목표 / 🛑 손절
+          # to Telegram (and PWA push for subscribed users). Idempotent
+          # via the `alerts` table.
+          python -m app.db.telegram_worker
 
       - name: Data-quality assertions
         if: always()   # run even if a preceding step failed, so we surface what landed

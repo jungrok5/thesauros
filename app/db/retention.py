@@ -84,8 +84,8 @@ POLICIES: list[Policy] = [
     ),
     (
         "investor_flow",
-        "DELETE FROM investor_flow WHERE day < CURRENT_DATE - INTERVAL '30 days'",
-        "30 days",
+        "DELETE FROM investor_flow WHERE day < CURRENT_DATE - INTERVAL '14 days'",
+        "14 days",
     ),
     (
         "disclosures",
