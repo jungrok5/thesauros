@@ -144,8 +144,15 @@ export async function GET(
 
   const code = krCode(ticker);
   if (!code) {
-    // Non-KR ticker → no news source wired yet.
-    return NextResponse.json({ items: [], note: "KR only" });
+    // Non-KR ticker → no news source wired (Naver covers KR only).
+    // `supported: false` lets the UI render a dedicated message instead
+    // of an ambiguous "no news found".
+    return NextResponse.json({
+      items: [],
+      ticker,
+      supported: false,
+      note: "KR only",
+    });
   }
 
   const url = NAVER_URL.replace("{code}", code);
@@ -173,5 +180,7 @@ export async function GET(
   }
 
   const items = parseNaverNews(html).slice(0, 30);
-  return NextResponse.json({ items, ticker, source: "naver_finance" });
+  return NextResponse.json({
+    items, ticker, supported: true, source: "naver_finance",
+  });
 }

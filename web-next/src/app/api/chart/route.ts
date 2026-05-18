@@ -17,6 +17,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServerClient } from "@/lib/supabase";
 
+// We can't use a top-level `revalidate` here because the route needs
+// auth() per request (different users could see the same ticker; auth
+// must run on every hit). `force-dynamic` ensures the route handler
+// always runs, BUT the Yahoo fallback inside (fetchYahooBars) still
+// uses `next: { revalidate: 86400 }` on its fetch — that caches the
+// upstream HTTP response keyed by URL, not the route response. So
+// every user authenticates fresh, while a popular non-watchlisted US
+// ticker hits Yahoo at most once per day. Intentional, not a bug.
 export const dynamic = "force-dynamic";
 
 const TICKER_RE = /^[A-Z0-9._-]{1,16}$/i;

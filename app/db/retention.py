@@ -3,6 +3,11 @@
 Each cron-fed ingest module calls the matching `prune_*` function as its
 last step. Idempotent — re-running on already-pruned data is a no-op.
 
+All timestamps in the DB are stored as UTC (Postgres `TIMESTAMPTZ`).
+The `CURRENT_DATE - INTERVAL 'N days'` boundaries below evaluate in the
+session's timezone — make sure the GitHub Actions runner is UTC (default
+on `ubuntu-latest`).
+
 Retention windows chosen so the site's display + analysis still has the
 data it needs:
 
@@ -98,6 +103,14 @@ POLICIES: list[Policy] = [
         "theme_daily",
         "DELETE FROM theme_daily WHERE day < CURRENT_DATE - INTERVAL '180 days'",
         "180 days",
+    ),
+    # Alerts pile up at ~1-3 rows per user per signal-bearing ticker per
+    # day. 90 days of history is plenty for "did I get notified about
+    # this?" — older rows are dead weight.
+    (
+        "alerts",
+        "DELETE FROM alerts WHERE created_at < CURRENT_DATE - INTERVAL '90 days'",
+        "90 days",
     ),
     # ──────────────────────────────────────────────────────────────────
     # Generated-data TTL via engagement. The `active set` is the union

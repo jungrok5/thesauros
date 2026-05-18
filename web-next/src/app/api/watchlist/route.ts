@@ -78,9 +78,16 @@ export async function POST(req: NextRequest) {
   // FK guard: `watchlist.ticker` references `tickers.ticker`. If a user
   // hits this with a ticker that isn't yet in our master (US name
   // resolved via Naver, brand-name fuzzy match, etc.), the FK would
-  // 500 the request. Seed the row on demand — Naver lookup pulls the
-  // proper Korean display name + market when available.
-  await ensureTickerInMaster(ticker);
+  // 500 the request. Seed the row on demand — but ONLY if Naver
+  // recognizes the ticker. A bare "FAKETICKERZZZ" string is refused
+  // here, returning 400 instead of polluting the master.
+  const ensured = await ensureTickerInMaster(ticker);
+  if (!ensured.ok) {
+    return NextResponse.json(
+      { error: "unknown ticker", ticker },
+      { status: 400 },
+    );
+  }
 
   const userId = await ensureUserId(user.email, user.name);
   const sb = getServerClient();

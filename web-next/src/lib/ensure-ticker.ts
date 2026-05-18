@@ -6,24 +6,33 @@
  * Korean-brand fallback like 샌디스크→SNDK that we resolve on demand)
  * would 500 with a FK violation.
  *
+ * Verified flow:
+ *   1. If already in tickers → return existing row.
+ *   2. Else query Naver Finance integrated search for the ticker.
+ *      - If Naver returns a matching `code`, we trust it: insert with
+ *        the Korean display name + canonical market.
+ *      - If Naver returns nothing, we REFUSE — return `existed: false,
+ *        ticker: null` so the caller can 400 the user instead of
+ *        polluting the master table with arbitrary strings like
+ *        "FAKETICKERZZZ".
+ *
  * Idempotent — `ON CONFLICT (ticker) DO NOTHING`. Safe to call from
  * any route that's about to persist a `ticker` value.
  */
 import { getServerClient } from "@/lib/supabase";
 import { searchNaverStocks } from "@/lib/naver-search";
 
-/**
- * Returns `{ existed, ticker }`. `ticker` is always the canonical form
- * (caller's input upper-cased). When the row didn't exist we try a
- * Naver search to pull the Korean name + market, otherwise fall back
- * to a minimal record so the FK is at least satisfied.
- */
-export async function ensureTickerInMaster(rawTicker: string): Promise<{
-  existed: boolean;
-  ticker: string;
-  name: string | null;
-  market: string | null;
-}> {
+export type EnsureResult =
+  | {
+      ok: true;
+      existed: boolean;
+      ticker: string;
+      name: string | null;
+      market: string | null;
+    }
+  | { ok: false; reason: "not_found" };
+
+export async function ensureTickerInMaster(rawTicker: string): Promise<EnsureResult> {
   const ticker = rawTicker.trim().toUpperCase();
   const sb = getServerClient();
 
@@ -35,6 +44,7 @@ export async function ensureTickerInMaster(rawTicker: string): Promise<{
     .maybeSingle();
   if (existing) {
     return {
+      ok: true,
       existed: true,
       ticker: existing.ticker as string,
       name: (existing.name as string) ?? null,
@@ -42,34 +52,29 @@ export async function ensureTickerInMaster(rawTicker: string): Promise<{
     };
   }
 
-  // Try Naver to learn a friendlier name + correct market for the
-  // ticker. Best-effort — if Naver is down we still insert the bare row.
+  // Verify against Naver — refuses to insert any string the upstream
+  // doesn't know. This stops `watchlist` callers from polluting the
+  // master with arbitrary brand-name strings the user might type.
   let name: string | null = null;
   let market: string | null = null;
   try {
     const hits = await searchNaverStocks(ticker, 5);
     const match = hits.find((h) => h.ticker.toUpperCase() === ticker);
-    if (match) {
-      name = match.name || null;
-      market = match.market || null;
-    }
+    if (!match) return { ok: false, reason: "not_found" };
+    name = match.name || null;
+    market = match.market || null;
   } catch {
-    /* swallow — proceed with minimal row */
+    // Naver outage shouldn't leave the user with a half-broken
+    // watchlist; refuse rather than seed a placeholder.
+    return { ok: false, reason: "not_found" };
   }
 
-  // Infer market from suffix when Naver gave nothing.
-  if (!market) {
-    if (ticker.endsWith(".KS")) market = "KOSPI";
-    else if (ticker.endsWith(".KQ")) market = "KOSDAQ";
-    else market = "UNKNOWN";
-  }
-  // Insert. ON CONFLICT DO NOTHING in case a concurrent request raced us.
   await sb
     .from("tickers")
     .upsert(
-      { ticker, name: name ?? ticker, market, is_active: true },
+      { ticker, name: name ?? ticker, market: market ?? "UNKNOWN", is_active: true },
       { onConflict: "ticker", ignoreDuplicates: true },
     );
 
-  return { existed: false, ticker, name, market };
+  return { ok: true, existed: false, ticker, name, market };
 }

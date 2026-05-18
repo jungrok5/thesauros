@@ -92,11 +92,23 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   await sendTelegram(chatId, HELP_TEXT);
 }
 
+// Minimum length for the webhook secret. Telegram's `setWebhook`
+// `secret_token` is documented as 1-256 chars, but anything < 32 is
+// brute-forceable in seconds; reject those at startup-time per request.
+const WEBHOOK_SECRET_MIN_LEN = 32;
+
 export async function POST(req: NextRequest) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!secret) {
     console.error("TELEGRAM_WEBHOOK_SECRET missing");
     return NextResponse.json({ error: "not configured" }, { status: 500 });
+  }
+  if (secret.length < WEBHOOK_SECRET_MIN_LEN) {
+    console.error(
+      "TELEGRAM_WEBHOOK_SECRET too short (%d chars, need ≥%d)",
+      secret.length, WEBHOOK_SECRET_MIN_LEN,
+    );
+    return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   }
   const got = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
   if (!got || !constEq(got, secret)) {

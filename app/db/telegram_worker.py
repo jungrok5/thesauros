@@ -79,26 +79,49 @@ def classify(signal_type: str) -> Optional[Tuple[str, str]]:
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
-def send_telegram(chat_id: str, text: str, *, token: Optional[str] = None) -> bool:
+def send_telegram(chat_id: str, text: str, *, token: Optional[str] = None,
+                  max_retries: int = 3) -> bool:
+    """Send a Telegram message with proper 429 backoff.
+
+    Telegram's global limit is ~30 msg/sec; per-chat limit is ~1 msg/sec.
+    On 429 the response includes `parameters.retry_after` (seconds). We
+    respect that and retry up to `max_retries` times.
+    """
     token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         log.error("TELEGRAM_BOT_TOKEN missing")
         return False
     url = TELEGRAM_API.format(token=token)
-    try:
-        r = requests.post(url, data={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": "true",
-        }, timeout=10)
-        if not r.ok:
-            log.warning("telegram send failed (%s): %s", r.status_code, r.text[:200])
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, data={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": "true",
+            }, timeout=10)
+            if r.ok:
+                return True
+            if r.status_code == 429:
+                # Telegram tells us exactly how long to wait.
+                try:
+                    retry_after = int(r.json().get("parameters", {}).get("retry_after", 1))
+                except Exception:
+                    retry_after = 2 ** attempt
+                log.info("telegram 429 — sleeping %ds (attempt %d/%d)",
+                         retry_after, attempt + 1, max_retries)
+                time.sleep(retry_after)
+                continue
+            # Other non-OK (400 bad chat, 403 blocked, etc.) — don't retry.
+            log.warning("telegram send failed (%s): %s",
+                        r.status_code, r.text[:200])
             return False
-        return True
-    except Exception as e:
-        log.warning("telegram send error: %s", e)
-        return False
+        except Exception as e:
+            log.warning("telegram send error (attempt %d/%d): %s",
+                        attempt + 1, max_retries, e)
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+    return False
 
 
 # ---- DB queries --------------------------------------------------------

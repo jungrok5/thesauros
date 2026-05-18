@@ -106,11 +106,13 @@ async function resolveTicker(raw: string): Promise<TickerInfo | null> {
     if (hits.length > 0) {
       const h = hits[0];
       const ensured = await ensureTickerInMaster(h.ticker);
-      return {
-        ticker: ensured.ticker,
-        name: ensured.name ?? h.name,
-        market: ensured.market ?? h.market,
-      };
+      if (ensured.ok) {
+        return {
+          ticker: ensured.ticker,
+          name: ensured.name ?? h.name,
+          market: ensured.market ?? h.market,
+        };
+      }
     }
   } catch (e) {
     console.error("resolveTicker naver fallback:", e);

@@ -15,19 +15,24 @@ type Item = {
   published_at: string | null;
 };
 
+type Resp = { items: Item[]; supported?: boolean };
+
 export function NewsTabClient({ ticker }: { ticker: string }) {
-  const [items, setItems] = useState<Item[] | null>(null);
+  const [resp, setResp] = useState<Resp | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    setItems(null);
+    setResp(null);
     fetch(`/api/news/${encodeURIComponent(ticker)}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        setItems((data.items ?? []) as Item[]);
+        setResp({
+          items: (data.items ?? []) as Item[],
+          supported: data.supported !== false,
+        });
       })
       .catch((e) => {
         if (!cancelled) setError(String(e));
@@ -44,17 +49,25 @@ export function NewsTabClient({ ticker }: { ticker: string }) {
       </div>
     );
   }
-  if (items === null) {
+  if (resp === null) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
         뉴스 불러오는 중…
       </div>
     );
   }
+  if (!resp.supported) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
+        이 종목은 현재 뉴스 자동 수집 대상이 아닙니다. (네이버 증권 종목 뉴스 = 한국 종목 한정)
+      </div>
+    );
+  }
+  const items = resp.items;
   if (items.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-        관련 뉴스가 없습니다. (네이버 증권 종목 뉴스 기준, 한국 종목만 지원)
+        관련 뉴스가 없습니다.
       </div>
     );
   }

@@ -95,38 +95,19 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = getServerClient();
-  const now = new Date().toISOString();
-
-  // 1. flip the user's access_status (and approved_at)
-  const userUpdate: Record<string, unknown> = {
-    access_status: decision,
-  };
-  if (decision === "approved") {
-    userUpdate.approved_at = now;
-    userUpdate.approved_by = adminId;
-  }
-  const { error: uErr } = await sb
-    .from("users")
-    .update(userUpdate)
-    .eq("id", userId);
-  if (uErr) {
-    console.error("admin update user:", uErr.message);
+  // Atomic — calls the SECURITY DEFINER function `decide_access_request`
+  // (migration 019). Both the users.access_status flip AND the
+  // access_requests audit row are committed in one transaction.
+  const { error } = await sb.rpc("decide_access_request", {
+    p_user_id: userId,
+    p_decision: decision,
+    p_decided_by: adminId,
+    p_note: note,
+  });
+  if (error) {
+    console.error("decide_access_request:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
-
-  // 2. upsert the access_request row so the audit trail is complete
-  await sb
-    .from("access_requests")
-    .upsert(
-      {
-        user_id: userId,
-        decision,
-        decided_at: now,
-        decided_by: adminId,
-        note,
-      },
-      { onConflict: "user_id" },
-    );
 
   return NextResponse.json({ ok: true });
 }

@@ -270,29 +270,35 @@ def run_kr(market: str, today: date, backfill_days: int, workers: int) -> int:
              market, len(plan), today)
     n_total = 0
     n_errors = 0
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(fetch_kr_ticker, t, start, today): t
-            for t, start in plan
-        }
-        buf: List[Tuple[Any, ...]] = []
-        FLUSH_EVERY = 1000
-        for i, fut in enumerate(as_completed(futures), 1):
-            t = futures[fut]
-            try:
-                rows = fut.result()
-                buf.extend(rows)
-            except Exception as e:
-                n_errors += 1
-                log.debug("fetch %s: %s", t, e)
-            if len(buf) >= FLUSH_EVERY:
-                n_total += upsert_bars(buf)
-                buf.clear()
-            if i % 200 == 0:
-                log.info("  %s [%d/%d] rows=%d errors=%d",
-                         market, i, len(plan), n_total + len(buf), n_errors)
+    buf: List[Tuple[Any, ...]] = []
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(fetch_kr_ticker, t, start, today): t
+                for t, start in plan
+            }
+            FLUSH_EVERY = 1000
+            for i, fut in enumerate(as_completed(futures), 1):
+                t = futures[fut]
+                try:
+                    rows = fut.result()
+                    buf.extend(rows)
+                except Exception as e:
+                    n_errors += 1
+                    log.debug("fetch %s: %s", t, e)
+                if len(buf) >= FLUSH_EVERY:
+                    n_total += upsert_bars(buf)
+                    buf.clear()
+                if i % 200 == 0:
+                    log.info("  %s [%d/%d] rows=%d errors=%d",
+                             market, i, len(plan), n_total + len(buf), n_errors)
+    finally:
+        # Even on KeyboardInterrupt / OOM / pool-shutdown error, persist
+        # whatever the workers have already produced so we never silently
+        # drop up to FLUSH_EVERY rows of work.
         if buf:
             n_total += upsert_bars(buf)
+            buf.clear()
     log.info("  %s done: rows=%d errors=%d", market, n_total, n_errors)
     return n_total
 

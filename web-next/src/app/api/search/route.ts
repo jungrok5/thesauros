@@ -27,13 +27,23 @@ export async function GET(req: NextRequest) {
   // 3) Then fuzzy ilike on name.
   // (We use ilike because PostgREST doesn't expose pg_trgm operators
   //  directly; the underlying gin_trgm_ops index still accelerates ilike.)
-  const upperQ = q.toUpperCase();
+  //
+  // Escape ilike wildcards in user input — `%` and `_` are SQL wildcards
+  // and PostgREST also treats `,`/`.`/`*` as filter syntax. Without
+  // escaping a query like "abc_d" would silently match "abcXd" too, and
+  // a comma in the input could split the OR filter list.
+  const escIlike = (s: string) =>
+    s.replace(/[\\%_]/g, (m) => "\\" + m);
+  const escFilter = (s: string) =>
+    escIlike(s).replace(/[,()]/g, (m) => `\\${m}`);
+  const safeQ = escFilter(q);
+  const safeUpperQ = escFilter(q.toUpperCase());
 
   // Build OR filter manually
   const orFilters = [
-    `ticker.ilike.${upperQ}%`,         // 005930 → 005930.KS, 005930.KQ
-    `ticker.ilike.${upperQ}.%`,        // exact
-    `name.ilike.%${q}%`,
+    `ticker.ilike.${safeUpperQ}%`,        // 005930 → 005930.KS, 005930.KQ
+    `ticker.ilike.${safeUpperQ}.%`,       // exact
+    `name.ilike.%${safeQ}%`,
   ].join(",");
 
   const { data, error } = await sb
@@ -49,6 +59,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Rank: exact ticker match first, then prefix match, then name match.
+  // Use the unescaped original here — `safeUpperQ` has SQL escapes we
+  // don't want when doing literal string compares.
+  const upperQ = q.toUpperCase();
   const items = (data ?? [])
     .map((row) => {
       const t = String(row.ticker).toUpperCase();
