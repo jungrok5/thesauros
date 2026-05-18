@@ -82,6 +82,7 @@ interface AnalyzeResultBlob {
     confidence?: number;
   } | null;
   book_score?: number;
+  last_close?: number;
 }
 
 type ScanParams = {
@@ -330,6 +331,13 @@ async function fetchRecommendations(
     if (tickers.length) {
       const flowSince = new Date(Date.now() - 7 * 86_400_000)
         .toISOString().slice(0, 10);
+      // PostgREST defaults to a 1000-row response cap; with 50 tickers
+      // and ~260 weekly bars each we would silently drop most rows.
+      // Restrict to the trailing ~15 months (sparkline only needs 60
+      // weekly closes) and set an explicit limit that covers the worst
+      // case (50 × 65 = 3250 rows).
+      const sparklineSince = new Date(Date.now() - 450 * 86_400_000)
+        .toISOString().slice(0, 10);
       const [ar, bars, flow] = await Promise.all([
         sb.from("analyze_results").select("ticker, result").in("ticker", tickers),
         sb
@@ -337,7 +345,9 @@ async function fetchRecommendations(
           .select("ticker, bar_date, close")
           .in("ticker", tickers)
           .eq("granularity", "W")
-          .order("bar_date", { ascending: true }),
+          .gte("bar_date", sparklineSince)
+          .order("bar_date", { ascending: true })
+          .limit(tickers.length * 70),
         sb
           .from("investor_flow")
           .select("ticker, day, foreign_net, institution_net")
@@ -377,9 +387,16 @@ async function fetchRecommendations(
       items = items.map((it) => {
         const analyze = analyzeByTicker.get(it.ticker) ?? null;
         const closes = closesByTicker.get(it.ticker) ?? [];
-        const lastClose = analyze?.book_score != null
-          ? closes[closes.length - 1] ?? 0
-          : 0;
+        // Use analyze_results.last_close (canonical per-ticker close) for
+        // the freshness calc. Earlier code used `closes[length-1]` from
+        // the bulk bars query, but PostgREST silently caps that response
+        // at 1000 rows — for a 50-ticker batch with ~260 weekly bars
+        // each, the array is heavily truncated and `closes[length-1]`
+        // is some random old bar, not the latest. The bulk bars query
+        // is still useful for the sparkline (where the last 60 weekly
+        // closes are visualised) but only when the per-ticker tail
+        // happens to land in the truncated window.
+        const lastClose = analyze?.last_close ?? 0;
         return {
           ...it,
           analyze,
