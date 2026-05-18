@@ -7,8 +7,22 @@ on:
     branches: [main]
 
 jobs:
+  book:
+    name: Book engine unit tests (no DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Runs on every push/PR — no Supabase secrets needed because these
+    # tests use synthetic OHLCV. Catches the H&S extrapolation / stale
+    # entry_plan family of bugs before they reach prod.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: "pip" }
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest app/book/tests/ -v
+
   python:
-    name: Python smoke + scan tests
+    name: Python smoke + scan tests (DB-backed)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: ${{ secrets.SUPABASE_URL != '' }}

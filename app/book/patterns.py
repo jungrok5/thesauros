@@ -277,6 +277,11 @@ def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
     conf = min(conf, 0.95)
 
     head_h = c.price - neckline
+    # Entry is the breakout (neckline) — using last_close meant that
+    # after a long decline the pattern's `target` (projected from neckline)
+    # would sit above last_close, violating bearish (target < entry).
+    # Anchor entry at the formation's natural short level.
+    entry = neckline
     target = neckline - head_h
 
     return Pattern(
@@ -285,7 +290,7 @@ def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
         confidence=conf,
         completed=completed,
         detected_at=pd.to_datetime(df["date"].iloc[-1]) if "date" in df.columns else pd.to_datetime(df.index[-1]),
-        entry=last_close if completed else neckline,
+        entry=entry,
         stop=c.price * 1.02,
         target=target,
         reason=(
