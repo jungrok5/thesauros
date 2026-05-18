@@ -256,7 +256,9 @@ class MultiTrend:
         }
 
 
-def analyze_multi_timeframe(daily_df: pd.DataFrame) -> MultiTrend:
+def analyze_multi_timeframe(
+    df: pd.DataFrame, input_grain: str = "D",
+) -> MultiTrend:
     """Run trend analysis on daily, weekly, and monthly views.
 
     Book's rule:
@@ -264,12 +266,26 @@ def analyze_multi_timeframe(daily_df: pd.DataFrame) -> MultiTrend:
       - 월봉 10MA 위 만 → HOLD (조정 중일 가능성)
       - 월봉 10MA 아래 → SELL (추세 사망, 무조건 청산)
       - 240MA 아래 = 죽은 차트 → AVOID
+
+    `input_grain`:
+      "D" — `df` is daily; resample to W/M as before (KR path).
+      "W" — `df` is already weekly (US path via Naver, which caps daily
+            at 110 rows but allows ~2y weekly). Skip daily classifier
+            entirely; treat the input as weekly; resample weekly→monthly.
+            The book's primary signal (월봉 240MA + 월봉/주봉 10MA) survives
+            because monthly is still reconstructable from weekly.
     """
-    daily = classify_trend(daily_df, "daily")
-    weekly_df = resample_to_period(daily_df, "W")
-    weekly = classify_trend(weekly_df, "weekly")
-    monthly_df = resample_to_period(daily_df, "M")
-    monthly = classify_trend(monthly_df, "monthly")
+    if input_grain == "W":
+        daily = None
+        weekly = classify_trend(df, "weekly")
+        monthly_df = resample_to_period(df, "M")
+        monthly = classify_trend(monthly_df, "monthly")
+    else:
+        daily = classify_trend(df, "daily")
+        weekly_df = resample_to_period(df, "W")
+        weekly = classify_trend(weekly_df, "weekly")
+        monthly_df = resample_to_period(df, "M")
+        monthly = classify_trend(monthly_df, "monthly")
 
     # Apply book's signal logic
     parts: List[str] = []

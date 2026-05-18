@@ -90,39 +90,60 @@ def _action_from_score(trend_signal: str, score: float, patterns: List[Dict]
 def analyze_ticker(ticker: str, df: pd.DataFrame,
                    weekly: bool = True, monthly: bool = True
                    ) -> Dict:
-    """Run the full book pipeline on one ticker's daily OHLCV.
+    """Run the full book pipeline on one ticker's OHLCV.
 
-    df: daily DataFrame with date, open, high, low, close, adj_close, volume.
+    df: DataFrame with date, open, high, low, close, adj_close, volume.
+    Input grain is taken from df.attrs["grain"] — "D" (default, daily input)
+    or "W" (weekly input, used for US tickers via Naver since yfinance is
+    blocked on cloud runners). When grain="W" we have no daily history;
+    daily-timeframe pattern detection and daily MAs are skipped.
     """
     df = df.copy()
     if "date" not in df.columns:
         df = df.reset_index().rename(columns={df.index.name or "index": "date"})
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
+    grain = df.attrs.get("grain", "D")
 
-    multi = analyze_multi_timeframe(df)
+    multi = analyze_multi_timeframe(df, input_grain=grain)
     last_candle = latest_candle_summary(df)
 
-    # Run pattern detection on daily, weekly, monthly when sufficient history exists.
-    patterns_daily = [p.to_dict() for p in detect_all(df)]
-    reversals_daily = [r.to_dict() for r in detect_all_reversals(df)]
+    # Pattern detection per timeframe.
+    if grain == "W":
+        # Input is weekly — no daily history available.
+        patterns_daily: List[Dict] = []
+        reversals_daily: List[Dict] = []
+        # Weekly patterns run on the input df directly.
+        patterns_weekly = [p.to_dict() for p in detect_all(df)] if weekly else []
+        patterns_monthly = []
+        if monthly:
+            mdf = resample_to_period(df, "M").reset_index().rename(columns={"index": "date"})
+            if "date" not in mdf.columns:
+                mdf = mdf.rename(columns={mdf.columns[0]: "date"})
+            patterns_monthly = [p.to_dict() for p in detect_all(mdf)]
+    else:
+        patterns_daily = [p.to_dict() for p in detect_all(df)]
+        reversals_daily = [r.to_dict() for r in detect_all_reversals(df)]
 
-    patterns_weekly = []
-    if weekly:
-        wdf = resample_to_period(df, "W").reset_index().rename(columns={"index": "date"})
-        if "date" not in wdf.columns:
-            wdf = wdf.rename(columns={wdf.columns[0]: "date"})
-        patterns_weekly = [p.to_dict() for p in detect_all(wdf)]
+        patterns_weekly = []
+        if weekly:
+            wdf = resample_to_period(df, "W").reset_index().rename(columns={"index": "date"})
+            if "date" not in wdf.columns:
+                wdf = wdf.rename(columns={wdf.columns[0]: "date"})
+            patterns_weekly = [p.to_dict() for p in detect_all(wdf)]
 
-    patterns_monthly = []
-    if monthly:
-        mdf = resample_to_period(df, "M").reset_index().rename(columns={"index": "date"})
-        if "date" not in mdf.columns:
-            mdf = mdf.rename(columns={mdf.columns[0]: "date"})
-        patterns_monthly = [p.to_dict() for p in detect_all(mdf)]
+        patterns_monthly = []
+        if monthly:
+            mdf = resample_to_period(df, "M").reset_index().rename(columns={"index": "date"})
+            if "date" not in mdf.columns:
+                mdf = mdf.rename(columns={mdf.columns[0]: "date"})
+            patterns_monthly = [p.to_dict() for p in detect_all(mdf)]
 
+    # volume_case + reverse_accum are computed on whatever grain we have.
+    # They both look at recent N bars relative to history — semantics shift
+    # slightly under weekly input but the comparative logic still makes sense.
     volume_case = classify_volume_case(df)
-    reverse_accum = detect_reverse_accumulation(df)
+    reverse_accum = detect_reverse_accumulation(df) if grain != "W" else None
 
     # Combine patterns from all timeframes for scoring, but tag timeframe.
     all_patterns: List[Dict] = []
@@ -156,15 +177,19 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
                     "based_on": f"{p['kind']} ({p.get('timeframe', 'daily')})",
                 }
                 break
-        # Fallback: 10MA-based stop
-        if entry_block is None and multi.daily and multi.daily.ma_10:
+        # Fallback: 10MA-based stop. Prefer daily; under weekly input
+        # (US via Naver) fall back to weekly MA.
+        if entry_block is None:
             last_close = float(df["close"].iloc[-1])
-            entry_block = {
-                "entry": last_close,
-                "stop": multi.daily.ma_10 * 0.97,
-                "target": None,
-                "based_on": "일봉 10MA 스톱",
-            }
+            ma10 = (multi.daily.ma_10 if multi.daily else None) or \
+                   (multi.weekly.ma_10 if multi.weekly else None)
+            if ma10:
+                entry_block = {
+                    "entry": last_close,
+                    "stop": ma10 * 0.97,
+                    "target": None,
+                    "based_on": "일봉 10MA 스톱" if multi.daily else "주봉 10MA 스톱",
+                }
     elif action in ("SELL_OR_SHORT", "SELL"):
         last_close = float(df["close"].iloc[-1])
         # use weekly/monthly 10MA as exit reference
@@ -199,17 +224,18 @@ def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
     """Load OHLCV for the requested ticker.
 
     Source order:
-      1. Supabase bars_daily (canonical, populated by cron)
-      2. yfinance live fetch (only when Supabase has nothing — useful for
-         brand-new tickers in dev)
+      1. Supabase bars_daily (canonical, populated by KR cron via FDR)
+      2. yfinance live fetch (works locally, blocked on GH Actions Azure IPs)
+      3. Naver weekCandle for US tickers (Phase 1 wedge — gives ~2y weekly
+         OHLCV when bars_daily empty AND yfinance blocked; flagged with
+         df.attrs["grain"]="W" so the analyzer skips daily-only logic).
 
-    DuckDB is no longer consulted — all bars are migrated to Supabase
-    (see migrations/007 + app.db.migrate_duckdb_to_supabase).
+    Returned df.attrs["grain"]: "D" for daily input, "W" for weekly.
     """
     from datetime import date, timedelta
     from app.db import get_conn
 
-    # 1) Supabase bars_daily
+    # 1) Supabase bars_daily (KR canonical, populated by cron)
     try:
         with get_conn(autocommit=True) as conn:
             with conn.cursor() as cur:
@@ -226,24 +252,46 @@ def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
             df["date"] = pd.to_datetime(df["date"])
             for col in ("open", "high", "low", "close", "adj_close", "volume"):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
+            df.attrs["grain"] = "D"
             return df
     except Exception:
         # Supabase unreachable in dev — fall through to live fetch.
         pass
 
-    # 2) Live fallback (yfinance)
+    # 2) Live fallback (yfinance) — works locally, fails on cloud runners
+    #    for US tickers (Yahoo blocks Azure/AWS/GCP IPs).
     import yfinance as yf
     start = (date.today() - timedelta(days=years * 365 + 30)).isoformat()
     try:
         t = yf.Ticker(ticker)
         live = t.history(start=start, auto_adjust=False, actions=False)
     except Exception:
-        return None
-    if live is None or live.empty:
-        return None
-    live = live.reset_index().rename(columns={
-        "Date": "date", "Open": "open", "High": "high", "Low": "low",
-        "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
-    })
-    live["date"] = pd.to_datetime(live["date"]).dt.tz_localize(None)
-    return live
+        live = None
+    if live is not None and not live.empty:
+        live = live.reset_index().rename(columns={
+            "Date": "date", "Open": "open", "High": "high", "Low": "low",
+            "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
+        })
+        live["date"] = pd.to_datetime(live["date"]).dt.tz_localize(None)
+        live.attrs["grain"] = "D"
+        return live
+
+    # 3) Naver weekCandle — last resort for US tickers when yfinance is
+    #    blocked. Only useful for non-KR tickers (KR has FDR-fed bars_daily
+    #    in step 1). Caps at ~110 weekly rows ≈ 2 years.
+    if not _looks_kr(ticker):
+        try:
+            from app.data.naver_bars import fetch_weekly
+        except Exception:
+            return None
+        wdf = fetch_weekly(ticker, years=years)
+        if wdf is not None and not wdf.empty:
+            return wdf
+
+    return None
+
+
+def _looks_kr(ticker: str) -> bool:
+    """KR tickers in our master are always suffixed .KS or .KQ."""
+    t = ticker.upper()
+    return t.endswith(".KS") or t.endswith(".KQ")

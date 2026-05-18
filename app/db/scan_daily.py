@@ -366,7 +366,13 @@ def scan_one_local(ticker: str, years: int = 5) -> Dict[str, Any]:
       analyze_results so the site can render without FastAPI).
     """
     df = load_ticker_data(ticker, years=years)
-    if df is None or len(df) < 250:
+    if df is None:
+        return {"ticker": ticker, "status": "insufficient_history"}
+    # History threshold depends on grain: daily ~250 bars = 1y; weekly ~50 bars = 1y.
+    # US tickers via Naver come back as weekly (~110 rows = ~2y) which suffices.
+    grain = df.attrs.get("grain", "D")
+    min_rows = 50 if grain == "W" else 250
+    if len(df) < min_rows:
         return {"ticker": ticker, "status": "insufficient_history"}
     result = analyze_ticker(ticker, df)
     signals = extract_signals(result)
