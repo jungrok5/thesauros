@@ -19,6 +19,12 @@ import { ScoreBreakdown } from "@/components/score-breakdown";
 import { NewBadge } from "@/components/new-badge";
 import { Sparkline } from "@/components/sparkline";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
+import {
+  BEARISH_PATTERN_KEYS,
+  BULLISH_PATTERN_KEYS,
+  directionStyle,
+  labelFor,
+} from "@/lib/signal-labels";
 
 export const revalidate = 60;
 
@@ -132,19 +138,27 @@ function decomposeScore(a: AnalyzeResultBlob | null | undefined): {
 }
 
 function humanReason(it: Row): string {
+  // Pattern + volume signals: the signal IS the reason, so prefer the
+  // pattern-specific phrase rather than the multi-TF trend narrative.
+  if (
+    it.signal_type.startsWith("pattern_") ||
+    it.signal_type.startsWith("volume_")
+  ) {
+    const conf = it.params?.confidence;
+    const confStr = typeof conf === "number"
+      ? ` · 신뢰도 ${(conf * 100).toFixed(0)}%`
+      : "";
+    return `${labelFor(it.signal_type).phrase} 완성${confStr}`;
+  }
+  // Action signals: prefer the analyzer's narrative reason since it
+  // already explains why the multi-TF stack gave a BUY/SELL.
   const reason = it.analyze?.trend?.book_reason;
   if (reason) return reason;
   const score = it.analyze?.book_score ?? it.params?.book_score;
   const scoreStr = typeof score === "number"
     ? ` · 종합점수 ${score >= 0 ? "+" : ""}${score.toFixed(2)}`
     : "";
-  if (it.signal_type === "action_strong_buy") return `다중 시간프레임 매수 정렬${scoreStr}`;
-  if (it.signal_type === "action_buy") return `매수 우호 정렬${scoreStr}`;
-  if (it.signal_type === "action_avoid") return `추세 약화 또는 약세${scoreStr}`;
-  if (it.signal_type === "action_sell" || it.signal_type === "action_sell_short") {
-    return `매도 시그널${scoreStr}`;
-  }
-  return it.reason ?? "—";
+  return `${labelFor(it.signal_type).phrase}${scoreStr}`;
 }
 
 async function fetchRecommendations(
@@ -171,6 +185,8 @@ async function fetchRecommendations(
     else q = q.order("strength", { ascending: false });
 
     if (signalKind === "action") q = q.like("signal_type", "action_%");
+    else if (signalKind === "bullish_pattern") q = q.in("signal_type", BULLISH_PATTERN_KEYS);
+    else if (signalKind === "bearish_pattern") q = q.in("signal_type", BEARISH_PATTERN_KEYS);
     else if (signalKind === "pattern") q = q.like("signal_type", "pattern_%");
     else if (signalKind === "buy") q = q.in("signal_type", ["action_strong_buy", "action_buy"]);
 
@@ -280,10 +296,12 @@ export default async function RecommendationsPage({
           <label className="block text-xs text-muted-foreground mb-1">신호 유형</label>
           <select name="signal" defaultValue={signalKind}
             className="px-3 py-2 rounded-md border border-input bg-background text-sm">
-            <option value="buy">매수 신호 (BUY/STRONG_BUY)</option>
-            <option value="action">전체 종합 액션</option>
-            <option value="pattern">패턴 완성</option>
-            <option value="all">전체</option>
+            <option value="buy">매수 액션 (강한 매수 / 매수)</option>
+            <option value="bullish_pattern">매수 패턴 (쌍바닥 · 역H&amp;S · 컵핸들)</option>
+            <option value="bearish_pattern">매도 패턴 (이중천장 · H&amp;S)</option>
+            <option value="action">전체 종합 액션 (매수/매도/회피 모두)</option>
+            <option value="pattern">전체 패턴 (매수+매도 섞임)</option>
+            <option value="all">전체 신호</option>
           </select>
         </div>
         <div>
@@ -321,10 +339,19 @@ export default async function RecommendationsPage({
         </button>
       </form>
 
-      <div className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2">
-        <strong>강도</strong>: 0.00–1.00 종합 신뢰도. <strong>추/패/거</strong>: 추세·패턴·거래량
-        sub-score (각 0-1). <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립,
-        ↓/✕ 약세). <strong>NEW</strong>: 30시간 이내 새로 잡힌 신호.
+      <div className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2 space-y-1">
+        <div>
+          <strong>강도</strong>: 0.00–1.00 종합 신뢰도. <strong>추/패/거</strong>: 추세·패턴·거래량
+          sub-score (각 0-1). <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립,
+          ↓/✕ 약세). <strong>NEW</strong>: 30시간 이내 새로 잡힌 신호.
+        </div>
+        <div>
+          <strong>패턴 색상</strong>:
+          <span className="ml-1 px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">초록 = 매수 패턴</span>
+          {" "}
+          <span className="px-1.5 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300">빨강 = 매도 패턴</span>
+          {" "}쌍바닥·역H&amp;S는 매수 반전, 이중천장·H&amp;S는 매도 반전. 신호 유형 필터로 분리해서 보기 권장.
+        </div>
       </div>
 
       {error ? (
@@ -373,11 +400,15 @@ export default async function RecommendationsPage({
                           <ActionBadge action={action} size="sm" />
                           <HelpTip term={ACTION_TERM[action]} />
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
-                        </span>
-                      )}
+                      ) : (() => {
+                        const lbl = labelFor(it.signal_type);
+                        const s = directionStyle(lbl.direction);
+                        return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${s.bg} ${s.text} ${s.border}`}>
+                            {lbl.label}
+                          </span>
+                        );
+                      })()}
                       <span className="text-[10px] font-mono text-muted-foreground">
                         강도 {it.strength != null ? it.strength.toFixed(2) : "—"}
                       </span>
@@ -451,11 +482,15 @@ export default async function RecommendationsPage({
                               <ActionBadge action={action} size="sm" />
                               <HelpTip term={ACTION_TERM[action]} />
                             </>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              {it.signal_type.replace(/^pattern_|^volume_|^retracement_/, "")}
-                            </span>
-                          )}
+                          ) : (() => {
+                            const lbl = labelFor(it.signal_type);
+                            const s = directionStyle(lbl.direction);
+                            return (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${s.bg} ${s.text} ${s.border}`}>
+                                {lbl.label}
+                              </span>
+                            );
+                          })()}
                           <span className="text-[11px] font-mono text-muted-foreground">
                             {it.strength != null ? it.strength.toFixed(2) : "—"}
                           </span>
