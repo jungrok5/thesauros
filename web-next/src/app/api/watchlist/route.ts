@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { ensureTickerInMaster } from "@/lib/ensure-ticker";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,13 @@ export async function POST(req: NextRequest) {
     ? Number(body.stop_price) : null;
   const stopPct = Number.isFinite(Number(body.stop_pct_from_entry))
     ? Number(body.stop_pct_from_entry) : null;
+
+  // FK guard: `watchlist.ticker` references `tickers.ticker`. If a user
+  // hits this with a ticker that isn't yet in our master (US name
+  // resolved via Naver, brand-name fuzzy match, etc.), the FK would
+  // 500 the request. Seed the row on demand — Naver lookup pulls the
+  // proper Korean display name + market when available.
+  await ensureTickerInMaster(ticker);
 
   const userId = await ensureUserId(user.email, user.name);
   const sb = getServerClient();

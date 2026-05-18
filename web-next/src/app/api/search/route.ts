@@ -7,6 +7,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerClient } from "@/lib/supabase";
+import { searchNaverStocks } from "@/lib/naver-search";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -65,6 +66,27 @@ export async function GET(req: NextRequest) {
       void _score;
       return row;
     });
+
+  // Fallback: if the local search returned nothing, ask Naver — covers
+  // Korean brand names ("샌디스크") and English consumer brands
+  // ("GOOGLE") that don't appear inside our canonical corporate names.
+  if (items.length === 0) {
+    const naverHits = await searchNaverStocks(q, limit);
+    if (naverHits.length > 0) {
+      return NextResponse.json({
+        items: naverHits.map((h) => ({
+          ticker: h.ticker,
+          name: h.name,
+          market: h.market,
+          sector: null,
+          // Hint to the client that this row isn't in our master yet —
+          // /api/watchlist will auto-seed it on first POST.
+          external: true,
+        })),
+        source: "naver",
+      });
+    }
+  }
 
   return NextResponse.json({ items });
 }

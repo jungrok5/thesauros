@@ -28,6 +28,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { ensureTickerInMaster } from "@/lib/ensure-ticker";
+import { searchNaverStocks } from "@/lib/naver-search";
 import type { AnalysisResult } from "@/lib/types/analysis";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +93,27 @@ async function resolveTicker(raw: string): Promise<TickerInfo | null> {
       .limit(1)
       .maybeSingle();
     if (data) return data as TickerInfo;
+  }
+
+  // 5) Naver integrated search fallback — handles Korean brand names
+  //    ("샌디스크"→SNDK, "애플"→AAPL) and English consumer brands
+  //    ("GOOGLE"→GOOGL) that aren't substrings of our canonical
+  //    corporate names. Auto-seeds the resolved ticker into `tickers`
+  //    so subsequent watchlist + chart calls work. Wrapped in
+  //    try/catch — Naver outages must not crash the page.
+  try {
+    const hits = await searchNaverStocks(raw, 1);
+    if (hits.length > 0) {
+      const h = hits[0];
+      const ensured = await ensureTickerInMaster(h.ticker);
+      return {
+        ticker: ensured.ticker,
+        name: ensured.name ?? h.name,
+        market: ensured.market ?? h.market,
+      };
+    }
+  } catch (e) {
+    console.error("resolveTicker naver fallback:", e);
   }
 
   return null;
