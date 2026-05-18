@@ -1,3 +1,11 @@
+/**
+ * Last-close quote card. Source is bars_daily (the cron-fed EOD bar),
+ * NOT a live intraday tick — the book is explicit (p238-241) that
+ * intraday prices aren't decision-grade, so the site stays close-only.
+ *
+ * The component used to be `LiveQuote`, which mislabelled the source
+ * and risked someone wiring up a true real-time tick later.
+ */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -27,7 +35,7 @@ function fmt(n: number | null | undefined, digits = 0): string {
   });
 }
 
-export function LiveQuote({ ticker }: Props) {
+export function LastClose({ ticker }: Props) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

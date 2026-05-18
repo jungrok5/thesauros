@@ -256,13 +256,16 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
           <div ref={containerRef} style={{ height }} />
         )}
       </div>
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {Object.entries(MA_COLORS).map(([k, c]) => (
           <span key={k} className="inline-flex items-center gap-1">
             <span style={{ width: 10, height: 2, background: c }} />
             {k.replace("ma_", "MA")}
           </span>
         ))}
+        <span className="ml-auto text-[10px] text-muted-foreground/70">
+          종가 기준 · 오늘 봉은 마감 후 (KST 15:30 / 금 / 월말) 확정
+        </span>
       </div>
     </div>
   );

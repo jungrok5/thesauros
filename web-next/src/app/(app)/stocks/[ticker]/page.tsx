@@ -21,7 +21,8 @@ import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
 import { BookChart } from "@/components/book-chart";
-import { LiveQuote } from "@/components/live-quote";
+import { LastClose } from "@/components/last-close";
+import { MarketHoursNotice } from "@/components/market-hours-notice";
 import { InvestorFlow } from "@/components/investor-flow";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -219,7 +220,8 @@ export default async function StockDetailPage({ params }: PageProps) {
         </div>
       ) : (
         <>
-          <LiveQuote ticker={ticker} />
+          <MarketHoursNotice />
+          <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
           <div>
             <h2 className="mb-3 text-lg font-semibold tracking-tight">

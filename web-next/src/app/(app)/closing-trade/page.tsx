@@ -1,39 +1,38 @@
 /**
  * 종가매매 모드 (구 "와병투자") —
  *  매일 16시 책 신호 자동 갱신. 보유 종목 10MA 신호등 + 매매 일지.
- *  책 가르침: "매매는 안 할수록 좋다 — 주봉 매매 금요일 14시, 월봉 매매 매월 말일 14시"
+ *  책 가르침: "매매는 안 할수록 좋다 — 주봉 매매 금요일 15시, 월봉 매매 매월 말일 15시"
  */
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { TradeLogForm } from "@/components/trade-log-form";
+import { MarketHoursNotice } from "@/components/market-hours-notice";
 
 export const dynamic = "force-dynamic";
 
 /* Next closing-time helpers */
 
+// KRX regular session closes at 15:30 KST. The book's decision points
+// are "오후 3시" (close-time), so we anchor weekly/monthly checkpoints
+// at 15:30 — same as the actual market close.
 function nextWeeklyClose(now: Date): Date {
-  // Next Friday 14:00 KST.
   const d = new Date(now);
-  // Convert to Asia/Seoul wall-clock by reading UTC then offset back. The page
-  // is rendered server-side; we just compute days-until and the date label.
   const day = d.getDay(); // 0=Sun ... 6=Sat
   const daysUntilFri = (5 - day + 7) % 7;
   d.setDate(d.getDate() + daysUntilFri);
-  d.setHours(14, 0, 0, 0);
-  if (daysUntilFri === 0 && now.getHours() >= 14) {
+  d.setHours(15, 30, 0, 0);
+  if (daysUntilFri === 0 && (now.getHours() > 15 || (now.getHours() === 15 && now.getMinutes() >= 30))) {
     d.setDate(d.getDate() + 7);
   }
   return d;
 }
 
 function nextMonthlyClose(now: Date): Date {
-  // Last business day of current month, 14:00. Simplified: last calendar day.
-  const d = new Date(now.getFullYear(), now.getMonth() + 1, 0, 14, 0, 0);
-  // If past, jump to next month last day.
+  const d = new Date(now.getFullYear(), now.getMonth() + 1, 0, 15, 30, 0);
   if (d.getTime() < now.getTime()) {
-    return new Date(now.getFullYear(), now.getMonth() + 2, 0, 14, 0, 0);
+    return new Date(now.getFullYear(), now.getMonth() + 2, 0, 15, 30, 0);
   }
   return d;
 }
@@ -141,28 +140,30 @@ export default async function ClosingTradePage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">종가매매 모드</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          책 가르침: 매매는 안 할수록 좋습니다. 주봉 매매는 금요일 14시,
-          월봉 매매는 매월 말일 14시에만 확인하세요.
+          책 가르침: 매매는 안 할수록 좋습니다. 주봉 매매는 금요일 15시,
+          월봉 매매는 매월 말일 15시에만 확인하세요.
         </p>
       </header>
+
+      <MarketHoursNotice />
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">다음 주봉 마감</div>
           <div className="mt-1 text-xl font-mono">
-            {wk.toLocaleDateString("ko-KR")} (금) 14:00
+            {wk.toLocaleDateString("ko-KR")} (금) 15:30
           </div>
           <div className="text-xs text-muted-foreground mt-1">
-            D-{Math.max(0, daysBetween(now, wk))} · 책: 금요일 14시 1회 확인
+            D-{Math.max(0, daysBetween(now, wk))} · 책: 금요일 15시 1회 확인
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">다음 월봉 마감</div>
           <div className="mt-1 text-xl font-mono">
-            {mo.toLocaleDateString("ko-KR")} 14:00
+            {mo.toLocaleDateString("ko-KR")} 15:30
           </div>
           <div className="text-xs text-muted-foreground mt-1">
-            D-{Math.max(0, daysBetween(now, mo))} · 책: 매월 말일 14시 1회
+            D-{Math.max(0, daysBetween(now, mo))} · 책: 매월 말일 15시 1회
           </div>
         </div>
       </section>
