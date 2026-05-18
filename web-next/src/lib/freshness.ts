@@ -20,10 +20,19 @@ export interface FreshnessPatternInput {
   kind: string;
 }
 
-/** Breakout level from pattern.extra. Returns null if none available. */
+/** Breakout level from pattern.extra. Returns null if none available.
+ *  For 장대양봉 catalyst patterns, we use the catalyst's close as the
+ *  anchor — that's the level book treats as the new floor after the
+ *  reversal event. */
 export function breakoutLevel(p: FreshnessPatternInput): number | null {
   const ex = (p.extra ?? {}) as Record<string, unknown>;
-  for (const c of [ex.neckline, ex.rim, ex.ma_240, ex.ma_value]) {
+  for (const c of [
+    ex.neckline,
+    ex.rim,
+    ex.ma_240,
+    ex.ma_value,
+    ex.catalyst_close,
+  ]) {
     if (typeof c === "number" && c > 0) return c;
   }
   return null;
@@ -75,6 +84,20 @@ export function pickFreshest(
     }
   }
   return best;
+}
+
+/** Latest 장대양봉 catalyst pattern. The page's HOLD narrative uses
+ *  this to anchor "이미 +75% 위" type messages even when no chart
+ *  pattern fired. */
+export function pickCatalyst(
+  patterns: FreshnessPatternInput[],
+): FreshnessPatternInput | null {
+  for (const p of patterns) {
+    if (typeof p.kind === "string" && p.kind.includes("catalyst")) {
+      return p;
+    }
+  }
+  return null;
 }
 
 /**

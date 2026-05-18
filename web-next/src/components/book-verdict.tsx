@@ -15,6 +15,7 @@
  * in $ with 2 decimals.
  */
 import type { AnalysisResult } from "@/lib/types/analysis";
+import { pickCatalyst } from "@/lib/freshness";
 
 interface Props {
   result: AnalysisResult;
@@ -170,12 +171,87 @@ export function BookVerdict({ result }: Props) {
   }
 
   // ── HOLD / fallback ─────────────────────────────────────────────
-  return verdictCard("zinc", "🟡", "관망", [
-    "추세는 유효하나 명확한 진입 신호 부족.",
-    monthly?.ma_10
-      ? `월봉 10MA(${formatPrice(monthly.ma_10, ticker)}) 위에서 추세 확인 시 매수 진입.`
-      : "추세 확인 후 진입.",
-  ], warnings);
+  // Generic "no patterns + no clear action" branch used to render one
+  // boilerplate sentence. For tickers like IONQ that have a clear
+  // catalyst candle in the past + decent trend but no fresh chart
+  // pattern, we now narrate the situation with concrete numbers:
+  //   - 240MA distance ("죽지 않은 차트" / "죽은 차트" gate)
+  //   - latest catalyst's high vs current ("catalyst +X % 위")
+  //   - 4등분선 25% absolute level → stop guidance
+  //   - 주봉 10MA → trailing stop trigger
+  //   - next decision point (weekly close on Friday)
+  const lines: string[] = [];
+  const ma240 = weekly?.ma_240 ?? null;
+  const ma10w = weekly?.ma_10 ?? null;
+  const cat = pickCatalyst(r.patterns ?? []);
+
+  if (ma240 && last > ma240) {
+    const pct = (last / ma240 - 1) * 100;
+    lines.push(
+      `주봉 240MA(${formatPrice(ma240, ticker)}) 위 +${pct.toFixed(0)}% — 죽지 않은 차트.`,
+    );
+  } else if (ma240 && last <= ma240) {
+    lines.push(
+      `주봉 240MA(${formatPrice(ma240, ticker)}) 아래 — 책 기준 죽은 차트.`,
+    );
+  } else if (monthly && monthly.ma_240 == null) {
+    lines.push("월봉 240MA 미계산 (장기 차트 부족) — 안전 게이트 불완전.");
+  }
+
+  if (cat?.extra) {
+    const ex = cat.extra as Record<string, unknown>;
+    const catClose = typeof ex.catalyst_close === "number" ? ex.catalyst_close : null;
+    const q25 = typeof ex.q25 === "number" ? ex.q25 : null;
+    const runup = typeof ex.runup_since === "number" ? ex.runup_since : null;
+    const bars = typeof ex.bars_since === "number" ? ex.bars_since : null;
+    if (catClose != null && runup != null) {
+      lines.push(
+        `장대양봉 catalyst (${bars != null ? `${bars}주 전` : ""}) ` +
+        `진입 ${formatPrice(catClose, ticker)} 대비 현재 +${runup.toFixed(0)}% — ` +
+        (runup > 30
+          ? "신규 매수 자리는 한참 지났음."
+          : runup > 10
+            ? "추격 가능 구간이지만 진입 자리는 일부 지남."
+            : "catalyst 직후 자리."),
+      );
+    }
+    if (q25 != null) {
+      lines.push(
+        `손절: 장대양봉 25% 절대자리 ${formatPrice(q25, ticker)} 이탈 시 — ` +
+        "그 아래는 catalyst 부정.",
+      );
+    }
+  }
+
+  if (ma10w) {
+    lines.push(
+      `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산 — 책의 추세 사망 라인.`,
+    );
+  }
+
+  // Next decision — book mandates Friday 15:30 KST for weekly trades.
+  lines.push(nextDecisionLine(ma10w, ticker));
+
+  if (lines.length === 0) {
+    // Truly nothing to anchor on
+    lines.push("추세 약함, catalyst 없음, 패턴 미발현. 다음 주봉 마감까지 관망.");
+  }
+
+  return verdictCard("zinc", "🟡", "관망", lines, warnings);
+}
+
+/** Next-decision-point guidance — book's 종가매매 mode (주봉 = 금요일
+ *  15:30 KST). We don't try to compute the exact Friday in TZ math
+ *  here; the page's MarketHoursNotice already shows the live D-counter. */
+function nextDecisionLine(ma10w: number | null | undefined, ticker: string): string {
+  if (ma10w) {
+    return (
+      `📅 다음 결정 시점: 이번 주 금요일 종가. ` +
+      `5MA / 10MA(${formatPrice(ma10w, ticker)}) 위 마감이면 추세 유지, ` +
+      `아래면 추세 약화 — 청산 검토.`
+    );
+  }
+  return "📅 다음 결정 시점: 이번 주 금요일 종가 확인 후 추세 재판단.";
 }
 
 /**
@@ -269,12 +345,29 @@ function collectWarnings(r: AnalysisResult): string[] {
     out.push("월봉 240MA 미계산 — 책의 핵심 안전 게이트 누락 (장기 차트 부족).");
   }
 
-  // Price runaway above 240MA
+  // Price runaway above 240MA — entering chase zone
   if (bullishAction && r.trend.weekly?.ma_240) {
     const pct = (r.last_close / r.trend.weekly.ma_240 - 1) * 100;
     if (pct > 80) {
       out.push(`주봉 240MA 대비 +${pct.toFixed(0)}% — 신규 매수 영역 멀리 벗어남.`);
     }
+  }
+
+  // Price BELOW weekly 240MA — book's 죽은 차트 zone. Normally the
+  // monthly 240MA gate catches this in the analyzer and forces AVOID
+  // action, but when monthly history is short (5y is < 240 months),
+  // the monthly check returns null and the bullish action slips
+  // through with no explicit warning. Surface the dissonance.
+  if (
+    bullishAction
+    && r.trend.weekly?.above_ma_240 === false
+    && r.trend.weekly?.ma_240
+  ) {
+    const pct = (r.last_close / r.trend.weekly.ma_240 - 1) * 100;
+    out.push(
+      `주봉 240MA(${formatPrice(r.trend.weekly.ma_240, r.ticker)}) 아래 ${pct.toFixed(0)}% — ` +
+      "책 기준 죽은 차트 영역. 월봉 240MA 부재로 직접 AVOID 안 가지만 신규 매수 신중.",
+    );
   }
 
   return out;

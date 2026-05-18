@@ -138,6 +138,131 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     ).toBeInTheDocument();
   });
 
+  it("HOLD branch — IONQ-style catalyst-after narrative", () => {
+    const r = makeResult({
+      ticker: "IONQ",
+      action: "HOLD",
+      book_score: 0.24,
+      last_close: 49.31,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 49.31, ma_10: 40.23,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 32.61, above_ma_240: true,
+          alignment_score: 0.20, overall_score: 0.76, label: "강세",
+        },
+        monthly: {
+          timeframe: "monthly", price: 49.31, ma_10: 35.0,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: null, above_ma_240: null,
+          alignment_score: 0.5, overall_score: 0.75, label: "강세",
+        },
+        book_signal: "HOLD", book_reason: "보유 평가",
+      },
+      patterns: [
+        {
+          kind: "장대양봉 catalyst", direction: "bullish", confidence: 0.80,
+          completed: true, detected_at: "2026-04-17",
+          entry: 46.09, stop: 32.71, target: 81.76,
+          reason: "장대양봉 +63%",
+          timeframe: "weekly",
+          extra: {
+            catalyst_open: 28.25, catalyst_close: 46.09, catalyst_high: 46.69,
+            q25: 32.71, q50: 37.17, q75: 41.63,
+            bars_since: 5, runup_since: 7.0,
+          },
+        },
+      ],
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/한 줄 평.*관망/)).toBeInTheDocument();
+    // 240MA above by computed pct
+    expect(screen.getByText(/240MA.*\+51%.*죽지 않은/)).toBeInTheDocument();
+    // Catalyst anchor + runup_since
+    expect(screen.getByText(/장대양봉 catalyst.*5주 전.*\+7%/)).toBeInTheDocument();
+    // 25% absolute level as stop
+    expect(screen.getByText(/25% 절대자리.*32\.71/)).toBeInTheDocument();
+    // Weekly 10MA trailing stop guidance
+    expect(screen.getByText(/주봉 10MA.*40\.23.*이탈/)).toBeInTheDocument();
+    // Next decision point (Friday close)
+    expect(screen.getByText(/다음 결정 시점.*금요일/)).toBeInTheDocument();
+  });
+
+  it("HOLD branch — stale catalyst surfaces '한참 지났음' verdict", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 100,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 100, ma_10: 80,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 50, above_ma_240: true,
+          alignment_score: 0.5, overall_score: 0.6, label: "강세",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+      patterns: [
+        {
+          kind: "장대양봉 catalyst", direction: "bullish", confidence: 0.85,
+          completed: true, detected_at: "2025-09-01",
+          entry: 60, stop: 50, target: 100,
+          reason: "",
+          timeframe: "weekly",
+          extra: { catalyst_close: 60, q25: 50, bars_since: 30, runup_since: 66.7 },
+        },
+      ],
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/장대양봉 catalyst.*\+67%.*한참 지났음/)).toBeInTheDocument();
+  });
+
+  it("HOLD branch — no catalyst, only 240MA gate narrative", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 80,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 80, ma_10: 75,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 50, above_ma_240: true,
+          alignment_score: 0.3, overall_score: 0.4, label: "강세",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+      patterns: [],
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/240MA.*\+60%.*죽지 않은/)).toBeInTheDocument();
+    expect(screen.queryByText(/catalyst/)).toBeNull();
+    expect(screen.getByText(/다음 결정 시점.*금요일/)).toBeInTheDocument();
+  });
+
+  it("HOLD branch — 240MA below renders 죽은 차트", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 40,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 40, ma_10: 45,
+          above_ma_10: false, ma_10_slope_up: false,
+          ma_240: 50, above_ma_240: false,
+          alignment_score: -0.5, overall_score: -0.6, label: "약세",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+      patterns: [],
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/240MA.*아래.*죽은 차트/)).toBeInTheDocument();
+  });
+
   it("renders 🟢 강한 매수 for a clean fresh-pattern setup", () => {
     const r = makeResult({
       action: "STRONG_BUY",

@@ -898,6 +898,156 @@ def detect_pullback_buy(df: pd.DataFrame,
 # ---------------------------------------------------------------------------
 # 11. 매복 셋업 (Forking setup — convergence, no trigger yet)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 12. Catalyst candle (단발 장대양봉 반전) — earnings surprise / news pop
+# ---------------------------------------------------------------------------
+def detect_catalyst_candle(
+    df: pd.DataFrame,
+    lookback: int = 30,
+    min_body_pct_of_price: float = 0.10,
+    vol_mult: float = 2.5,
+    prior_decline_pct: float = 0.15,
+    prior_window: int = 12,
+) -> Optional[Pattern]:
+    """Single-bar reversal catalyst — the IONQ 2026-04-17 case
+    (+63% on 308M volume after a 5-month -55% decline). Book treats
+    this as the "추세 반전 시작" event: smart money + news jolt absorbing
+    all supply in one bar.
+
+    Criteria (all must hold):
+      1. A bullish bar within the last `lookback` bars whose body is at
+         least `min_body_pct_of_price` of its own open price.
+      2. Bar's volume ≥ `vol_mult` × the median volume of the
+         `prior_window` bars before it.
+      3. The `prior_window` bars before the catalyst show a decline of
+         at least `prior_decline_pct` (peak-to-trough), OR the catalyst
+         bar's low is near the prior period's low (within 5 %).
+
+    Stores 4등분선 levels (25 / 50 / 75 of the catalyst body) in `extra`
+    — book's primary anchor for stop-and-target levels after a reversal.
+
+    direction = "bullish"; completed = True (the catalyst already
+    happened). `entry` is the catalyst close — for book it's "after the
+    fact, the new floor for the next leg". The page treats this anchor
+    as the freshness reference when no chart pattern fired.
+    """
+    if df is None or len(df) < prior_window + 5:
+        return None
+
+    work = df.reset_index(drop=True)
+    n = len(work)
+    bars_to_scan = min(lookback, n - prior_window - 1)
+    if bars_to_scan <= 0:
+        return None
+
+    best: Optional[Pattern] = None
+    best_score = 0.0
+
+    for offset in range(bars_to_scan):
+        idx = n - 1 - offset
+        if idx - prior_window < 0:
+            continue
+        bar = work.iloc[idx]
+        open_v = float(bar["open"])
+        close_v = float(bar["close"])
+        high_v = float(bar["high"])
+        low_v = float(bar["low"])
+        if open_v <= 0 or close_v <= open_v:
+            continue
+        body = close_v - open_v
+        body_pct_of_price = body / open_v
+        if body_pct_of_price < min_body_pct_of_price:
+            continue
+
+        # Volume check
+        if "volume" not in work.columns:
+            continue
+        vol = float(bar.get("volume", 0))
+        prior_slice = work.iloc[idx - prior_window:idx]
+        prior_vols = prior_slice["volume"].astype(float).values
+        if len(prior_vols) < 3:
+            continue
+        prior_median_vol = float(np.median(prior_vols))
+        if prior_median_vol <= 0 or vol < prior_median_vol * vol_mult:
+            continue
+
+        # Prior trend / position — require an actual decline. "Flat
+        # zone + sudden pop" is news-driven but not the book's reversal
+        # pattern; it's a Forking event or breakout, not a catalyst.
+        prior_high = float(prior_slice["high"].astype(float).max())
+        prior_low = float(prior_slice["low"].astype(float).min())
+        if prior_high <= 0:
+            continue
+        decline_pct = (prior_high - prior_low) / prior_high
+        if decline_pct < prior_decline_pct:
+            continue
+        # Catalyst's low must be near (within 10 %) the prior period's
+        # bottom — otherwise it's a mid-decline bounce, not a true
+        # reversal of the recent leg down.
+        if low_v > prior_low * 1.10:
+            continue
+
+        # Score — bigger body × bigger volume × deeper prior decline.
+        score = body_pct_of_price * (vol / max(prior_median_vol, 1)) * (1 + decline_pct)
+        if score < best_score:
+            continue
+
+        bars_since = offset
+        last_close = float(work["close"].iloc[-1])
+        q25 = open_v + body * 0.25
+        q50 = open_v + body * 0.50
+        q75 = open_v + body * 0.75
+
+        # Confidence — base + bonuses, capped.
+        conf = 0.60
+        if vol >= prior_median_vol * 4:
+            conf += 0.10
+        if body_pct_of_price >= 0.20:
+            conf += 0.10
+        if decline_pct >= 0.30:
+            conf += 0.10
+        conf = min(conf, 0.95)
+
+        best_score = score
+        best = Pattern(
+            kind="장대양봉 catalyst",
+            direction="bullish",
+            confidence=conf,
+            completed=True,
+            detected_at=pd.to_datetime(
+                bar["date"] if "date" in bar else work.index[idx]
+            ),
+            # Entry as informational anchor — the breakout already
+            # happened at this bar; user entering today would be paying
+            # whatever the current price is, not this anchor.
+            entry=close_v,
+            stop=q25,            # book: 25 % 절대자리
+            target=close_v + body * 2,    # 1× extension
+            reason=(
+                f"장대양봉 +{body_pct_of_price * 100:.0f}% on V {vol / 1e6:.0f}M "
+                f"(직전 평균 {prior_median_vol / 1e6:.0f}M × {vol/prior_median_vol:.1f}). "
+                f"직전 {prior_window}주봉 -{decline_pct*100:.0f}% → 추세 반전 catalyst. "
+                f"{bars_since}주 전 발현."
+            ),
+            extra={
+                "catalyst_open": open_v,
+                "catalyst_close": close_v,
+                "catalyst_high": high_v,
+                "catalyst_low": low_v,
+                "body_pct_of_price": body_pct_of_price,
+                "volume_multiple": vol / max(prior_median_vol, 1),
+                "prior_decline_pct": decline_pct,
+                "bars_since": bars_since,
+                "q25": q25,
+                "q50": q50,
+                "q75": q75,
+                "runup_since": (last_close / close_v - 1) * 100,
+            },
+        )
+
+    return best
+
+
 def detect_ma_convergence_setup(
     df: pd.DataFrame, periods: List[int] = None,
     spread_max: float = 0.04,
@@ -995,6 +1145,7 @@ def detect_all(df: pd.DataFrame) -> List[Pattern]:
         detect_dolbanji,
         detect_forking,
         detect_ma_convergence_setup,
+        detect_catalyst_candle,
     ]
     out: List[Pattern] = []
     for fn in detectors:
