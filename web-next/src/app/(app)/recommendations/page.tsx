@@ -26,7 +26,7 @@ import {
   directionStyle,
   labelFor,
 } from "@/lib/signal-labels";
-import { bucketScore, pickFreshest } from "@/lib/freshness";
+import { bucketScore, compositeScore, pickFreshest } from "@/lib/freshness";
 
 export const revalidate = 60;
 
@@ -103,6 +103,8 @@ type Row = ScanResultRow & {
   recent_closes?: number[];
   flow?: FlowSummary | null;
   fresh?: { kind: string; runupPct: number } | null;
+  /** strength × freshness multiplier — the default sort key. */
+  composite?: number;
 };
 
 function actionFor(signalType: string): ActionType {
@@ -352,22 +354,18 @@ async function fetchRecommendations(
       items = items.map((it) => {
         const analyze = analyzeByTicker.get(it.ticker) ?? null;
         const closes = closesByTicker.get(it.ticker) ?? [];
-        // Use analyze_results.last_close (canonical per-ticker close) for
-        // the freshness calc. Earlier code used `closes[length-1]` from
-        // the bulk bars query, but PostgREST silently caps that response
-        // at 1000 rows — for a 50-ticker batch with ~260 weekly bars
-        // each, the array is heavily truncated and `closes[length-1]`
-        // is some random old bar, not the latest. The bulk bars query
-        // is still useful for the sparkline (where the last 60 weekly
-        // closes are visualised) but only when the per-ticker tail
-        // happens to land in the truncated window.
         const lastClose = analyze?.last_close ?? 0;
+        const fresh = lastClose > 0 ? freshness(analyze, lastClose) : null;
         return {
           ...it,
           analyze,
           recent_closes: closes.slice(-60),
           flow: flowByTicker.get(it.ticker) ?? null,
-          fresh: lastClose > 0 ? freshness(analyze, lastClose) : null,
+          fresh,
+          composite: compositeScore(
+            Number(it.strength) || 0,
+            fresh?.runupPct ?? null,
+          ),
         };
       });
     }
@@ -380,19 +378,25 @@ async function fetchRecommendations(
       });
     }
 
-    if (sort === "fresh") {
+    if (sort === "composite") {
+      // The headline sort: strength × freshness multiplier. Surfaces
+      // tickers that are BOTH high-conviction AND in a real entry zone.
+      // Ties on composite fall back to higher strength.
+      items.sort((a, b) => {
+        const diff = (b.composite ?? 0) - (a.composite ?? 0);
+        if (Math.abs(diff) > 1e-6) return diff;
+        return (Number(b.strength) || 0) - (Number(a.strength) || 0);
+      });
+    } else if (sort === "fresh") {
       items.sort((a, b) => {
         const ar = a.fresh?.runupPct;
         const br = b.fresh?.runupPct;
-        // Patterns with no breakout-level info → end of list (we can't
-        // tell whether they're fresh or stale).
         if (ar == null && br == null) return 0;
         if (ar == null) return 1;
         if (br == null) return -1;
         const ba = bucketScore(ar);
         const bb = bucketScore(br);
         if (ba !== bb) return ba - bb;
-        // Same bucket — break ties on strength (higher first).
         return (Number(b.strength) || 0) - (Number(a.strength) || 0);
       });
     }
@@ -413,7 +417,7 @@ export default async function RecommendationsPage({
   const signalKind = sp.signal ?? "buy";
   const minStrength = Number(sp.min_strength ?? 0.7);
   const top = Number(sp.top ?? 50);
-  const sort = sp.sort ?? "strength";
+  const sort = sp.sort ?? "composite";
   const alignedOnly = sp.aligned === "1";
 
   const { items, total, error } = await fetchRecommendations(
@@ -447,12 +451,10 @@ export default async function RecommendationsPage({
           <label className="block text-xs text-muted-foreground mb-1">신호 유형</label>
           <select name="signal" defaultValue={signalKind}
             className="px-3 py-2 rounded-md border border-input bg-background text-sm">
-            <option value="buy">매수 액션 (강한 매수 / 매수)</option>
-            <option value="bullish_pattern">매수 패턴 (쌍바닥 · 역H&amp;S · 컵핸들)</option>
-            <option value="bearish_pattern">매도 패턴 (이중천장 · H&amp;S)</option>
-            <option value="action">전체 종합 액션 (매수/매도/회피 모두)</option>
-            <option value="pattern">전체 패턴 (매수+매도 섞임)</option>
-            <option value="all">전체 신호</option>
+            <option value="buy">🟢 매수 액션 (강한 매수 / 매수)</option>
+            <option value="bullish_pattern">🟢 매수 패턴 (쌍바닥 · 역H&amp;S · 컵핸들)</option>
+            <option value="bearish_pattern">🔴 매도 패턴 (이중천장 · H&amp;S)</option>
+            <option value="all">📋 전체 신호 (액션 + 패턴 + 거래량)</option>
           </select>
         </div>
         <div>
@@ -469,8 +471,9 @@ export default async function RecommendationsPage({
           <label className="block text-xs text-muted-foreground mb-1">정렬</label>
           <select name="sort" defaultValue={sort}
             className="px-3 py-2 rounded-md border border-input bg-background text-sm">
-            <option value="strength">강도 (높은 순)</option>
-            <option value="fresh">신선도 (돌파 직후 우선)</option>
+            <option value="composite">⭐ 종합 (강도 × 신선도) — 권장</option>
+            <option value="strength">강도만</option>
+            <option value="fresh">신선도만 (돌파 직후)</option>
             <option value="ticker">티커 (가나다)</option>
             <option value="name">종목명 (가나다)</option>
           </select>
@@ -504,22 +507,24 @@ export default async function RecommendationsPage({
 
       <div className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2 space-y-1">
         <div>
-          <strong>강도</strong>: 0.00–1.00 종합 신뢰도. <strong>추/패/거</strong>: 추세·패턴·거래량
-          sub-score (각 0-1). <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립,
-          ↓/✕ 약세).
+          <strong>⭐ 종합 점수</strong>: 강도 × 신선도 배수. 강하면서도{" "}
+          <em>지금 진입 자리</em>인 종목이 위로. 단순 강도만 보면 +70%
+          올라간 후 stale 종목이 1등 — 종합 점수가 그걸 자동으로 걸러줌.
         </div>
         <div>
-          <strong>신선도</strong>: 매수 패턴 돌파선 대비 현재가 위치 —{" "}
-          <span className="px-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">+0~5% 신선</span>{" "}
-          <span className="px-1 rounded bg-yellow-500/10 text-yellow-800 dark:text-yellow-300">+15~30% 일부 지남</span>{" "}
-          <span className="px-1 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">+30% 이상 ⚠ 진입 자리 끝남</span>.
-          1.00 만점 동률 종목 중 신선도 낮은 종목이 진짜 새 매수 자리. <strong>&quot;신선도 순&quot; 정렬 권장.</strong>
+          <strong>신선도 배수</strong>:{" "}
+          <span className="px-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">+0-5% × 1.0</span>{" "}
+          <span className="px-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">+5-15% × 0.65</span>{" "}
+          <span className="px-1 rounded bg-yellow-500/10 text-yellow-800 dark:text-yellow-300">+15-30% × 0.35</span>{" "}
+          <span className="px-1 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">+30%↑ × 0.05</span>{" "}
+          <span className="px-1 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300">−10%↓ × 0.10</span>
         </div>
         <div>
+          <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립, ↓/✕ 약세).{" "}
+          <strong>추/패/거</strong>: 추세·패턴·거래량 sub-score.{" "}
           <strong>패턴 색상</strong>:
           <span className="ml-1 px-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">초록 매수</span>{" "}
           <span className="px-1 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300">빨강 매도</span>.
-          쌍바닥·역H&amp;S는 매수 반전, 이중천장·H&amp;S는 매도 반전.
         </div>
       </div>
 
@@ -581,9 +586,14 @@ export default async function RecommendationsPage({
                           </span>
                         );
                       })()}
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        강도 {it.strength != null ? it.strength.toFixed(2) : "—"}
-                      </span>
+                      <div className="text-right leading-tight">
+                        <div className="text-[11px] font-mono font-semibold text-foreground">
+                          종합 {it.composite != null ? it.composite.toFixed(2) : "—"}
+                        </div>
+                        <div className="text-[9px] font-mono text-muted-foreground">
+                          강도 {it.strength != null ? it.strength.toFixed(2) : "—"}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -655,24 +665,34 @@ export default async function RecommendationsPage({
                         </div>
                       </td>
                       <td className="px-2 py-2">
-                        <div className="flex items-center gap-1.5">
-                          {action !== "HOLD" ? (
-                            <>
-                              <ActionBadge action={action} size="sm" />
-                              <HelpTip term={ACTION_TERM[action]} />
-                            </>
-                          ) : (() => {
-                            const lbl = labelFor(it.signal_type);
-                            const s = directionStyle(lbl.direction);
-                            return (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${s.bg} ${s.text} ${s.border}`}>
-                                {lbl.label}
-                              </span>
-                            );
-                          })()}
-                          <span className="text-[11px] font-mono text-muted-foreground">
-                            {it.strength != null ? it.strength.toFixed(2) : "—"}
-                          </span>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5">
+                            {action !== "HOLD" ? (
+                              <>
+                                <ActionBadge action={action} size="sm" />
+                                <HelpTip term={ACTION_TERM[action]} />
+                              </>
+                            ) : (() => {
+                              const lbl = labelFor(it.signal_type);
+                              const s = directionStyle(lbl.direction);
+                              return (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${s.bg} ${s.text} ${s.border}`}>
+                                  {lbl.label}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-xs">
+                            <span className="font-mono font-semibold">
+                              {it.composite != null ? it.composite.toFixed(2) : "—"}
+                            </span>
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              종합
+                            </span>
+                            <span className="ml-2 text-[10px] text-muted-foreground font-mono">
+                              ({it.strength != null ? it.strength.toFixed(2) : "—"} × {((it.composite ?? 0) / (Number(it.strength) || 1)).toFixed(2)})
+                            </span>
+                          </div>
                         </div>
                       </td>
                       <td className="px-2 py-2">

@@ -76,3 +76,43 @@ export function pickFreshest(
   }
   return best;
 }
+
+/**
+ * Freshness multiplier — penalises stale patterns / amplifies entry-zone
+ * patterns. Used as the second factor in the composite recommendation
+ * score. Asymmetric: stale patterns punished hard (>30% runup → 5%),
+ * pullback patterns lightly punished (still potentially valid), fresh
+ * patterns full weight.
+ *
+ *   bucket 0  ( 0–5%   fresh        ) → 1.00
+ *   bucket 1  ( 5–15%  chase-able   ) → 0.65
+ *   bucket 2  ( 15–30% partial gone ) → 0.35
+ *   bucket 3  (-10–0%  pullback     ) → 0.55
+ *   bucket 4  ( <-10%  broken       ) → 0.10
+ *   bucket 5  ( >30%   long gone    ) → 0.05
+ *   null      (no breakout-level pattern available) → 0.50 (mild penalty
+ *               so action-only signals don't dominate the leaderboard)
+ */
+export function freshnessMultiplier(runupPct: number | null): number {
+  if (runupPct == null) return 0.5;
+  const table = [1.0, 0.65, 0.35, 0.55, 0.1, 0.05];
+  return table[bucketScore(runupPct)];
+}
+
+/**
+ * Composite recommendation score: strength × freshnessMultiplier.
+ *
+ *   strength 0.91, fresh +3% → 0.91         (국보디자인-style)
+ *   strength 0.91, chase +12% → 0.59        (YW-style)
+ *   strength 0.91, stale +70% → 0.045       (SK텔레콤-style)
+ *   strength 0.85, fresh +3% → 0.85         (lower strength but fresh)
+ *   strength 0.91, no pattern info → 0.455  (action-only, conservative)
+ *
+ * This is the page's default sort key — surfaces tickers that are
+ * BOTH high-conviction AND in a real entry zone, instead of forcing
+ * the user to switch between strength and freshness sorts and mentally
+ * combine them.
+ */
+export function compositeScore(strength: number, runupPct: number | null): number {
+  return strength * freshnessMultiplier(runupPct);
+}

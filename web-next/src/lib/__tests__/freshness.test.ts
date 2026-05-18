@@ -22,6 +22,8 @@ import { describe, it, expect } from "vitest";
 import {
   breakoutLevel,
   bucketScore,
+  compositeScore,
+  freshnessMultiplier,
   pickFreshest,
   type FreshnessPatternInput,
 } from "@/lib/freshness";
@@ -165,5 +167,67 @@ describe("pickFreshest — actual recommendations bug scenario", () => {
 
   it("returns null when no pattern has a usable breakout level", () => {
     expect(pickFreshest([yw_삼중바닥_no_neckline], 4695)).toBeNull();
+  });
+});
+
+describe("freshnessMultiplier", () => {
+  it("fresh patterns get full weight (1.0)", () => {
+    expect(freshnessMultiplier(0)).toBe(1.0);
+    expect(freshnessMultiplier(3)).toBe(1.0);
+    expect(freshnessMultiplier(4.9)).toBe(1.0);
+  });
+  it("chase-able patterns get a moderate cut (0.65)", () => {
+    expect(freshnessMultiplier(5)).toBe(0.65);
+    expect(freshnessMultiplier(12)).toBe(0.65);
+  });
+  it("partial-gone patterns get a heavier cut (0.35)", () => {
+    expect(freshnessMultiplier(20)).toBe(0.35);
+  });
+  it("pullback patterns get a moderate cut (0.55)", () => {
+    expect(freshnessMultiplier(-5)).toBe(0.55);
+  });
+  it("broken patterns get crushed (0.1)", () => {
+    expect(freshnessMultiplier(-30)).toBe(0.1);
+  });
+  it("stale patterns get crushed (0.05)", () => {
+    expect(freshnessMultiplier(70)).toBe(0.05);
+    expect(freshnessMultiplier(450)).toBe(0.05);
+  });
+  it("unknown freshness (no breakout info) gets 0.5 conservative penalty", () => {
+    expect(freshnessMultiplier(null)).toBe(0.5);
+  });
+});
+
+describe("compositeScore — best AND fresh, not just fresh", () => {
+  it("strong + fresh ranks highest", () => {
+    expect(compositeScore(0.91, 3)).toBeCloseTo(0.91, 2);
+  });
+  it("strong + stale gets crushed below moderate + fresh", () => {
+    const sk = compositeScore(0.91, 70); // SK텔레콤 — strong but stale
+    const fresh = compositeScore(0.85, 3); // medium strength but fresh
+    expect(fresh).toBeGreaterThan(sk);
+  });
+  it("strong + chase still beats weak + fresh in most cases", () => {
+    const yw = compositeScore(0.91, 12); // strong + chase = 0.59
+    const weakFresh = compositeScore(0.5, 3); // weak + fresh = 0.5
+    expect(yw).toBeGreaterThan(weakFresh);
+  });
+  it("국보디자인 vs YW vs SK텔레콤 ordering (the actual page case)", () => {
+    const kbu = compositeScore(0.91, 3);     // 0.91
+    const yw  = compositeScore(0.91, 12);    // 0.59
+    const sk  = compositeScore(0.91, 70);    // 0.045
+    expect(kbu).toBeGreaterThan(yw);
+    expect(yw).toBeGreaterThan(sk);
+  });
+  it("action-only (no pattern freshness info) sits in the middle", () => {
+    const actionOnly = compositeScore(0.91, null); // 0.455
+    const fresh = compositeScore(0.91, 3);          // 0.91
+    const stale = compositeScore(0.91, 70);         // 0.045
+    expect(actionOnly).toBeLessThan(fresh);
+    expect(actionOnly).toBeGreaterThan(stale);
+  });
+  it("monotonic in strength when freshness is held constant", () => {
+    expect(compositeScore(0.9, 3)).toBeGreaterThan(compositeScore(0.8, 3));
+    expect(compositeScore(0.8, 70)).toBeGreaterThan(compositeScore(0.7, 70));
   });
 });
