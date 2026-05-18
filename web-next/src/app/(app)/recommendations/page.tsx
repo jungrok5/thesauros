@@ -16,7 +16,7 @@ import { HelpTip } from "@/components/help-tip";
 import { PatternChips, type PatternBlock } from "@/components/pattern-chips";
 import { MultiTFMatrix } from "@/components/multi-tf-matrix";
 import { ScoreBreakdown } from "@/components/score-breakdown";
-import { NewBadge } from "@/components/new-badge";
+import { NewBadge, hoursSince } from "@/components/new-badge";
 import { Sparkline } from "@/components/sparkline";
 import { InvestorFlowChip, type FlowSummary } from "@/components/investor-flow-chip";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
@@ -437,7 +437,7 @@ export default async function RecommendationsPage({
                           {it.ticker}
                         </Link>
                         <span className="text-xs text-muted-foreground">{it.market ?? "—"}</span>
-                        <NewBadge detectedAt={it.detected_at} />
+                        <NewBadge freshHoursAgo={hoursSince(it.detected_at)} />
                       </div>
                       <div className="text-sm font-medium truncate">{it.name ?? "—"}</div>
                     </div>
@@ -521,7 +521,7 @@ export default async function RecommendationsPage({
                               className="font-mono text-sm hover:underline">
                               {it.ticker}
                             </Link>
-                            <NewBadge detectedAt={it.detected_at} />
+                            <NewBadge freshHoursAgo={hoursSince(it.detected_at)} />
                           </div>
                           <span className="text-xs">{it.name ?? "—"}</span>
                           <span className="text-[10px] text-muted-foreground">{it.market ?? "—"}</span>

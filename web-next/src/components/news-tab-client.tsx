@@ -23,6 +23,11 @@ export function NewsTabClient({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Reset stale state on ticker change so the loading skeleton renders
+    // while the new fetch is in flight. Cascading-render warning from
+    // the strict rule is acceptable here — the alternative (keep stale
+    // data until new arrives) shows the previous ticker's news briefly.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     setResp(null);
     fetch(`/api/news/${encodeURIComponent(ticker)}`)
