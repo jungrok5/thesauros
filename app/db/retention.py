@@ -26,7 +26,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, Tuple, Union
 
 from dotenv import load_dotenv
 
@@ -37,8 +37,41 @@ from app.db import get_conn   # noqa: E402
 
 log = logging.getLogger("retention")
 
-# (table, sql, description) — order matters only for the dry-run printout.
-POLICIES: list[Tuple[str, str, str]] = [
+
+def _prune_e2e_users(dry_run: bool) -> int:
+    """Clean up @e2e.test artifacts older than 1 day. Needs two SQL
+    statements because access_requests.decided_by is ON DELETE RESTRICT
+    so we NULL it for any test-admin decisions before the user delete.
+    """
+    select_stale = (
+        "SELECT id FROM users "
+        "WHERE email ILIKE '%@e2e.test' "
+        "AND created_at < CURRENT_DATE - INTERVAL '1 day'"
+    )
+    if dry_run:
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM ({select_stale}) s")
+                return cur.fetchone()[0]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE access_requests SET decided_by = NULL "
+                f"WHERE decided_by IN ({select_stale})"
+            )
+            cur.execute(
+                "DELETE FROM users WHERE email ILIKE '%@e2e.test' "
+                "AND created_at < CURRENT_DATE - INTERVAL '1 day'"
+            )
+            return cur.rowcount
+
+
+# (table, sql_or_callable, description). String → single-statement DELETE
+# with auto dry-run conversion. Callable → custom (e.g. multi-statement
+# users cleanup with FK NULL-out first).
+Policy = Tuple[str, Union[str, Callable[[bool], int]], str]
+
+POLICIES: list[Policy] = [
     (
         "bars_daily",
         "DELETE FROM bars_daily WHERE bar_date < CURRENT_DATE - INTERVAL '2 years'",
@@ -120,13 +153,26 @@ POLICIES: list[Tuple[str, str, str]] = [
     ),
     # investor_flow is KR-only by construction (Naver frgn page), so
     # the date-based 90d rule above already handles it.
+    # E2E test artifacts — Playwright sessions upsert @e2e.test users
+    # via /api/e2e-test/issue-session. The session-mint endpoint does
+    # its own rolling 1h GC; this is the daily safety net for any
+    # stragglers. access_requests.decided_by is ON DELETE RESTRICT so
+    # the callable above NULLs test-admin decisions first, then deletes.
+    ("users", _prune_e2e_users, "e2e test users 24h"),
 ]
 
 
-def prune_one(table: str, sql: str, dry_run: bool = False) -> int:
-    """Run a single retention DELETE; return rows affected."""
+def prune_one(
+    table: str,
+    sql_or_fn: Union[str, Callable[[bool], int]],
+    dry_run: bool = False,
+) -> int:
+    """Run a single retention rule; return rows affected. Strings are
+    auto-converted DELETE→COUNT for dry runs; callables get a dry_run flag."""
+    if callable(sql_or_fn):
+        return sql_or_fn(dry_run)
+    sql = sql_or_fn
     if dry_run:
-        # Estimate by converting DELETE → SELECT COUNT(*).
         count_sql = sql.replace("DELETE FROM", "SELECT COUNT(*) FROM", 1)
         with get_conn(autocommit=True) as conn:
             with conn.cursor() as cur:

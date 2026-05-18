@@ -35,12 +35,32 @@ function constantTimeMatches(got: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+/**
+ * Rolling GC — drop @e2e.test users older than ~1 hour each time we
+ * mint a session. Keeps the prod users table from accumulating test
+ * artifacts even when retention.py hasn't run today. Best-effort:
+ * if it errors we still issue the session.
+ */
+async function purgeStaleTestUsers(sb: ReturnType<typeof getServerClient>) {
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await sb
+      .from("users")
+      .delete()
+      .ilike("email", "%@e2e.test")
+      .lt("created_at", oneHourAgo);
+  } catch (e) {
+    console.error("e2e GC:", e);
+  }
+}
+
 async function upsertTestUser(
   email: string,
   role: "admin" | "user",
   status: "pending" | "approved" | "rejected",
 ): Promise<string> {
   const sb = getServerClient();
+  await purgeStaleTestUsers(sb);
   const { data: existing } = await sb
     .from("users")
     .select("id")

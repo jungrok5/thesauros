@@ -10,6 +10,12 @@ import { AccessRequestList } from "./list-client";
 
 export const dynamic = "force-dynamic";
 
+// E2E Playwright sessions upsert users via /api/e2e-test/issue-session
+// with access_status='approved' (so the test suite can bypass human
+// approval). The artifacts have no business cluttering the admin
+// console — filter them out at query time.
+const TEST_EMAIL_PATTERN = "%@e2e.test";
+
 async function fetchUsers() {
   const sb = getServerClient();
   const { data: users } = await sb
@@ -17,6 +23,7 @@ async function fetchUsers() {
     .select(
       "id, email, name, role, access_status, last_login_at, created_at, approved_at",
     )
+    .not("email", "ilike", TEST_EMAIL_PATTERN)
     .order("created_at", { ascending: false })
     .limit(200);
   const ids = (users ?? []).map((u) => u.id as string);
