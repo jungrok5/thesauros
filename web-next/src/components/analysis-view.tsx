@@ -1,6 +1,12 @@
 import type { AnalysisResult } from "@/lib/types/analysis";
 import { ActionBadge } from "@/components/action-badge";
 import { HelpTip } from "@/components/help-tip";
+import { MultiTFMatrix } from "@/components/multi-tf-matrix";
+import { Sparkline } from "@/components/sparkline";
+import {
+  InvestorFlowChip,
+  type FlowSummary,
+} from "@/components/investor-flow-chip";
 import { formatNumber, cn } from "@/lib/utils";
 
 // pattern.kind comes from the Python analyzer as Korean strings. Map them
@@ -161,7 +167,15 @@ function PatternCard({
   );
 }
 
-export function AnalysisView({ result }: { result: AnalysisResult }) {
+export function AnalysisView({
+  result,
+  flow,
+  sparklineCloses,
+}: {
+  result: AnalysisResult;
+  flow?: FlowSummary | null;
+  sparklineCloses?: number[];
+}) {
   const r = result;
   const ts = new Date().toLocaleString("ko-KR");
 
@@ -179,6 +193,17 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
             </span>{" "}
             · as of {r.as_of} · {r.rows} bars · {ts}
           </p>
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <MultiTFMatrix
+              monthly={r.trend.monthly}
+              weekly={r.trend.weekly}
+              daily={r.trend.daily}
+            />
+            {flow && <InvestorFlowChip flow={flow} />}
+            {sparklineCloses && sparklineCloses.length >= 2 && (
+              <Sparkline closes={sparklineCloses} width={140} height={28} />
+            )}
+          </div>
         </div>
         <ActionBadge action={r.action} score={r.book_score} size="lg" />
       </header>
@@ -192,10 +217,15 @@ export function AnalysisView({ result }: { result: AnalysisResult }) {
         </div>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <TrendTile name="일봉" tf={r.trend.daily} />
-        <TrendTile name="주봉" tf={r.trend.weekly} />
+      <section className={cn(
+        "grid grid-cols-1 gap-3",
+        // Daily tile is hidden post weekly-pivot (always null). Only show
+        // when explicitly populated (legacy data or future intraday source).
+        r.trend.daily ? "md:grid-cols-3" : "md:grid-cols-2",
+      )}>
         <TrendTile name="월봉" tf={r.trend.monthly} />
+        <TrendTile name="주봉" tf={r.trend.weekly} />
+        {r.trend.daily && <TrendTile name="일봉" tf={r.trend.daily} />}
       </section>
 
       {r.last_candle && (

@@ -246,12 +246,80 @@ def _active_signals_for(tickers: List[str]) -> List[Dict[str, Any]]:
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, ticker, signal_type, timeframe, detected_at, strength, reason "
+                "SELECT id, ticker, signal_type, timeframe, detected_at, "
+                "strength, reason, params "
                 "FROM scan_results WHERE is_active = true AND ticker = ANY(%s)",
                 (tickers,),
             )
             cols = [d[0] for d in cur.description]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+# ── Korean labels for raw signal_type values, mirroring the TS-side
+#    web-next/src/lib/signal-labels.ts so push and site use the same names.
+
+_SIGNAL_LABELS: Dict[str, Dict[str, str]] = {
+    # bullish patterns
+    "pattern_double_bottom":              {"name": "쌍바닥",       "dir": "bull", "phrase": "쌍바닥 매수 반전 패턴"},
+    "pattern_triple_bottom":              {"name": "삼중바닥",     "dir": "bull", "phrase": "삼중바닥 매수 반전 패턴"},
+    "pattern_inverse_head_and_shoulders": {"name": "역H&S",       "dir": "bull", "phrase": "역헤드앤숄더 매수 반전 패턴"},
+    "pattern_forking":                    {"name": "포킹",         "dir": "bull", "phrase": "포킹 — 상승 분기 매수"},
+    "pattern_cup_with_handle":            {"name": "컵핸들",       "dir": "bull", "phrase": "컵 위드 핸들 매수 추세 지속"},
+    # bearish patterns
+    "pattern_double_top":                 {"name": "쌍천장",       "dir": "bear", "phrase": "쌍천장 매도 반전 패턴"},
+    "pattern_triple_top":                 {"name": "삼중천장",     "dir": "bear", "phrase": "삼중천장 매도 반전 패턴"},
+    "pattern_head_and_shoulders":         {"name": "H&S",         "dir": "bear", "phrase": "헤드앤숄더 매도 반전 패턴"},
+    # volume cases
+    "volume_case_3":  {"name": "거래량 폭증",   "dir": "bull", "phrase": "Case 3 — 바닥권 거래량 폭증 (매수 진입)"},
+    "volume_case_4":  {"name": "거래량 횡보",   "dir": "neutral", "phrase": "Case 4 — 횡보권 거래량 폭증"},
+    "volume_case_7":  {"name": "역배 거래량",   "dir": "bear", "phrase": "Case 7 — 상승 중 거래량 급감"},
+    "volume_case_9":  {"name": "분배 거래량",   "dir": "bear", "phrase": "Case 9 — 분배 의심 거래량 (매도)"},
+    "volume_case_10": {"name": "분배 거래량",   "dir": "bear", "phrase": "Case 10 — 분배"},
+    "volume_case_11": {"name": "투매 거래량",   "dir": "bull", "phrase": "Case 11 — 투매 후 잔량 (바닥 신호)"},
+    # actions
+    "action_strong_buy":  {"name": "강한 매수",  "dir": "bull", "phrase": "다중 시간프레임 정렬 + 패턴 발현 (강한 매수)"},
+    "action_buy":         {"name": "매수",       "dir": "bull", "phrase": "추세 우호 정렬 (매수)"},
+    "action_sell":        {"name": "매도",       "dir": "bear", "phrase": "10MA 이탈 (매도)"},
+    "action_sell_short":  {"name": "청산/인버스", "dir": "bear", "phrase": "추세 사망 (청산 또는 인버스 진입)"},
+    "action_avoid":       {"name": "회피",       "dir": "bear", "phrase": "240MA 아래 — 죽은 차트 (회피)"},
+}
+
+
+def _signal_label(signal_type: str) -> Dict[str, str]:
+    return _SIGNAL_LABELS.get(signal_type, {
+        "name": signal_type, "dir": "neutral", "phrase": signal_type,
+    })
+
+
+def _analyze_blob(ticker: str) -> Optional[Dict[str, Any]]:
+    """Pull the analyze_results.result blob for a ticker, or None."""
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT result FROM analyze_results WHERE ticker = %s",
+                (ticker,),
+            )
+            r = cur.fetchone()
+            return r[0] if r and r[0] else None
+
+
+def _flow_5d(ticker: str) -> Optional[Dict[str, float]]:
+    """5-day sum of foreign + institution net flow. KR only — returns None
+    for US (no data) so the caller can skip the corroboration line."""
+    if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
+        return None
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(foreign_net),0), COALESCE(SUM(institution_net),0) "
+                "FROM investor_flow "
+                "WHERE ticker = %s AND day >= CURRENT_DATE - INTERVAL '7 days'",
+                (ticker,),
+            )
+            r = cur.fetchone()
+            if not r:
+                return None
+            return {"foreign": float(r[0] or 0), "inst": float(r[1] or 0)}
 
 
 def _already_alerted(user_id: str, ticker: str, alert_type: str,
@@ -292,23 +360,73 @@ def _ticker_name(ticker: str) -> Optional[str]:
 
 def format_message(ticker: str, name: Optional[str], alert_type: str,
                    sig: Dict[str, Any]) -> str:
+    """Telegram alert message — mirrors the recommendations page's
+    information architecture: Korean signal label, multi-TF stack,
+    pattern direction made explicit, and 외인+기관 동행 as a
+    corroboration line when available.
+
+    Body is HTML (parse_mode=HTML).
+    """
+    signal_type = sig.get("signal_type", "")
+    label = _signal_label(signal_type)
     badge = {
-        "enter":    "🟢 [매수 신호]",
-        "pyramid":  "🟡 [추가매수 신호]",
-        "warn":     "🟠 [경고]",
-        "exit":     "🔴 [청산 권장]",
-        "target":   "🎯 [목표가 도달]",
-        "stop":     "🛑 [손절선 이탈]",
+        "enter":    "🟢",
+        "pyramid":  "🟡",
+        "warn":     "🟠",
+        "exit":     "🔴",
+        "target":   "🎯",
+        "stop":     "🛑",
     }.get(alert_type, "📊")
-    title = f"{badge} {ticker} {name or ''}"
-    body = sig.get("reason") or sig.get("signal_type", "")
+
+    title = f"{badge} <b>{ticker}</b> {name or ''} · {label['name']}"
+    lines = [title, f"📊 {label['phrase']}"]
+
+    # Multi-TF stack from analyze_results.
+    blob = _analyze_blob(ticker)
+    trend = (blob or {}).get("trend") or {}
+    tf_parts: List[str] = []
+    for tf_key, tf_label in (("monthly", "월"), ("weekly", "주"), ("daily", "일")):
+        t = trend.get(tf_key)
+        if not t:
+            continue
+        align = t.get("alignment_score")
+        arrow = "↑" if (t.get("above_ma_10") and (align or 0) >= 0.6) else \
+                ("→" if t.get("above_ma_10") else "↓")
+        tf_parts.append(
+            f"{tf_label}{arrow}{(f' {align:.0%}' if isinstance(align, (int, float)) else '')}"
+        )
+    if tf_parts:
+        lines.append("📈 " + "  ".join(tf_parts))
+
+    # Strength + confidence row.
     strength = sig.get("strength")
-    tf = sig.get("timeframe")
-    lines = [f"<b>{title}</b>", f"📊 {body}"]
+    conf = (sig.get("params") or {}).get("confidence")
+    score = (blob or {}).get("book_score")
+    bits: List[str] = []
     if strength is not None:
-        lines.append(f"⏱ {tf} · 강도 {float(strength):.2f}")
-    elif tf:
-        lines.append(f"⏱ {tf}")
+        bits.append(f"강도 {float(strength):.2f}")
+    if isinstance(conf, (int, float)):
+        bits.append(f"신뢰도 {float(conf):.0%}")
+    if isinstance(score, (int, float)):
+        bits.append(f"종합 {float(score):+.2f}")
+    if bits:
+        lines.append("⏱ " + " · ".join(bits))
+
+    # Smart-money corroboration (KR only).
+    flow = _flow_5d(ticker)
+    if flow:
+        f, i = flow["foreign"], flow["inst"]
+        # Only show when both signs match the signal direction (otherwise
+        # noise — the corroboration line should reinforce, not contradict).
+        if label["dir"] == "bull" and f > 0 and i > 0:
+            lines.append(
+                f"💰 외인+기관 동행 매수 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
+            )
+        elif label["dir"] == "bear" and f < 0 and i < 0:
+            lines.append(
+                f"💰 외인+기관 동행 매도 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
+            )
+
     return "\n".join(lines)
 
 
@@ -414,9 +532,14 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
                     sent = send_telegram(u["telegram_chat_id"], msg)
                 if u.get("has_push") and webpush_available():
                     subs = _push_subs_for(u["id"])
+                    push_label = _signal_label(sig.get("signal_type", ""))
+                    push_body = push_label["phrase"]
+                    strength = sig.get("strength")
+                    if strength is not None:
+                        push_body = f"{push_body} · 강도 {float(strength):.2f}"
                     payload = {
-                        "title": f"{ticker} {name or ''}".strip(),
-                        "body": (sig.get("reason") or sig.get("signal_type") or "")[:200],
+                        "title": f"{push_label['name']} · {ticker} {name or ''}".strip(),
+                        "body": push_body[:200],
                         "tag": f"{atype}:{ticker}",
                         "url": f"/stocks/{ticker}",
                         "severity": sig["severity"],

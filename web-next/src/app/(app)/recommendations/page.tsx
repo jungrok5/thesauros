@@ -18,6 +18,7 @@ import { MultiTFMatrix } from "@/components/multi-tf-matrix";
 import { ScoreBreakdown } from "@/components/score-breakdown";
 import { NewBadge } from "@/components/new-badge";
 import { Sparkline } from "@/components/sparkline";
+import { InvestorFlowChip, type FlowSummary } from "@/components/investor-flow-chip";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
 import {
   BEARISH_PATTERN_KEYS,
@@ -34,6 +35,8 @@ interface SearchParams {
   min_strength?: string;
   top?: string;
   sort?: string;
+  /** "1" to keep only rows where weekly+monthly alignment_score ≥ 0.9 each. */
+  aligned?: string;
 }
 
 type ActionType = "STRONG_BUY" | "BUY" | "SELL" | "SELL_OR_SHORT" | "AVOID" | "HOLD";
@@ -96,6 +99,7 @@ type Row = ScanResultRow & {
   params?: ScanParams | null;
   analyze?: AnalyzeResultBlob | null;
   recent_closes?: number[];
+  flow?: FlowSummary | null;
 };
 
 function actionFor(signalType: string): ActionType {
@@ -167,6 +171,7 @@ async function fetchRecommendations(
   minStrength: number,
   top: number,
   sort: string,
+  alignedOnly: boolean,
 ): Promise<{ items: Row[]; total: number; error: string | null }> {
   try {
     const sb = getServerClient();
@@ -212,10 +217,12 @@ async function fetchRecommendations(
       items.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko-KR"));
     }
 
-    // Bulk-fetch analyze_results + recent weekly closes for the visible set.
+    // Bulk-fetch analyze_results + recent weekly closes + 5d investor flow.
     const tickers = items.map((r) => r.ticker);
     if (tickers.length) {
-      const [ar, bars] = await Promise.all([
+      const flowSince = new Date(Date.now() - 7 * 86_400_000)
+        .toISOString().slice(0, 10);
+      const [ar, bars, flow] = await Promise.all([
         sb.from("analyze_results").select("ticker, result").in("ticker", tickers),
         sb
           .from("bars")
@@ -223,6 +230,12 @@ async function fetchRecommendations(
           .in("ticker", tickers)
           .eq("granularity", "W")
           .order("bar_date", { ascending: true }),
+        sb
+          .from("investor_flow")
+          .select("ticker, day, foreign_net, institution_net")
+          .in("ticker", tickers)
+          .gte("day", flowSince)
+          .order("day", { ascending: false }),
       ]);
       const analyzeByTicker = new Map<string, AnalyzeResultBlob>();
       for (const row of ar.data ?? []) {
@@ -240,11 +253,33 @@ async function fetchRecommendations(
         arr.push(c);
         closesByTicker.set(t, arr);
       }
+      const flowByTicker = new Map<string, FlowSummary>();
+      for (const row of flow.data ?? []) {
+        const t = (row as { ticker: string }).ticker;
+        const f = Number((row as { foreign_net: number | null }).foreign_net) || 0;
+        const i = Number((row as { institution_net: number | null }).institution_net) || 0;
+        const d = (row as { day: string }).day;
+        const prev = flowByTicker.get(t);
+        flowByTicker.set(t, {
+          foreignNet: (prev?.foreignNet ?? 0) + f,
+          institutionNet: (prev?.institutionNet ?? 0) + i,
+          latestDay: prev?.latestDay ?? d,
+        });
+      }
       items = items.map((it) => ({
         ...it,
         analyze: analyzeByTicker.get(it.ticker) ?? null,
         recent_closes: (closesByTicker.get(it.ticker) ?? []).slice(-60),
+        flow: flowByTicker.get(it.ticker) ?? null,
       }));
+    }
+
+    if (alignedOnly) {
+      items = items.filter((it) => {
+        const w = it.analyze?.trend?.weekly?.alignment_score ?? 0;
+        const m = it.analyze?.trend?.monthly?.alignment_score ?? 0;
+        return w >= 0.9 && m >= 0.9;
+      });
     }
 
     return { items, total: count ?? items.length, error: null };
@@ -264,9 +299,10 @@ export default async function RecommendationsPage({
   const minStrength = Number(sp.min_strength ?? 0.7);
   const top = Number(sp.top ?? 50);
   const sort = sp.sort ?? "strength";
+  const alignedOnly = sp.aligned === "1";
 
   const { items, total, error } = await fetchRecommendations(
-    market, signalKind, minStrength, top, sort,
+    market, signalKind, minStrength, top, sort, alignedOnly,
   );
 
   return (
@@ -333,6 +369,17 @@ export default async function RecommendationsPage({
             <option value="200">200</option>
           </select>
         </div>
+        <label className="flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            name="aligned"
+            value="1"
+            defaultChecked={alignedOnly}
+            className="accent-foreground"
+          />
+          <span>월/주 만점</span>
+          <span className="text-[10px] text-muted-foreground">(정렬 ≥ 0.9)</span>
+        </label>
         <button type="submit"
           className="px-4 py-2 rounded-md bg-foreground text-background text-sm font-medium hover:opacity-90 transition">
           새로고침
@@ -422,6 +469,11 @@ export default async function RecommendationsPage({
                     />
                     <Sparkline closes={it.recent_closes ?? []} width={120} height={28} />
                   </div>
+                  {it.flow && (
+                    <div>
+                      <InvestorFlowChip flow={it.flow} compact />
+                    </div>
+                  )}
                   <ScoreBreakdown
                     trend={sub.trend}
                     pattern={sub.pattern}
@@ -504,7 +556,10 @@ export default async function RecommendationsPage({
                         />
                       </td>
                       <td className="px-2 py-2 max-w-[240px]">
-                        <PatternChips patterns={patterns} max={3} />
+                        <div className="space-y-1">
+                          <PatternChips patterns={patterns} max={3} />
+                          {it.flow && <InvestorFlowChip flow={it.flow} compact />}
+                        </div>
                       </td>
                       <td className="px-2 py-2">
                         <ScoreBreakdown

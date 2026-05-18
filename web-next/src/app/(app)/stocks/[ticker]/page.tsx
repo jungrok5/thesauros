@@ -171,6 +171,42 @@ async function getAnalysis(ticker: string): Promise<AnalysisResult | null> {
   return (data?.result as AnalysisResult | undefined) ?? null;
 }
 
+async function getFlowSummary(ticker: string): Promise<
+  { foreignNet: number; institutionNet: number; latestDay: string | null } | null
+> {
+  const sb = getServerClient();
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await sb
+    .from("investor_flow")
+    .select("day, foreign_net, institution_net")
+    .eq("ticker", ticker)
+    .gte("day", since)
+    .order("day", { ascending: false });
+  if (error || !data || data.length === 0) return null;
+  let f = 0, i = 0;
+  for (const r of data) {
+    f += Number(r.foreign_net) || 0;
+    i += Number(r.institution_net) || 0;
+  }
+  return { foreignNet: f, institutionNet: i, latestDay: data[0].day };
+}
+
+async function getSparklineCloses(ticker: string): Promise<number[]> {
+  const sb = getServerClient();
+  const { data, error } = await sb
+    .from("bars")
+    .select("close")
+    .eq("ticker", ticker)
+    .eq("granularity", "W")
+    .order("bar_date", { ascending: false })
+    .limit(60);
+  if (error || !data) return [];
+  return data
+    .map((r) => Number(r.close))
+    .filter((n) => Number.isFinite(n))
+    .reverse();
+}
+
 export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: rawSegment } = await params;
   const raw = decodeURIComponent(rawSegment);
@@ -190,9 +226,11 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [result, watch] = await Promise.all([
+  const [result, watch, flow, sparkCloses] = await Promise.all([
     isCanonical ? getAnalysis(ticker) : Promise.resolve(null),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
+    isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
+    isCanonical ? getSparklineCloses(ticker) : Promise.resolve<number[]>([]),
   ]);
 
   return (
@@ -279,7 +317,7 @@ export default async function StockDetailPage({ params }: PageProps) {
             </h2>
             <BookChart ticker={ticker} timeframe="weekly" years={2} />
           </div>
-          <AnalysisView result={result} />
+          <AnalysisView result={result} flow={flow} sparklineCloses={sparkCloses} />
           <div className="mt-8">
             <h2 className="mb-3 text-lg font-semibold tracking-tight">
               종목 정보
