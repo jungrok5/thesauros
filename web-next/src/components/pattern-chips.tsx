@@ -14,6 +14,8 @@ export interface PatternBlock {
   confidence: number;
   timeframe?: string;       // "daily" | "weekly" | "monthly"
   completed?: boolean;
+  entry?: number | null;
+  extra?: Record<string, unknown> | null;
 }
 
 const TF_BADGE: Record<string, string> = {

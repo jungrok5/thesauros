@@ -21,33 +21,49 @@ interface Props {
 }
 
 /**
- * Pick the "most useful for trading" completed bullish pattern. The
- * pattern's `detected_at` is just "when the scan ran" (not when the
- * pattern formed), so we use **runup since pattern entry** as the real
- * staleness signal: if price has already run +30% past the entry, the
- * breakout has played out and a new buyer would chase.
+ * The pattern's `entry` field is filled with `last_close` whenever the
+ * detector marks `completed=True` (so the user "enters at current price"
+ * for a fresh breakout). That makes `entry == last_close` always when
+ * the page renders → naive runup = 0%, breaking the staleness signal.
+ *
+ * The TRUE breakout level — the price the pattern was actually breaking
+ * out from — lives in `extra.neckline` (쌍바닥, 쌍천장, H&S, 역H&S),
+ * `extra.rim` (Cup with Handle), or `extra.ma_240` / `extra.ma_value`
+ * (240MA breakout, 돌반지). Use that as the freshness reference.
  */
+function breakoutLevel(p: AnalysisResult["patterns"][number]): number | null {
+  const ex = (p.extra ?? {}) as Record<string, unknown>;
+  const candidates = [ex.neckline, ex.rim, ex.ma_240, ex.ma_value];
+  for (const c of candidates) {
+    if (typeof c === "number" && c > 0) return c;
+  }
+  // Fall back to the pattern's `entry` if no extra-level info available.
+  return p.entry && p.entry > 0 ? p.entry : null;
+}
+
 function pickFreshBullishPattern(
   result: AnalysisResult,
-): { kind: string; entry: number; runupPct: number } | null {
+): { kind: string; breakout: number; runupPct: number } | null {
   const last = result.last_close;
-  let best: { kind: string; entry: number; runupPct: number } | null = null;
+  let best: { kind: string; breakout: number; runupPct: number } | null = null;
   for (const p of result.patterns) {
     if (!p.completed || p.direction !== "bullish") continue;
-    if (!p.entry || p.entry <= 0) continue;
-    const runup = (last / p.entry - 1) * 100;
+    const bl = breakoutLevel(p);
+    if (bl == null) continue;
+    const runup = (last / bl - 1) * 100;
     if (!best || runup < best.runupPct) {
-      best = { kind: p.kind, entry: p.entry, runupPct: runup };
+      best = { kind: p.kind, breakout: bl, runupPct: runup };
     }
   }
   return best;
 }
 
 function runupBlurb(pct: number): string {
+  if (pct < 0)  return `돌파선 아래 ${pct.toFixed(0)}% — 패턴 무효 가능`;
   if (pct < 5)  return "이번 주 진입 자리";
-  if (pct < 15) return `진입 대비 +${pct.toFixed(0)}% — 아직 추격 가능`;
-  if (pct < 30) return `진입 대비 +${pct.toFixed(0)}% — 일부 진입 자리 지남`;
-  return `진입 대비 +${pct.toFixed(0)}% — 매수 자리는 이미 끝났습니다`;
+  if (pct < 15) return `돌파 대비 +${pct.toFixed(0)}% — 아직 추격 가능`;
+  if (pct < 30) return `돌파 대비 +${pct.toFixed(0)}% — 일부 진입 자리 지남`;
+  return `돌파 대비 +${pct.toFixed(0)}% — 매수 자리는 이미 끝났습니다`;
 }
 
 function formatPrice(v: number, ticker: string): string {
@@ -95,7 +111,7 @@ export function BookVerdict({ result }: Props) {
     // pattern's entry, so a new buyer would be chasing).
     if (pat && pat.runupPct > 30) {
       const lines = [
-        `${pat.kind} 매수 자리는 이미 ${pat.runupPct.toFixed(0)}% 위 — 진입가 ${formatPrice(pat.entry, ticker)} 에서 현재 ${formatPrice(last, ticker)} 까지 올랐습니다.`,
+        `${pat.kind} 매수 자리는 이미 ${pat.runupPct.toFixed(0)}% 위 — 돌파선 ${formatPrice(pat.breakout, ticker)} 에서 현재 ${formatPrice(last, ticker)} 까지 올랐습니다.`,
         above240Pct != null && above240Pct > 50
           ? `현재가는 주봉 240MA(${formatPrice(ma240!, ticker)}) 대비 +${above240Pct.toFixed(0)}% 위 — 신규 매수 진입 영역에서 멀리 벗어남.`
           : "추세는 아직 살아있지만 신규 매수보다는 보유 평가용입니다.",

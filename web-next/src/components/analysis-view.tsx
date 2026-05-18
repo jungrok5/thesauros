@@ -135,13 +135,18 @@ function PatternCard({
   };
   const term = patternTerm(p.kind);
 
-  // Freshness — `detected_at` only records "when the scan ran", not when
-  // the formation actually completed. The real staleness signal is how
-  // far price has run past the pattern's intended entry. >30% runup on
-  // a completed bullish pattern = the breakout has played out.
+  // Freshness — `detected_at` only records the scan timestamp, and the
+  // pattern's `entry` field is filled with current price for any
+  // completed breakout (so `entry` always equals `lastClose`). The real
+  // breakout level lives in pattern.extra (neckline / rim / ma_*).
+  const ex = (p.extra ?? {}) as Record<string, unknown>;
+  let breakout: number | null = null;
+  for (const c of [ex.neckline, ex.rim, ex.ma_240, ex.ma_value, p.entry]) {
+    if (typeof c === "number" && c > 0) { breakout = c; break; }
+  }
   let runupPct: number | null = null;
-  if (p.completed && p.entry && p.entry > 0) {
-    runupPct = (lastClose / p.entry - 1) * 100;
+  if (p.completed && breakout != null) {
+    runupPct = (lastClose / breakout - 1) * 100;
   }
   const isStale = p.direction === "bullish" && runupPct != null && runupPct > 30;
 
@@ -183,12 +188,12 @@ function PatternCard({
         </span>
       </header>
       <p className="text-xs text-muted-foreground leading-relaxed">{p.reason}</p>
-      {p.completed && runupPct != null && (
+      {p.completed && runupPct != null && breakout != null && (
         <p className={cn(
           "mt-1.5 text-xs font-medium",
           isStale ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
         )}>
-          진입 {formatNumber(p.entry!)} → 현재 {formatNumber(lastClose)}
+          돌파선 {formatNumber(breakout)} → 현재 {formatNumber(lastClose)}
           <span className="ml-1">
             ({runupPct >= 0 ? "+" : ""}{runupPct.toFixed(0)}%)
           </span>

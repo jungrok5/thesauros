@@ -100,10 +100,108 @@ type Row = ScanResultRow & {
   analyze?: AnalyzeResultBlob | null;
   recent_closes?: number[];
   flow?: FlowSummary | null;
+  fresh?: { kind: string; runupPct: number } | null;
 };
 
 function actionFor(signalType: string): ActionType {
   return ACTION_BY_SIGNAL[signalType] ?? "HOLD";
+}
+
+/**
+ * Render the freshness state as a small chip: emerald for fresh (<5%),
+ * yellow for chasing zone (5-30%), amber for stale (>30%). The
+ * recommendations list otherwise collapses all 1.00-strength rows
+ * into a visually identical block; freshness is the single most
+ * useful differentiator.
+ */
+function FreshnessChip({ fresh }: { fresh: Row["fresh"] }) {
+  if (!fresh) {
+    return (
+      <span className="text-[10px] text-muted-foreground/60">신선도 ?</span>
+    );
+  }
+  const r = fresh.runupPct;
+  let style: string, label: string;
+  if (r < 0) {
+    style = "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/40";
+    label = `돌파선 아래 ${r.toFixed(0)}%`;
+  } else if (r < 5) {
+    style = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/50";
+    label = `돌파 +${r.toFixed(0)}% 🟢 신선`;
+  } else if (r < 15) {
+    style = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
+    label = `돌파 +${r.toFixed(0)}% 추격 가능`;
+  } else if (r < 30) {
+    style = "bg-yellow-500/10 text-yellow-800 dark:text-yellow-300 border-yellow-500/40";
+    label = `돌파 +${r.toFixed(0)}% 일부 지남`;
+  } else {
+    style = "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/50";
+    label = `돌파 +${r.toFixed(0)}% ⚠ 진입 자리 지남`;
+  }
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium ${style}`}
+      title={`${fresh.kind} 돌파선 대비 현재가 ${r >= 0 ? "+" : ""}${r.toFixed(1)}%`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Find the freshest completed bullish pattern's distance past its
+ * breakout level. A row with runup < 5% is a true "right now" entry;
+ * >30% means the breakout has already played out and the user is
+ * chasing — these get stale styling + a chip on the card.
+ *
+ * Pattern's `entry` field is filled with current price when completed,
+ * so we use `extra.neckline/rim/ma_240/ma_value` as the real breakout
+ * reference.
+ */
+function freshness(a: AnalyzeResultBlob | null | undefined, lastClose: number):
+  { kind: string; runupPct: number } | null
+{
+  if (!a?.patterns?.length) return null;
+  let best: { kind: string; runupPct: number } | null = null;
+  for (const p of a.patterns) {
+    if (!p.completed || p.direction !== "bullish") continue;
+    // Use the REAL breakout level from pattern.extra only — fallback to
+    // `p.entry` is misleading because completed patterns set entry =
+    // last_close, which makes runup always 0% (false freshness).
+    const ex = (p.extra ?? {}) as Record<string, unknown>;
+    let bl: number | null = null;
+    for (const c of [ex.neckline, ex.rim, ex.ma_240, ex.ma_value]) {
+      if (typeof c === "number" && c > 0) { bl = c; break; }
+    }
+    if (bl == null) continue;
+    const runup = (lastClose / bl - 1) * 100;
+    // Pick the freshest meaningful pattern. "Fresh" means runup is in
+    // the 0–5% sweet spot; we rank by absolute distance from that ideal
+    // entry zone, so a +3% pattern beats a +20% pattern beats a -25%
+    // pattern (broken) beats a +140% pattern (long gone).
+    if (!best || bucketScore(runup) < bucketScore(best.runupPct)) {
+      best = { kind: p.kind, runupPct: runup };
+    }
+  }
+  return best;
+}
+
+/**
+ * Bucket score for freshness — lower = better entry.
+ *   0 :  0–5%   true fresh breakout
+ *   1 :  5–15%  recent breakout, still chase-able
+ *   2 :  15–30% partial entry zone gone
+ *   3 :  -10–0% near breakout, may still be valid pullback
+ *   4 :  <-10%  broken below pattern level (invalidated)
+ *   5 :  >30%   long-gone breakout
+ */
+function bucketScore(r: number): number {
+  if (r >= 0 && r < 5)  return 0;
+  if (r >= 5 && r < 15) return 1;
+  if (r >= 15 && r < 30) return 2;
+  if (r >= -10 && r < 0) return 3;
+  if (r < -10) return 4;
+  return 5;
 }
 
 /**
@@ -266,12 +364,20 @@ async function fetchRecommendations(
           latestDay: prev?.latestDay ?? d,
         });
       }
-      items = items.map((it) => ({
-        ...it,
-        analyze: analyzeByTicker.get(it.ticker) ?? null,
-        recent_closes: (closesByTicker.get(it.ticker) ?? []).slice(-60),
-        flow: flowByTicker.get(it.ticker) ?? null,
-      }));
+      items = items.map((it) => {
+        const analyze = analyzeByTicker.get(it.ticker) ?? null;
+        const closes = closesByTicker.get(it.ticker) ?? [];
+        const lastClose = analyze?.book_score != null
+          ? closes[closes.length - 1] ?? 0
+          : 0;
+        return {
+          ...it,
+          analyze,
+          recent_closes: closes.slice(-60),
+          flow: flowByTicker.get(it.ticker) ?? null,
+          fresh: lastClose > 0 ? freshness(analyze, lastClose) : null,
+        };
+      });
     }
 
     if (alignedOnly) {
@@ -279,6 +385,23 @@ async function fetchRecommendations(
         const w = it.analyze?.trend?.weekly?.alignment_score ?? 0;
         const m = it.analyze?.trend?.monthly?.alignment_score ?? 0;
         return w >= 0.9 && m >= 0.9;
+      });
+    }
+
+    if (sort === "fresh") {
+      items.sort((a, b) => {
+        const ar = a.fresh?.runupPct;
+        const br = b.fresh?.runupPct;
+        // Patterns with no breakout-level info → end of list (we can't
+        // tell whether they're fresh or stale).
+        if (ar == null && br == null) return 0;
+        if (ar == null) return 1;
+        if (br == null) return -1;
+        const ba = bucketScore(ar);
+        const bb = bucketScore(br);
+        if (ba !== bb) return ba - bb;
+        // Same bucket — break ties on strength (higher first).
+        return (Number(b.strength) || 0) - (Number(a.strength) || 0);
       });
     }
 
@@ -355,6 +478,7 @@ export default async function RecommendationsPage({
           <select name="sort" defaultValue={sort}
             className="px-3 py-2 rounded-md border border-input bg-background text-sm">
             <option value="strength">강도 (높은 순)</option>
+            <option value="fresh">신선도 (돌파 직후 우선)</option>
             <option value="ticker">티커 (가나다)</option>
             <option value="name">종목명 (가나다)</option>
           </select>
@@ -390,14 +514,20 @@ export default async function RecommendationsPage({
         <div>
           <strong>강도</strong>: 0.00–1.00 종합 신뢰도. <strong>추/패/거</strong>: 추세·패턴·거래량
           sub-score (각 0-1). <strong>월/주/일</strong>: 시간프레임별 추세 정렬 (↑ 강세, → 중립,
-          ↓/✕ 약세). <strong>NEW</strong>: 30시간 이내 새로 잡힌 신호.
+          ↓/✕ 약세).
+        </div>
+        <div>
+          <strong>신선도</strong>: 매수 패턴 돌파선 대비 현재가 위치 —{" "}
+          <span className="px-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">+0~5% 신선</span>{" "}
+          <span className="px-1 rounded bg-yellow-500/10 text-yellow-800 dark:text-yellow-300">+15~30% 일부 지남</span>{" "}
+          <span className="px-1 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">+30% 이상 ⚠ 진입 자리 끝남</span>.
+          1.00 만점 동률 종목 중 신선도 낮은 종목이 진짜 새 매수 자리. <strong>&quot;신선도 순&quot; 정렬 권장.</strong>
         </div>
         <div>
           <strong>패턴 색상</strong>:
-          <span className="ml-1 px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">초록 = 매수 패턴</span>
-          {" "}
-          <span className="px-1.5 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300">빨강 = 매도 패턴</span>
-          {" "}쌍바닥·역H&amp;S는 매수 반전, 이중천장·H&amp;S는 매도 반전. 신호 유형 필터로 분리해서 보기 권장.
+          <span className="ml-1 px-1 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">초록 매수</span>{" "}
+          <span className="px-1 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300">빨강 매도</span>.
+          쌍바닥·역H&amp;S는 매수 반전, 이중천장·H&amp;S는 매도 반전.
         </div>
       </div>
 
@@ -427,8 +557,11 @@ export default async function RecommendationsPage({
               const sub = decomposeScore(it.analyze);
               const patterns = it.analyze?.patterns ?? [];
               const tr = it.analyze?.trend;
+              const isStale = (it.fresh?.runupPct ?? 0) > 30;
               return (
-                <li key={it.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                <li key={it.id} className={`rounded-lg border bg-card p-3 space-y-2 ${
+                  isStale ? "border-amber-500/40 bg-amber-500/5" : "border-border"
+                }`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -469,11 +602,10 @@ export default async function RecommendationsPage({
                     />
                     <Sparkline closes={it.recent_closes ?? []} width={120} height={28} />
                   </div>
-                  {it.flow && (
-                    <div>
-                      <InvestorFlowChip flow={it.flow} compact />
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    <FreshnessChip fresh={it.fresh} />
+                    {it.flow && <InvestorFlowChip flow={it.flow} compact />}
+                  </div>
                   <ScoreBreakdown
                     trend={sub.trend}
                     pattern={sub.pattern}
@@ -511,8 +643,11 @@ export default async function RecommendationsPage({
                   const sub = decomposeScore(it.analyze);
                   const patterns = it.analyze?.patterns ?? [];
                   const tr = it.analyze?.trend;
+                  const isStale = (it.fresh?.runupPct ?? 0) > 30;
                   return (
-                    <tr key={it.id} className="border-t border-border hover:bg-muted/20 align-top">
+                    <tr key={it.id} className={`border-t border-border hover:bg-muted/20 align-top ${
+                      isStale ? "bg-amber-500/[0.03]" : ""
+                    }`}>
                       <td className="px-2 py-2 text-muted-foreground text-xs">{i + 1}</td>
                       <td className="px-2 py-2">
                         <div className="flex flex-col gap-0.5">
@@ -558,7 +693,10 @@ export default async function RecommendationsPage({
                       <td className="px-2 py-2 max-w-[240px]">
                         <div className="space-y-1">
                           <PatternChips patterns={patterns} max={3} />
-                          {it.flow && <InvestorFlowChip flow={it.flow} compact />}
+                          <div className="flex flex-wrap gap-1">
+                            <FreshnessChip fresh={it.fresh} />
+                            {it.flow && <InvestorFlowChip flow={it.flow} compact />}
+                          </div>
                         </div>
                       </td>
                       <td className="px-2 py-2">
