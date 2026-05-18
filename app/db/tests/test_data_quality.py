@@ -1,0 +1,248 @@
+"""Data-quality tests for cron-fed Supabase tables.
+
+These are guardrails — if cron stops feeding a table, or a third-party
+API silently breaks (KIS vts 500s, FDR endpoint shifts, DART rate
+limit), one of these assertions catches it before users notice.
+
+Each test reads a single MAX-aggregate or COUNT — fast, no
+side-effects, safe to run in CI on every PR. Critical-but-known-broken
+tables are flagged with `@pytest.mark.xfail` and a reason so the suite
+fails loudly when they start working again (i.e., when someone backfills
+the data).
+
+Run:
+    python -m pytest app/db/tests/test_data_quality.py -v
+"""
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Optional
+
+import pytest
+from dotenv import load_dotenv
+
+_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(_ROOT / ".env")
+
+from app.db import get_conn   # noqa: E402
+
+
+def _scalar(sql: str, *args: Any) -> Any:
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, args if args else None)
+            row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _today() -> date:
+    return date.today()
+
+
+# Number of calendar days we tolerate between MAX(date) and today before
+# flagging a freshness regression. Picked generous enough to survive a
+# weekend (3 days) plus one missed cron run (2 days) = 5.
+TRADING_DAYS_GRACE = 5
+
+# ─────────────────────────────────────────────────────────────────────
+# FRESHNESS — last data point must be within N days of today
+# ─────────────────────────────────────────────────────────────────────
+
+def test_bars_daily_freshness():
+    """Daily OHLCV. Cron-fed by ingest_bars_daily (FDR+yfinance) every
+    weekday 16:00 KST."""
+    latest = _scalar("SELECT MAX(bar_date) FROM bars_daily")
+    assert latest is not None, "bars_daily is empty"
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, (
+        f"bars_daily stale: latest={latest} ({age}d old) — ingest_bars_daily not running?"
+    )
+
+
+def test_scan_results_freshness():
+    latest = _scalar(
+        "SELECT MAX(detected_at)::date FROM scan_results WHERE is_active=true"
+    )
+    assert latest is not None, "scan_results has no active rows"
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, (
+        f"scan_results stale: latest={latest} ({age}d) — scan_daily cron not running?"
+    )
+
+
+def test_analyze_results_freshness():
+    latest = _scalar("SELECT MAX(as_of) FROM analyze_results")
+    assert latest is not None, "analyze_results is empty"
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, (
+        f"analyze_results stale: latest={latest} ({age}d) — scan_daily not running?"
+    )
+
+
+def test_macro_state_freshness():
+    latest = _scalar("SELECT updated_at::date FROM macro_state WHERE id=1")
+    assert latest is not None, "macro_state row missing"
+    age = (_today() - latest).days
+    # macro_state changes daily.
+    assert age <= 3, (
+        f"macro_state stale: {latest} — publish_macro cron not running?"
+    )
+
+
+def test_macro_series_freshness():
+    """FRED series — most update monthly (CPI/PPI/M2), some monthly-Q.
+    14d grace accommodates the slowest series."""
+    latest = _scalar("SELECT MAX(date) FROM macro_series")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= 14, f"macro_series stale: {latest} ({age}d)"
+
+
+def test_themes_freshness():
+    latest = _scalar("SELECT MAX(updated_at)::date FROM themes")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, (
+        f"themes stale: {latest} — ingest_themes cron not running?"
+    )
+
+
+def test_theme_daily_freshness():
+    latest = _scalar("SELECT MAX(day) FROM theme_daily")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, f"theme_daily stale: {latest} ({age}d)"
+
+
+def test_investor_flow_freshness():
+    latest = _scalar("SELECT MAX(day) FROM investor_flow")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= TRADING_DAYS_GRACE, (
+        f"investor_flow stale: {latest} ({age}d) — ingest cron not running?"
+    )
+
+
+def test_financials_eval_freshness():
+    """Weekly cadence — 14d grace covers one missed weekly-fundamentals run."""
+    latest = _scalar("SELECT MAX(updated_at)::date FROM financials_eval")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= 14, (
+        f"financials_eval stale: {latest} ({age}d) — weekly-fundamentals not running?"
+    )
+
+
+def test_tickers_freshness():
+    """Weekly refresh on Sundays."""
+    latest = _scalar("SELECT MAX(updated_at)::date FROM tickers WHERE is_active=true")
+    assert latest is not None
+    age = (_today() - latest).days
+    assert age <= 14, (
+        f"tickers stale: {latest} ({age}d) — weekly-tickers-refresh not running?"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# COVERAGE — minimum unique-ticker counts
+# ─────────────────────────────────────────────────────────────────────
+
+def test_tickers_universe_size():
+    n = _scalar("SELECT COUNT(*) FROM tickers WHERE is_active = true")
+    assert n >= 3000, (
+        f"tickers active universe = {n}, expected ≥ 3000 (KOSPI 900 + KOSDAQ 1700 + S&P 500)"
+    )
+
+
+def test_bars_daily_ticker_coverage():
+    """Bars should cover at least the KR universe (≈2,700) on the most
+    recent trading day."""
+    n = _scalar(
+        "SELECT COUNT(DISTINCT ticker) FROM bars_daily "
+        "WHERE bar_date = (SELECT MAX(bar_date) FROM bars_daily)"
+    )
+    assert n >= 2000, (
+        f"bars_daily last-day coverage = {n} tickers, expected ≥ 2000"
+    )
+
+
+def test_investor_flow_ticker_coverage():
+    """Naver Finance frgn page covers full KOSPI/KOSDAQ universe. If we
+    fall below 2000 distinct tickers, the new scraper is regressing."""
+    n = _scalar("SELECT COUNT(DISTINCT ticker) FROM investor_flow")
+    assert n >= 2000, (
+        f"investor_flow coverage = {n} tickers, expected ≥ 2000 "
+        "(Naver scraper regression?)"
+    )
+
+
+def test_financials_eval_ticker_coverage():
+    n = _scalar("SELECT COUNT(DISTINCT ticker) FROM financials_eval")
+    assert n >= 2000, (
+        f"financials_eval coverage = {n}, expected ≥ 2000 KR tickers"
+    )
+
+
+def test_themes_count():
+    n = _scalar("SELECT COUNT(*) FROM themes")
+    assert n >= 200, f"themes count = {n}, expected ≥ 200"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# COMPLETENESS — null-rate / value sanity
+# ─────────────────────────────────────────────────────────────────────
+
+def test_investor_flow_values_non_empty():
+    """Ensure foreign_shares_net is actually populated for the latest day
+    (regression guard against the previous KIS-vts bug where all fields
+    came back as empty strings)."""
+    latest_day = _scalar("SELECT MAX(day) FROM investor_flow")
+    assert latest_day is not None
+    nonnull = _scalar(
+        "SELECT COUNT(*) FROM investor_flow "
+        "WHERE day = %s AND foreign_shares_net IS NOT NULL",
+        latest_day,
+    )
+    total = _scalar(
+        "SELECT COUNT(*) FROM investor_flow WHERE day = %s", latest_day,
+    )
+    assert total > 0
+    ratio = nonnull / total
+    assert ratio >= 0.8, (
+        f"investor_flow.foreign_shares_net is NULL for {(1-ratio)*100:.0f}% "
+        f"of latest day rows — values are not being parsed correctly."
+    )
+
+
+def test_bars_daily_recent_prices_positive():
+    """Sanity: no negative/zero closing prices on recent bars."""
+    bad = _scalar(
+        "SELECT COUNT(*) FROM bars_daily "
+        "WHERE bar_date >= CURRENT_DATE - INTERVAL '7 days' AND close <= 0"
+    )
+    assert bad == 0, f"{bad} bars_daily rows have non-positive close in last week"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# KNOWN-BROKEN — flagged xfail so they fail loudly when fixed
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.xfail(
+    reason="theme_members is empty — Friday-only full ingest hasn't populated it. "
+           "Remove xfail once ingest_themes (full mode) lands in a cron.",
+    strict=False,
+)
+def test_theme_members_populated():
+    n = _scalar("SELECT COUNT(*) FROM theme_members")
+    assert n >= 1000, f"theme_members count = {n}, expected ≥ 1000"
+
+
+@pytest.mark.xfail(
+    reason="disclosures only has 61 rows / 2 tickers — DART ingest "
+           "(ingest_news.py) is not wired into any cron yet.",
+    strict=False,
+)
+def test_disclosures_populated():
+    n = _scalar("SELECT COUNT(DISTINCT ticker) FROM disclosures")
+    assert n >= 500, f"disclosures coverage = {n} tickers, expected ≥ 500 KR"

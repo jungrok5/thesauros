@@ -81,15 +81,23 @@ jobs:
             python -m app.db.ingest_themes --themes-only
           fi
 
-      - name: Ingest investor flow (KIS)
+      - name: Ingest investor flow (Naver Finance)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          KIS_ACCOUNT_NO: ${{ secrets.KIS_ACCOUNT_NO }}
-          KIS_ACCOUNT_PROD_CODE: ${{ secrets.KIS_ACCOUNT_PROD_CODE }}
-          KIS_ENV: "vts"
         run: |
+          # Scrapes finance.naver.com/item/frgn.naver per ticker. Covers
+          # full KOSPI/KOSDAQ universe — KIS vts returned 500 for large
+          # caps (SK하이닉스/기아) so we replaced it.
           python -m app.db.ingest_investor_flow
+
+      - name: Data-quality assertions
+        if: always()   # run even if a preceding step failed, so we surface what landed
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          pip install pytest
+          python -m pytest app/db/tests/test_data_quality.py -v

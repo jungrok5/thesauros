@@ -19,6 +19,7 @@ jobs:
       - run: |
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
+      - run: pip install pytest
       - env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -26,6 +27,10 @@ jobs:
         run: |
           python -m app.db.tests.test_smoke
           python -m app.db.tests.test_scan
+          # Data-quality guardrails: fail loudly if cron stops feeding a
+          # table or a third-party scrape silently breaks. xfailed tests
+          # (theme_members / disclosures) document known gaps.
+          python -m pytest app/db/tests/test_data_quality.py -v
 
   web:
     name: Next.js typecheck + lint + E2E
