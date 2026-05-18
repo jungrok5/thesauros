@@ -12,27 +12,37 @@ import { test, expect } from "@playwright/test";
 test.describe("Book-faithful site — public routes redirect", () => {
   test("watchlist redirects to /login", async ({ page }) => {
     await page.goto("/watchlist");
-    await expect(page).toHaveURL(/\/login$/);
+    // Auth-required pages now carry a ?callbackUrl=… so the post-login
+    // redirect can return the user to the original page.
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
   test("recommendations redirects to /login", async ({ page }) => {
     await page.goto("/recommendations");
-    await expect(page).toHaveURL(/\/login$/);
+    // Auth-required pages now carry a ?callbackUrl=… so the post-login
+    // redirect can return the user to the original page.
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
   test("stocks redirects to /login", async ({ page }) => {
     await page.goto("/stocks");
-    await expect(page).toHaveURL(/\/login$/);
+    // Auth-required pages now carry a ?callbackUrl=… so the post-login
+    // redirect can return the user to the original page.
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
   test("closing-trade redirects to /login", async ({ page }) => {
     await page.goto("/closing-trade");
-    await expect(page).toHaveURL(/\/login$/);
+    // Auth-required pages now carry a ?callbackUrl=… so the post-login
+    // redirect can return the user to the original page.
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
   test("themes redirects to /login", async ({ page }) => {
     await page.goto("/themes");
-    await expect(page).toHaveURL(/\/login$/);
+    // Auth-required pages now carry a ?callbackUrl=… so the post-login
+    // redirect can return the user to the original page.
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 });
 

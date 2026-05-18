@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Public routes", () => {
   test("dashboard redirects to /login when signed out", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/login(\?|$)/);
     await expect(page.locator("h1")).toHaveText("Thesauros");
   });
 
@@ -19,6 +19,6 @@ test.describe("Public routes", () => {
 
   test("root redirects to dashboard (then login)", async ({ page }) => {
     await page.goto("/");
-    await page.waitForURL(/\/login$/, { timeout: 5_000 });
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 5_000 });
   });
 });

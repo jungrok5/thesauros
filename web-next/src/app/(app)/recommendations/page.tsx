@@ -284,8 +284,18 @@ async function fetchRecommendations(
       .gte("strength", minStrength)
       .limit(top);
 
-    if (sort === "ticker") q = q.order("ticker", { ascending: true });
-    else q = q.order("strength", { ascending: false });
+    if (sort === "ticker") {
+      q = q.order("ticker", { ascending: true });
+    } else {
+      // Primary: strength DESC. Secondary: most-recent detect first so
+      // ties (e.g. 12 names at 0.910) have a deterministic order based
+      // on signal recency rather than Postgres's arbitrary insertion
+      // order. Tertiary: ticker ASC for stable display across reloads.
+      q = q
+        .order("strength", { ascending: false })
+        .order("detected_at", { ascending: false })
+        .order("ticker", { ascending: true });
+    }
 
     if (signalKind === "action") q = q.like("signal_type", "action_%");
     else if (signalKind === "bullish_pattern") q = q.in("signal_type", BULLISH_PATTERN_KEYS);
