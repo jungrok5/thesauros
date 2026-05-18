@@ -13,20 +13,73 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Production-ish absolute base for OG/Twitter cards. Falls back to the
+// Vercel-assigned preview URL when the env isn't set; in local dev
+// social previews don't matter so localhost is fine.
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
+const DESC =
+  "한국 종목 (KOSPI / KOSDAQ) 매일 16시 자동 스캔 — 17종 캔들 패턴 + " +
+  "추세 + 4등분선 + 외국인·기관 매매 + 거시 5축 다이얼. 텔레그램·웹 푸시 알림. " +
+  "강환국·그레이엄·마법공식·버핏형 가치투자 게이트.";
+
 export const metadata: Metadata = {
-  title: "Thesauros — 추세추종 캔들 분석",
-  description:
-    "추세추종 캔들 분석 자동화 매매 보조 도구.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Thesauros — 추세추종 캔들 분석 자동 스캐너",
+    template: "%s · Thesauros",
+  },
+  description: DESC,
+  applicationName: "Thesauros",
+  keywords: [
+    "주식", "종가매매", "추세추종", "캔들 분석", "쌍바닥", "돌반지",
+    "KOSPI", "KOSDAQ", "코스피", "코스닥",
+    "외국인 매매", "기관 매매", "거시 지표", "시장 레짐",
+    "강환국", "그레이엄", "마법공식", "버핏",
+    "Korean stocks", "trend following", "candlestick patterns",
+  ],
+  authors: [{ name: "Thesauros" }],
+  creator: "Thesauros",
   manifest: "/manifest.webmanifest",
+  // Next.js convention: `app/icon.tsx` is auto-wired and emits the
+  // <link rel="icon"> head tag; same for app/favicon.ico (default
+  // tab favicon). No need to enumerate them here.
   appleWebApp: {
     capable: true,
     title: "Thesauros",
     statusBarStyle: "black-translucent",
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true },
+  },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Thesauros",
+    title: "Thesauros — 추세추종 캔들 분석 자동 스캐너",
+    description: DESC,
+    locale: "ko_KR",
+    // Dynamic image is served by app/opengraph-image.tsx (Next.js
+    // convention) so we don't list a static URL here — Next picks it
+    // up automatically and emits og:image with the right dimensions.
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Thesauros — 추세추종 캔들 분석",
+    description: DESC,
+  },
+  category: "finance",
 };
 
 export const viewport = {
   themeColor: "#0a0a0a",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({
