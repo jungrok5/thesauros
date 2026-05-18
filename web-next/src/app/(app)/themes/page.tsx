@@ -93,7 +93,7 @@ export default async function ThemesPage() {
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-          테마 데이터가 적재되지 않았습니다. 매일 16시 자동 갱신 예정.
+          테마 데이터가 적재되지 않았습니다. 매일 17시 자동 갱신 예정.
         </div>
       ) : (
         <>

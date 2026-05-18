@@ -11,8 +11,9 @@ on `ubuntu-latest`).
 Retention windows chosen so the site's display + analysis still has the
 data it needs:
 
-  bars_daily      2 years  (scan_daily reads `--years 2` for the analyzer)
-  investor_flow   90 days  (site shows last 5; 90 buffers any drill-down)
+  bars (W)        5 years  (≈260 weekly rows per ticker; book MAs go up to 240)
+  bars (M)        5 years  (≈60 monthly rows per ticker)
+  investor_flow   14 days  (site shows last 5; 14 buffers any drill-down)
   disclosures     1 year   (site lists last 30; 1y for compliance dashboards)
   scan_results    inactive ≥ 30 days  (active signals stay; cron toggles flags)
   theme_daily     180 days (6-month heatmap is the max user-facing window)
@@ -78,9 +79,9 @@ Policy = Tuple[str, Union[str, Callable[[bool], int]], str]
 
 POLICIES: list[Policy] = [
     (
-        "bars_daily",
-        "DELETE FROM bars_daily WHERE bar_date < CURRENT_DATE - INTERVAL '2 years'",
-        "2 years",
+        "bars",
+        "DELETE FROM bars WHERE bar_date < CURRENT_DATE - INTERVAL '5 years'",
+        "5 years (W + M)",
     ),
     (
         "investor_flow",
@@ -123,9 +124,9 @@ POLICIES: list[Policy] = [
     # and the next cron regenerates the data from yfinance/FDR.
     # ──────────────────────────────────────────────────────────────────
     (
-        "bars_daily",
+        "bars",
         """
-        DELETE FROM bars_daily WHERE ticker NOT IN (
+        DELETE FROM bars WHERE ticker NOT IN (
             SELECT ticker FROM tickers
              WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
             UNION
@@ -199,7 +200,7 @@ def prune_one(
 
 # Per-table convenience wrappers — each ingest module imports its own.
 
-def prune_bars_daily() -> int:
+def prune_bars() -> int:
     return prune_one(*POLICIES[0][:2])
 
 

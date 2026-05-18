@@ -221,27 +221,29 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
 
 
 def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
-    """Load OHLCV for the requested ticker.
+    """Load weekly OHLCV for the requested ticker.
 
     Source order:
-      1. Supabase bars_daily (canonical, populated by KR cron via FDR)
-      2. yfinance live fetch (works locally, blocked on GH Actions Azure IPs)
-      3. Naver weekCandle for US tickers (Phase 1 wedge — gives ~2y weekly
-         OHLCV when bars_daily empty AND yfinance blocked; flagged with
-         df.attrs["grain"]="W" so the analyzer skips daily-only logic).
+      1. Supabase `bars` granularity='W' (canonical, populated by cron
+         which resamples KR FDR daily → W+M and fetches Naver weekly
+         direct for US).
+      2. Naver weekCandle live fetch — fallback for brand-new US tickers
+         the cron hasn't ingested yet (e.g. just-added watchlist names
+         analyzed via the workflow_dispatch path).
 
-    Returned df.attrs["grain"]: "D" for daily input, "W" for weekly.
+    Returned df.attrs["grain"]: always "W" — the analyzer's daily code
+    paths are inactive for the weekly-pivot architecture.
     """
-    from datetime import date, timedelta
     from app.db import get_conn
 
-    # 1) Supabase bars_daily (KR canonical, populated by cron)
+    # 1) Supabase bars (weekly)
     try:
         with get_conn(autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT bar_date, open, high, low, close, adj_close, volume "
-                    "FROM bars_daily WHERE ticker = %s ORDER BY bar_date",
+                    "FROM bars WHERE ticker = %s AND granularity = 'W' "
+                    "ORDER BY bar_date",
                     (ticker,),
                 )
                 rows = cur.fetchall()
@@ -252,33 +254,15 @@ def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
             df["date"] = pd.to_datetime(df["date"])
             for col in ("open", "high", "low", "close", "adj_close", "volume"):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-            df.attrs["grain"] = "D"
+            df.attrs["grain"] = "W"
             return df
     except Exception:
-        # Supabase unreachable in dev — fall through to live fetch.
+        # Supabase unreachable in dev — fall through to live Naver.
         pass
 
-    # 2) Live fallback (yfinance) — works locally, fails on cloud runners
-    #    for US tickers (Yahoo blocks Azure/AWS/GCP IPs).
-    import yfinance as yf
-    start = (date.today() - timedelta(days=years * 365 + 30)).isoformat()
-    try:
-        t = yf.Ticker(ticker)
-        live = t.history(start=start, auto_adjust=False, actions=False)
-    except Exception:
-        live = None
-    if live is not None and not live.empty:
-        live = live.reset_index().rename(columns={
-            "Date": "date", "Open": "open", "High": "high", "Low": "low",
-            "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
-        })
-        live["date"] = pd.to_datetime(live["date"]).dt.tz_localize(None)
-        live.attrs["grain"] = "D"
-        return live
-
-    # 3) Naver weekCandle — last resort for US tickers when yfinance is
-    #    blocked. Only useful for non-KR tickers (KR has FDR-fed bars_daily
-    #    in step 1). Caps at ~110 weekly rows ≈ 2 years.
+    # 2) Live Naver weekly — only meaningful for non-KR tickers (KR is
+    #    fully populated by the FDR cron). For US watchlist adds before
+    #    the next cron pass this gives ~2y weekly bars instantly.
     if not _looks_kr(ticker):
         try:
             from app.data.naver_bars import fetch_weekly

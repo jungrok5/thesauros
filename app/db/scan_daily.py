@@ -236,8 +236,8 @@ def _filter_movers(tickers: List[str], min_pct: float) -> List[str]:
                   SELECT ticker, bar_date, close,
                          LAG(close) OVER (PARTITION BY ticker ORDER BY bar_date) AS prev_close,
                          ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY bar_date DESC) AS rn
-                    FROM bars_daily
-                   WHERE ticker = ANY(%s)
+                    FROM bars
+                   WHERE ticker = ANY(%s) AND granularity = 'W'
                 )
                 SELECT ticker, close, prev_close
                   FROM ranked
@@ -366,13 +366,9 @@ def scan_one_local(ticker: str, years: int = 5) -> Dict[str, Any]:
       analyze_results so the site can render without FastAPI).
     """
     df = load_ticker_data(ticker, years=years)
-    if df is None:
-        return {"ticker": ticker, "status": "insufficient_history"}
-    # History threshold depends on grain: daily ~250 bars = 1y; weekly ~50 bars = 1y.
-    # US tickers via Naver come back as weekly (~110 rows = ~2y) which suffices.
-    grain = df.attrs.get("grain", "D")
-    min_rows = 50 if grain == "W" else 250
-    if len(df) < min_rows:
+    # Post-pivot input is always weekly. ~50 weekly bars = 1 year, the
+    # minimum the book engine needs to compute its short MAs reliably.
+    if df is None or len(df) < 50:
         return {"ticker": ticker, "status": "insufficient_history"}
     result = analyze_ticker(ticker, df)
     signals = extract_signals(result)

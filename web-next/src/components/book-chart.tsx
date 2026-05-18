@@ -9,7 +9,7 @@ import type {
   Time,
 } from "lightweight-charts";
 
-type Timeframe = "daily" | "weekly" | "monthly";
+type Timeframe = "weekly" | "monthly";
 
 interface ChartBar {
   t: number;
@@ -226,7 +226,7 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
     <div className="space-y-3" data-testid="book-chart">
       <div className="flex items-center justify-between">
         <div className="inline-flex rounded-md border border-input overflow-hidden" role="tablist">
-          {(["daily", "weekly", "monthly"] as Timeframe[]).map((t) => (
+          {(["weekly", "monthly"] as Timeframe[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -239,7 +239,7 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 2, 
                   : "bg-background hover:bg-muted text-muted-foreground"
               }`}
             >
-              {t === "daily" ? "일봉" : t === "weekly" ? "주봉" : "월봉"}
+              {t === "weekly" ? "주봉" : "월봉"}
             </button>
           ))}
         </div>

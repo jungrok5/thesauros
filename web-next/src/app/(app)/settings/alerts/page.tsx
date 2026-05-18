@@ -26,8 +26,8 @@ const FIELDS: Array<{ key: string; label: string; help: string }> = [
     help: "관심/보유 종목의 240MA 라인 통과 시" },
   { key: "enable_quarter_25_break",  label: "4등분선 절대자리 (25%) 깨짐",
     help: "직전 장대양봉 몸통 25% 아래로 종가 — 책 시그니처 매도 시그널" },
-  { key: "enable_daily_top5",        label: "오늘의 추천 Top 5",
-    help: "매일 16시 종합 추천 Top 5 (관심 종목 외)" },
+  { key: "enable_daily_top5",        label: "주간 추천 Top 5",
+    help: "매주 금요일 17시 종합 추천 Top 5 (관심 종목 외)" },
 ];
 
 async function fetchPrefs(email: string, name: string | null) {
@@ -66,7 +66,7 @@ export default async function AlertsSettingsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">알림 설정</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          신호가 감지되면 텔레그램으로 즉시 전송됩니다. 매일 16시 KST 자동 스캔.
+          신호가 감지되면 텔레그램으로 즉시 전송됩니다. 매주 금요일 17시 KST 자동 스캔.
         </p>
       </header>
 

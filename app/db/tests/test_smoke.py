@@ -18,8 +18,8 @@ from app.db import get_conn   # noqa: E402
 
 EXPECTED_TABLES = {
     "users", "tickers", "watchlist", "trade_log", "scan_results",
-    "news", "disclosures", "financials_eval", "factors_eval",
-    "alerts", "alert_preferences", "macro_state", "bars_daily",
+    "disclosures", "financials_eval", "factors_eval",
+    "alerts", "alert_preferences", "macro_state", "bars",
     "health_ping", "_migrations",
 }
 

@@ -49,14 +49,15 @@ TRADING_DAYS_GRACE = 5
 # FRESHNESS — last data point must be within N days of today
 # ─────────────────────────────────────────────────────────────────────
 
-def test_bars_daily_freshness():
-    """Daily OHLCV. Cron-fed by ingest_bars_daily (FDR+yfinance) every
-    weekday 16:00 KST."""
-    latest = _scalar("SELECT MAX(bar_date) FROM bars_daily")
-    assert latest is not None, "bars_daily is empty"
+def test_bars_weekly_freshness():
+    """Weekly OHLCV. Cron-fed by ingest_bars (FDR resample W+M for KR,
+    Naver weekCandle for US watchlist) every Friday 17:00 KST. Grace
+    window is 8 days since weekly bars only land once a week."""
+    latest = _scalar("SELECT MAX(bar_date) FROM bars WHERE granularity = 'W'")
+    assert latest is not None, "bars (granularity=W) is empty"
     age = (_today() - latest).days
-    assert age <= TRADING_DAYS_GRACE, (
-        f"bars_daily stale: latest={latest} ({age}d old) — ingest_bars_daily not running?"
+    assert age <= 8, (
+        f"bars weekly stale: latest={latest} ({age}d old) — ingest_bars cron not running?"
     )
 
 
@@ -155,24 +156,25 @@ def test_tickers_universe_size():
     )
 
 
-def test_bars_daily_ticker_coverage():
-    """Bars should cover at least the KR universe (≈2,700) on the most
-    recent *settled* trading day. A partial in-progress day at the top
-    (e.g. local smoke-test that only touched 100 tickers) is ignored —
-    we look at the most recent day with at least 1,000 rows."""
+def test_bars_weekly_ticker_coverage():
+    """Weekly bars should cover the KR universe (≈2,700) on the most
+    recent *settled* week (defined as the most recent week-ending date
+    that has at least 1,000 tickers covered)."""
     n = _scalar(
         """
-        SELECT COUNT(DISTINCT ticker) FROM bars_daily
-        WHERE bar_date = (
-            SELECT bar_date FROM bars_daily
+        SELECT COUNT(DISTINCT ticker) FROM bars
+        WHERE granularity = 'W'
+          AND bar_date = (
+            SELECT bar_date FROM bars
+            WHERE granularity = 'W'
             GROUP BY bar_date HAVING COUNT(*) >= 1000
             ORDER BY bar_date DESC LIMIT 1
         )
         """
     )
     assert n is not None and n >= 2000, (
-        f"bars_daily most-recent-settled-day coverage = {n} tickers, "
-        "expected ≥ 2000 — ingest_bars_daily not running across full universe?"
+        f"bars weekly most-recent-settled-week coverage = {n} tickers, "
+        "expected ≥ 2000 — ingest_bars not running across full universe?"
     )
 
 
@@ -224,13 +226,13 @@ def test_investor_flow_values_non_empty():
     )
 
 
-def test_bars_daily_recent_prices_positive():
-    """Sanity: no negative/zero closing prices on recent bars."""
+def test_bars_recent_prices_positive():
+    """Sanity: no negative/zero closing prices on recent bars (any granularity)."""
     bad = _scalar(
-        "SELECT COUNT(*) FROM bars_daily "
-        "WHERE bar_date >= CURRENT_DATE - INTERVAL '7 days' AND close <= 0"
+        "SELECT COUNT(*) FROM bars "
+        "WHERE bar_date >= CURRENT_DATE - INTERVAL '60 days' AND close <= 0"
     )
-    assert bad == 0, f"{bad} bars_daily rows have non-positive close in last week"
+    assert bad == 0, f"{bad} bars rows have non-positive close in last 60 days"
 
 
 # ─────────────────────────────────────────────────────────────────────

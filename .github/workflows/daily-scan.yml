@@ -43,15 +43,23 @@ jobs:
           # keeps the in-day high-water-mark below the limit.
           python -m app.db.retention
 
-      - name: Refresh bars_daily (KR via FDR + US via yfinance)
+      - name: Refresh bars (KR W+M resampled from FDR; US watchlist via Naver)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          # Incremental OHLCV catch-up. Must run BEFORE scan_daily — otherwise
-          # the scanner sees yesterday's prices.
-          python -m app.db.ingest_bars_daily
+          # Weekly bars only update once a week — running Mon-Thu would
+          # just rewrite the same in-progress W bar. Friday after KRX
+          # close (08:00 UTC = 17 KST) captures the settled week.
+          # workflow_dispatch always runs so manual reruns can refresh
+          # mid-week if needed.
+          dow=$(date -u +%u)   # 1=Mon..5=Fri..7=Sun
+          if [ "$dow" != "5" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "Skipping bar ingest on dow=$dow (only Friday + manual dispatch)"
+            exit 0
+          fi
+          python -m app.db.ingest_bars
 
       - name: Run scan_daily
         env:
@@ -68,14 +76,18 @@ jobs:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          # Universe: KOSPI + KOSDAQ only. Site primary purpose = KR 종가매매.
-          # `--years 2` keeps bars_daily within the 500MB free tier.
-          # User-watchlisted US tickers (e.g. AAPL) are auto-unioned in
-          # via _watchlist_tickers() inside scan_daily — so personally
-          # tracked US names still get full analysis on the next run.
-          # Non-watchlisted US tickers fall back to /api/chart's live
-          # yfinance path on the stock detail page (chart only, no
-          # 17-pattern analysis).
+          # Universe: KOSPI + KOSDAQ only. Site primary purpose = KR swing
+          # trading on weekly bars. User-watchlisted US tickers are
+          # auto-handled via the watchlist→analyze-ticker.yml dispatch
+          # path (Naver weekly source).
+          # Friday-only for the same reason as bar ingest: weekly W bar
+          # didn't change Mon-Thu so re-scanning would just rewrite
+          # identical analyze_results.
+          dow=$(date -u +%u)
+          if [ "$dow" != "5" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "Skipping scan on dow=$dow (only Friday + manual dispatch)"
+            exit 0
+          fi
           python -m app.db.scan_daily --markets KOSPI KOSDAQ --years 2
 
       - name: Publish macro state

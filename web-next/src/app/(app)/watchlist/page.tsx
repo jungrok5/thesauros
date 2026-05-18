@@ -67,7 +67,7 @@ export default async function WatchlistPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">관심 종목</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          종가매매 모드 — 매일 16시 책 신호 자동 갱신. 보유 종목에 EXIT 신호 발생 시 텔레그램 알림.
+          주봉 종가매매 모드 — 매주 금요일 17시 KST 책 신호 자동 갱신. 보유 종목에 EXIT 신호 발생 시 텔레그램 알림.
         </p>
       </header>
 

@@ -264,7 +264,7 @@ export default async function StockDetailPage({ params }: PageProps) {
             </div>
             <div className="mt-2 text-muted-foreground">
               관심 종목에 추가하면 즉시 분석이 시작됩니다 (~3분).
-              혹은 다음 일일 스캔 (매일 17시 KST) 에 자동으로 분석됩니다.
+              혹은 다음 주간 스캔 (매주 금요일 17시 KST) 에 자동으로 분석됩니다.
             </div>
           </div>
         )

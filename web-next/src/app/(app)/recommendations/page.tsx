@@ -194,7 +194,7 @@ export default async function RecommendationsPage({
             추천 종목
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            매일 16시 자동 스캔 (추세 + 17종 패턴 + 거래량).{" "}
+            매주 금요일 17시 KST 자동 스캔 — 주봉 기반 추세 + 17종 패턴 + 거래량.{" "}
             <span className="font-mono">강도 ≥ {minStrength.toFixed(2)}</span> 만 표시.
           </p>
         </div>

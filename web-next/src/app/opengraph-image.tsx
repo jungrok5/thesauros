@@ -72,7 +72,7 @@ export default async function OG() {
               lineHeight: 1.3,
             }}
           >
-            KOSPI · KOSDAQ 매일 16시 자동 스캔
+            KOSPI · KOSDAQ 매주 금요일 주봉 자동 스캔
           </div>
           <div
             style={{

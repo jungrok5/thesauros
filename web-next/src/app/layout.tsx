@@ -21,7 +21,7 @@ const SITE_URL =
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 const DESC =
-  "한국 종목 (KOSPI / KOSDAQ) 매일 16시 자동 스캔 — 17종 캔들 패턴 + " +
+  "한국 종목 (KOSPI / KOSDAQ) 매주 금요일 자동 주봉 스캔 — 17종 캔들 패턴 + " +
   "추세 + 4등분선 + 외국인·기관 매매 + 거시 5축 다이얼. 텔레그램·웹 푸시 알림. " +
   "강환국·그레이엄·마법공식·버핏형 가치투자 게이트.";
 

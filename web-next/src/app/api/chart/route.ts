@@ -1,37 +1,28 @@
 /**
- * GET /api/chart?ticker=...&timeframe=daily|weekly|monthly&years=N
+ * GET /api/chart?ticker=...&timeframe=weekly|monthly&years=N
  *
- * Computes the chart payload ON DEMAND from Supabase `bars_daily`:
- *   - bars: OHLCV resampled to the requested timeframe
- *   - mas:  10/20/60/120/240 moving averages via SQL window functions
- *   - patterns / quarter_lines / last_candle: pulled from
- *     `analyze_results.result` (computed by the daily scan cron)
- *
- * This replaces the `chart_data` precomputed cache, which was using up
- * ~200MB of Supabase free-tier storage for marginal speed gain.
+ * Reads pre-resampled bars from Supabase `bars` (granularity 'W' or 'M').
+ * The Phase 2 weekly-pivot dropped daily storage entirely — book strategy
+ * is swing trading and the engine's primary signals are 월봉 240MA +
+ * 월봉/주봉 10MA, so daily storage added cost without analysis value.
  *
  * Response shape (unchanged so BookChart needs no edits):
  *   { ticker, timeframe, bars, mas, patterns, quarter_lines, last_candle }
+ *
+ * For brand-new US tickers the user views before the next bar-ingest
+ * cron has run, we fall back to live Naver (same source the cron uses).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServerClient } from "@/lib/supabase";
 
-// We can't use a top-level `revalidate` here because the route needs
-// auth() per request (different users could see the same ticker; auth
-// must run on every hit). `force-dynamic` ensures the route handler
-// always runs, BUT the Yahoo fallback inside (fetchYahooBars) still
-// uses `next: { revalidate: 86400 }` on its fetch — that caches the
-// upstream HTTP response keyed by URL, not the route response. So
-// every user authenticates fresh, while a popular non-watchlisted US
-// ticker hits Yahoo at most once per day. Intentional, not a bug.
 export const dynamic = "force-dynamic";
 
 const TICKER_RE = /^[A-Z0-9._-]{1,16}$/i;
-const TIMEFRAME_RE = /^(daily|weekly|monthly)$/;
+const TIMEFRAME_RE = /^(weekly|monthly)$/;
 
 type Bar = {
-  t: number;          // unix seconds
+  t: number;
   open: number; high: number; low: number; close: number; volume: number;
 };
 type MAPoint = { t: number; value: number };
@@ -49,70 +40,70 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url);
   const ticker = (url.searchParams.get("ticker") ?? "").toUpperCase();
-  const timeframe = url.searchParams.get("timeframe") ?? "weekly";
-  const yearsStr = url.searchParams.get("years") ?? "2";
+  const timeframe = (url.searchParams.get("timeframe") ?? "weekly") as
+    | "weekly"
+    | "monthly";
+  const yearsStr = url.searchParams.get("years") ?? "5";
 
   if (!TICKER_RE.test(ticker)) {
     return NextResponse.json({ error: "invalid ticker" }, { status: 400 });
   }
   if (!TIMEFRAME_RE.test(timeframe)) {
-    return NextResponse.json({ error: "invalid timeframe" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid timeframe (weekly|monthly only)" },
+      { status: 400 },
+    );
   }
   const years = Number(yearsStr);
   if (!Number.isInteger(years) || years < 1 || years > 20) {
     return NextResponse.json({ error: "invalid years" }, { status: 400 });
   }
 
+  const granularity = timeframe === "weekly" ? "W" : "M";
   const sb = getServerClient();
 
-  // 1) Pull all daily bars for this ticker. We need full history (not just
-  //    `years`) so MAs computed with rolling windows have proper warmup.
   const { data: rows, error } = await sb
-    .from("bars_daily")
+    .from("bars")
     .select("bar_date, open, high, low, close, volume")
     .eq("ticker", ticker)
+    .eq("granularity", granularity)
     .order("bar_date", { ascending: true });
 
   if (error) {
-    console.error("bars_daily read:", error.message);
+    console.error("bars read:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
 
-  let daily: DailyBar[];
+  let bars: ResampledBar[];
   let liveFallback = false;
+
   if (!rows || rows.length === 0) {
-    // No bars in DB — try a live yfinance fetch. This is the path for
-    // US tickers not watchlisted (cron doesn't scan them by default).
-    // KR tickers should always be in DB so an empty result means an
-    // invalid ticker or fresh listing not yet picked up by the weekly
-    // tickers-refresh cron.
-    const live = await fetchYahooBars(ticker, years);
+    // Fallback to live Naver — same source the cron uses, so a user
+    // viewing a brand-new ticker right after watchlisting still gets
+    // a chart while the workflow_dispatch is still running.
+    const live = await fetchNaverBars(ticker, granularity);
     if (!live.length) {
       return NextResponse.json({ error: "no data", ticker }, { status: 404 });
     }
-    daily = live;
+    bars = live;
     liveFallback = true;
   } else {
-    daily = rows.map((r) => ({
+    bars = rows.map((r) => ({
       date: new Date(r.bar_date),
       open: Number(r.open), high: Number(r.high), low: Number(r.low),
       close: Number(r.close), volume: Number(r.volume) || 0,
     }));
   }
-  // Skip resample for daily timeframe (identity).
-  const resampled: DailyBar[] = resample(daily, timeframe as "daily" | "weekly" | "monthly");
 
-  // 3) Compute MAs over the FULL resampled series so warmup is honored,
-  //    then slice the visible window.
-  const mas = computeMAs(resampled, [10, 20, 60, 120, 240]);
-
+  // MAs over full series for warmup, then slice to visible window.
+  const mas = computeMAs(bars, [10, 20, 60, 120, 240]);
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - years);
-  const visibleStart = resampled.findIndex((b) => b.date >= cutoff);
-  const visible = visibleStart < 0 ? resampled : resampled.slice(visibleStart);
+  const visibleStart = bars.findIndex((b) => b.date >= cutoff);
+  const visible = visibleStart < 0 ? bars : bars.slice(visibleStart);
   const startIdx = visibleStart < 0 ? 0 : visibleStart;
 
-  const bars: Bar[] = visible.map((b) => ({
+  const out: Bar[] = visible.map((b) => ({
     t: Math.floor(b.date.getTime() / 1000),
     open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume,
   }));
@@ -128,8 +119,8 @@ export async function GET(req: NextRequest) {
       }));
   }
 
-  // 4) Patterns + quarter_lines + last_candle from analyze_results (daily-based;
-  //    a single shared analysis per ticker, displayed on every timeframe).
+  // Patterns + quarter_lines + last_candle from analyze_results (single
+  // shared analysis per ticker, displayed on both weekly and monthly).
   const { data: ar } = await sb
     .from("analyze_results")
     .select("result")
@@ -137,8 +128,6 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
   const result = (ar?.result ?? {}) as AnalysisFullResult;
   const patterns = (result.patterns ?? []) as unknown[];
-  // analyze_results.result.patterns includes both completed + in-progress;
-  // chart prefers completed-only ones (consistent with prior behavior).
   const completedPatterns = patterns.filter(
     (p): p is { completed?: boolean } => typeof p === "object" && p !== null,
   ).filter((p) => p.completed !== false);
@@ -146,68 +135,24 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ticker,
     timeframe,
-    bars,
+    bars: out,
     mas: slicedMas,
-    // Live-fallback path has no analyzer output — only chart + MAs.
     patterns: liveFallback ? [] : completedPatterns,
     quarter_lines: liveFallback ? null : (result.quarter_lines ?? null),
     last_candle: liveFallback ? null : (result.last_candle ?? null),
-    source: liveFallback ? "yahoo_live" : "supabase_cron",
+    source: liveFallback ? "naver_live" : "supabase_cron",
   });
 }
 
 // ---- helpers ----------------------------------------------------------
 
-type DailyBar = {
-  date: Date; open: number; high: number; low: number; close: number; volume: number;
+type ResampledBar = {
+  date: Date; open: number; high: number; low: number;
+  close: number; volume: number;
 };
 
-function resample(daily: DailyBar[], tf: "daily" | "weekly" | "monthly"): DailyBar[] {
-  if (tf === "daily") return daily;
-  const out: DailyBar[] = [];
-  let bucket: DailyBar[] = [];
-  const key = (d: Date) => {
-    if (tf === "weekly") {
-      // ISO week: Monday-anchored
-      const tmp = new Date(d);
-      const day = (tmp.getDay() + 6) % 7;   // Mon=0..Sun=6
-      tmp.setDate(tmp.getDate() - day);
-      tmp.setHours(0, 0, 0, 0);
-      return tmp.getTime();
-    }
-    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-  };
-  let curKey: number | null = null;
-  for (const b of daily) {
-    const k = key(b.date);
-    if (curKey === null) curKey = k;
-    if (k !== curKey) {
-      if (bucket.length > 0) out.push(closeBucket(bucket, tf));
-      bucket = [];
-      curKey = k;
-    }
-    bucket.push(b);
-  }
-  if (bucket.length > 0) out.push(closeBucket(bucket, tf));
-  return out;
-}
-
-function closeBucket(bucket: DailyBar[], tf: "weekly" | "monthly"): DailyBar {
-  const open = bucket[0].open;
-  const close = bucket[bucket.length - 1].close;
-  let high = bucket[0].high, low = bucket[0].low, volume = 0;
-  for (const b of bucket) {
-    if (b.high > high) high = b.high;
-    if (b.low < low) low = b.low;
-    volume += b.volume;
-  }
-  // anchor date: bucket start
-  const anchor = tf === "weekly" ? bucket[0].date : bucket[0].date;
-  return { date: anchor, open, high, low, close, volume };
-}
-
 function computeMAs(
-  bars: DailyBar[],
+  bars: ResampledBar[],
   windows: number[],
 ): Record<string, { date: Date; value: number | null }[]> {
   const out: Record<string, { date: Date; value: number | null }[]> = {};
@@ -233,54 +178,57 @@ function computeMAs(
 }
 
 /**
- * Live fallback for tickers not yet ingested into bars_daily. Used by US
- * names the user searched without watchlisting — the daily cron only
- * ingests KR + watchlisted US. Yahoo v8 chart returns full history with
- * one HTTP call. Cached per ticker for 1 day via Next.js `revalidate`.
+ * Live Naver fallback for brand-new tickers. Same endpoint app/data/
+ * naver_bars.py uses on the Python side; tries .O, .K, .A suffixes.
+ * Cached at the Next.js layer for 1h per (ticker, granularity) URL.
  */
-async function fetchYahooBars(ticker: string, years: number): Promise<DailyBar[]> {
-  const range = years >= 5 ? "5y" : years >= 2 ? "5y" : "2y";
-  const url =
-    "https://query1.finance.yahoo.com/v8/finance/chart/" +
-    encodeURIComponent(ticker) +
-    `?interval=1d&range=${range}`;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        Accept: "application/json,*/*;q=0.1",
-      },
-      // Cache for 24h per (ticker, timeframe) URL.
-      next: { revalidate: 86400 },
+async function fetchNaverBars(
+  ticker: string, granularity: "W" | "M",
+): Promise<ResampledBar[]> {
+  const periodType = granularity === "W" ? "weekCandle" : "monthCandle";
+  const endDate = new Date(Date.now() + 86_400_000);
+  const startDate = new Date(Date.now() - 365 * 10 * 86_400_000);
+  const fmt = (d: Date) =>
+    d.toISOString().slice(0, 19).replace(/[-:T]/g, "");
+
+  for (const suffix of [".O", ".K", ".A"]) {
+    const symbol = ticker + suffix;
+    const qs = new URLSearchParams({
+      startDateTime: fmt(startDate),
+      endDateTime: fmt(endDate),
+      periodType,
     });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const r = json?.chart?.result?.[0];
-    if (!r) return [];
-    const ts: number[] = r.timestamp ?? [];
-    const q = r.indicators?.quote?.[0] ?? {};
-    const opens: (number | null)[] = q.open ?? [];
-    const highs: (number | null)[] = q.high ?? [];
-    const lows: (number | null)[] = q.low ?? [];
-    const closes: (number | null)[] = q.close ?? [];
-    const vols: (number | null)[] = q.volume ?? [];
-    const out: DailyBar[] = [];
-    for (let i = 0; i < ts.length; i++) {
-      const c = closes[i];
-      if (c == null) continue;   // skip gaps
-      out.push({
-        date: new Date(ts[i] * 1000),
-        open: opens[i] ?? c,
-        high: highs[i] ?? c,
-        low: lows[i] ?? c,
-        close: c,
-        volume: vols[i] ?? 0,
-      });
+    try {
+      const res = await fetch(
+        `https://api.stock.naver.com/chart/foreign/item/${symbol}?${qs}`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0",
+            Referer: "https://m.stock.naver.com/",
+            Accept: "application/json",
+          },
+          next: { revalidate: 3600 },
+        },
+      );
+      if (!res.ok) continue;
+      const json = await res.json();
+      const infos = (json?.priceInfos ?? []) as Array<{
+        localDate: string;
+        openPrice: number; highPrice: number; lowPrice: number;
+        closePrice: number; accumulatedTradingVolume: number;
+      }>;
+      if (!infos.length) continue;
+      return infos.map((p) => ({
+        date: new Date(
+          `${p.localDate.slice(0, 4)}-${p.localDate.slice(4, 6)}-${p.localDate.slice(6, 8)}T00:00:00Z`,
+        ),
+        open: Number(p.openPrice), high: Number(p.highPrice),
+        low: Number(p.lowPrice), close: Number(p.closePrice),
+        volume: Number(p.accumulatedTradingVolume) || 0,
+      }));
+    } catch (e) {
+      console.warn("naver fetch %s/%s: %s", symbol, periodType, e);
     }
-    return out;
-  } catch (e) {
-    console.error("yahoo chart fallback:", e);
-    return [];
   }
+  return [];
 }

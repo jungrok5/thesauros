@@ -57,7 +57,7 @@ export async function InvestorFlow({ ticker }: Props) {
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
-        외국인/기관 매매 동향 데이터 없음 (KIS API 자동 갱신, 매일 16시 KST)
+        외국인/기관 매매 동향 데이터 없음 (Naver Finance 자동 갱신, 매일 17시 KST)
       </div>
     );
   }

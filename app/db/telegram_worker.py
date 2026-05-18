@@ -204,10 +204,11 @@ def _user_prefs(user_id: str) -> Dict[str, bool]:
 
 
 def _latest_close(ticker: str) -> Optional[float]:
+    """Latest weekly close — used to compare against target/stop levels."""
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT close FROM bars_daily WHERE ticker = %s "
+                "SELECT close FROM bars WHERE ticker = %s AND granularity = 'W' "
                 "ORDER BY bar_date DESC LIMIT 1",
                 (ticker,),
             )

@@ -5,11 +5,12 @@ name: Analyze Single Ticker
 # dispatch to results in DB).
 #
 # Works for both KR and US tickers:
-#   - KR: scan_daily reads from bars_daily (already populated by the
-#         nightly cron). Single-ticker run is fast.
-#   - US: bars_daily may be empty for non-watchlisted US tickers, so
-#         scan_daily's load_ticker_data falls back to a live yfinance
-#         fetch and writes the result to analyze_results + scan_results.
+#   - KR: ingest_bars resamples FDR daily → W+M, scan_daily reads W bars
+#         from `bars` and computes the 17-pattern analysis.
+#   - US: ingest_bars fetches Naver weekCandle + monthCandle directly
+#         (yfinance is blocked on cloud runners), scan_daily analyses
+#         the weekly view. Book primary signal stays valid since the
+#         engine prioritizes monthly + weekly anyway.
 #
 # Fan-in safety: concurrent dispatches for the same ticker collapse via
 # `concurrency` (per-ticker group). Dispatches for different tickers
@@ -45,6 +46,17 @@ jobs:
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
 
+      - name: Ingest bars (weekly + monthly) for this ticker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # One-shot bar ingest so the chart endpoint (/api/chart) AND
+          # the analyzer both see the bars. KR uses FDR daily → resample
+          # W+M, US uses Naver weekCandle + monthCandle directly.
+          python -m app.db.ingest_bars --tickers "${{ inputs.ticker }}"
+
       - name: Scan one ticker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -52,9 +64,9 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
-          # scan_daily writes analyze_results + scan_results for this
-          # ticker. load_ticker_data inside is bars_daily → yfinance
-          # fallback for missing US history.
+          # scan_daily reads bars(granularity='W') and writes
+          # analyze_results + scan_results. The previous step seeded
+          # bars; this step computes the 17-pattern analysis.
           python -m app.db.scan_daily --tickers "${{ inputs.ticker }}" --years 2
 
       - name: Send any new alerts

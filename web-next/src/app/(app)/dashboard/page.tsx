@@ -200,7 +200,7 @@ export default async function DashboardPage() {
       <div className="pt-4 border-t border-border/60">
         <h2 className="text-sm font-semibold tracking-tight">월간/분기 거시 지표</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          CPI · PPI · M2 · 실업률 등 발표 빈도가 낮은 지표. 매일 16시 KST cron 으로 갱신.
+          CPI · PPI · M2 · 실업률 등 발표 빈도가 낮은 지표. 매일 17시 KST cron 으로 갱신.
           실시간 시세는 위 띠를 참고하세요.
         </p>
       </div>
