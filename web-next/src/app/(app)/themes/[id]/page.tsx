@@ -6,7 +6,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ActionBadge } from "@/components/action-badge";
+import { FreshnessChip } from "@/components/freshness-chip";
 import { getServerClient } from "@/lib/supabase";
+import {
+  compositeScore,
+  pickFreshest,
+  type FreshnessPatternInput,
+} from "@/lib/freshness";
 
 // Daily-refreshed; 60s ISR.
 export const revalidate = 60;
@@ -41,13 +47,21 @@ async function fetchTheme(themeId: number) {
 
   const memberTickers = (members ?? []).map((m) => m.ticker as string);
   const signalsByTicker: Record<string, { type: string; strength: number; reason: string }> = {};
+  const analyzeByTicker = new Map<
+    string,
+    { patterns?: FreshnessPatternInput[]; last_close?: number }
+  >();
   if (memberTickers.length > 0) {
-    const { data: signals } = await sb
-      .from("scan_results")
-      .select("ticker, signal_type, strength, reason")
-      .in("ticker", memberTickers)
-      .like("signal_type", "action_%")
-      .eq("is_active", true);
+    const [{ data: signals }, { data: ar }] = await Promise.all([
+      sb.from("scan_results")
+        .select("ticker, signal_type, strength, reason")
+        .in("ticker", memberTickers)
+        .like("signal_type", "action_%")
+        .eq("is_active", true),
+      sb.from("analyze_results")
+        .select("ticker, result")
+        .in("ticker", memberTickers),
+    ]);
     for (const s of signals ?? []) {
       const prev = signalsByTicker[s.ticker];
       const cur = {
@@ -57,6 +71,12 @@ async function fetchTheme(themeId: number) {
       };
       if (!prev || cur.strength > prev.strength) signalsByTicker[s.ticker] = cur;
     }
+    for (const row of ar ?? []) {
+      analyzeByTicker.set(
+        (row as { ticker: string }).ticker,
+        (row as { result: { patterns?: FreshnessPatternInput[]; last_close?: number } }).result,
+      );
+    }
   }
 
   return {
@@ -64,12 +84,25 @@ async function fetchTheme(themeId: number) {
     daily,
     members: (members ?? []).map((m) => {
       const t = (m as { tickers?: { name?: string; market?: string; sector?: string } }).tickers;
+      const signal = signalsByTicker[m.ticker as string] ?? null;
+      const analyze = analyzeByTicker.get(m.ticker as string) ?? null;
+      const lastClose = analyze?.last_close ?? 0;
+      const fresh = lastClose > 0 && analyze?.patterns
+        ? pickFreshest(analyze.patterns, lastClose)
+        : null;
+      const composite = signal && fresh
+        ? compositeScore(signal.strength, fresh.runupPct)
+        : signal
+          ? compositeScore(signal.strength, null)
+          : null;
       return {
         ticker: m.ticker as string,
         name: t?.name ?? null,
         market: t?.market ?? null,
         sector: t?.sector ?? null,
-        signal: signalsByTicker[m.ticker as string] ?? null,
+        signal,
+        fresh: fresh ? { kind: fresh.kind, runupPct: fresh.runupPct } : null,
+        composite,
       };
     }),
   };
@@ -84,13 +117,14 @@ export default async function ThemeDetailPage({ params }: PageProps) {
   if (!result) notFound();
   const { theme, daily, members } = result;
 
-  // Sort: BUY signals first, then by ticker
+  // Sort by composite score (strength × freshness multiplier) descending —
+  // surface fresh + strong buys at the top, stale ones (high strength but
+  // long-gone breakout) drop to the bottom. Tickers with no buy signal
+  // sort to the end.
   const sorted = [...members].sort((a, b) => {
-    const aBuy = a.signal?.type?.startsWith("action_strong_buy") ? 2
-               : a.signal?.type?.startsWith("action_buy") ? 1 : 0;
-    const bBuy = b.signal?.type?.startsWith("action_strong_buy") ? 2
-               : b.signal?.type?.startsWith("action_buy") ? 1 : 0;
-    if (aBuy !== bBuy) return bBuy - aBuy;
+    const ac = a.composite ?? -1;
+    const bc = b.composite ?? -1;
+    if (ac !== bc) return bc - ac;
     return a.ticker.localeCompare(b.ticker);
   });
 
@@ -124,6 +158,14 @@ export default async function ThemeDetailPage({ params }: PageProps) {
         </p>
       </header>
 
+      <div className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2">
+        <strong>⭐ 종합 = 강도 × 신선도 배수</strong> — 정렬 기본값. 강하면서 지금 진입 자리인 종목이 위로.
+        같은 강도라도 돌파 +3% (신선) 이 +70% (stale) 보다 위. <strong>신선도</strong> 색상:{" "}
+        <span className="px-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">🟢 0-5%</span>{" "}
+        <span className="px-1 rounded bg-yellow-500/10 text-yellow-800 dark:text-yellow-300">15-30%</span>{" "}
+        <span className="px-1 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">⚠ 30%↑</span>.
+      </div>
+
       <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
@@ -131,33 +173,42 @@ export default async function ThemeDetailPage({ params }: PageProps) {
               <th className="px-3 py-2 font-medium text-muted-foreground">티커</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">종목명</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">시장</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">섹터</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">신호</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground text-right">강도</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">신호 · 신선도</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground text-right">종합 (강도)</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((m) => {
               const action = m.signal ? ACTION_BY_SIGNAL[m.signal.type] : null;
               return (
-                <tr key={m.ticker} className="border-t border-border hover:bg-muted/30 transition-colors">
+                <tr key={m.ticker} className="border-t border-border hover:bg-muted/30 transition-colors align-top">
                   <td className="px-3 py-2 font-mono">
                     <Link href={`/stocks/${encodeURIComponent(m.ticker)}`} className="hover:underline">
                       {m.ticker}
                     </Link>
                   </td>
-                  <td className="px-3 py-2">{m.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{m.market ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[180px]">
-                    {m.sector ?? "—"}
-                  </td>
                   <td className="px-3 py-2">
-                    {action ? <ActionBadge action={action} size="sm" /> : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    <div>{m.name ?? "—"}</div>
+                    <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">{m.sector ?? ""}</div>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">
-                    {m.signal?.strength?.toFixed(2) ?? "—"}
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{m.market ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <div className="space-y-1">
+                      {action ? (
+                        <ActionBadge action={action} size="sm" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                      {m.fresh && <FreshnessChip fresh={m.fresh} compact />}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="font-mono text-sm font-semibold">
+                      {m.composite != null ? m.composite.toFixed(2) : "—"}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      ({m.signal?.strength?.toFixed(2) ?? "—"})
+                    </div>
                   </td>
                 </tr>
               );

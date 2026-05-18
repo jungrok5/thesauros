@@ -19,6 +19,7 @@ import { ScoreBreakdown } from "@/components/score-breakdown";
 import { NewBadge, hoursSince } from "@/components/new-badge";
 import { Sparkline } from "@/components/sparkline";
 import { InvestorFlowChip, type FlowSummary } from "@/components/investor-flow-chip";
+import { FreshnessChip } from "@/components/freshness-chip";
 import { getServerClient, type ScanResultRow } from "@/lib/supabase";
 import {
   BEARISH_PATTERN_KEYS,
@@ -111,46 +112,6 @@ function actionFor(signalType: string): ActionType {
   return ACTION_BY_SIGNAL[signalType] ?? "HOLD";
 }
 
-/**
- * Render the freshness state as a small chip: emerald for fresh (<5%),
- * yellow for chasing zone (5-30%), amber for stale (>30%). The
- * recommendations list otherwise collapses all 1.00-strength rows
- * into a visually identical block; freshness is the single most
- * useful differentiator.
- */
-function FreshnessChip({ fresh }: { fresh: Row["fresh"] }) {
-  if (!fresh) {
-    return (
-      <span className="text-[10px] text-muted-foreground/60">신선도 ?</span>
-    );
-  }
-  const r = fresh.runupPct;
-  let style: string, label: string;
-  if (r < 0) {
-    style = "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/40";
-    label = `돌파선 아래 ${r.toFixed(0)}%`;
-  } else if (r < 5) {
-    style = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/50";
-    label = `돌파 +${r.toFixed(0)}% 🟢 신선`;
-  } else if (r < 15) {
-    style = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
-    label = `돌파 +${r.toFixed(0)}% 추격 가능`;
-  } else if (r < 30) {
-    style = "bg-yellow-500/10 text-yellow-800 dark:text-yellow-300 border-yellow-500/40";
-    label = `돌파 +${r.toFixed(0)}% 일부 지남`;
-  } else {
-    style = "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/50";
-    label = `돌파 +${r.toFixed(0)}% ⚠ 진입 자리 지남`;
-  }
-  return (
-    <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium ${style}`}
-      title={`${fresh.kind} 돌파선 대비 현재가 ${r >= 0 ? "+" : ""}${r.toFixed(1)}%`}
-    >
-      {label}
-    </span>
-  );
-}
 
 /**
  * Find the freshest completed bullish pattern's distance past its

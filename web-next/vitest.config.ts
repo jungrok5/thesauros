@@ -16,8 +16,10 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    include: ["src/**/__tests__/**/*.test.ts", "src/**/*.test.ts"],
+    // jsdom needed for component-render tests (FreshnessChip etc.) —
+    // pure logic tests don't care which environment they run in.
+    environment: "jsdom",
+    include: ["src/**/__tests__/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
     exclude: ["e2e/**", "node_modules/**", ".next/**"],
   },
 });

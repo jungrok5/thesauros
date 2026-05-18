@@ -9,6 +9,11 @@ import Link from "next/link";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { TradeLogForm } from "@/components/trade-log-form";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
+import { FreshnessChip } from "@/components/freshness-chip";
+import {
+  pickFreshest,
+  type FreshnessPatternInput,
+} from "@/lib/freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -54,12 +59,20 @@ async function fetchHoldingsWithSignals(email: string, name: string | null) {
   const tickers = watchList.map((w) => w.ticker);
 
   const signalsByTicker: Record<string, { type: string; strength: number; reason: string }[]> = {};
+  const analyzeByTicker = new Map<
+    string,
+    { patterns?: FreshnessPatternInput[]; last_close?: number }
+  >();
   if (tickers.length > 0) {
-    const { data: signals } = await sb
-      .from("scan_results")
-      .select("ticker, signal_type, strength, reason, timeframe")
-      .in("ticker", tickers)
-      .eq("is_active", true);
+    const [{ data: signals }, { data: ar }] = await Promise.all([
+      sb.from("scan_results")
+        .select("ticker, signal_type, strength, reason, timeframe")
+        .in("ticker", tickers)
+        .eq("is_active", true),
+      sb.from("analyze_results")
+        .select("ticker, result")
+        .in("ticker", tickers),
+    ]);
     for (const s of signals ?? []) {
       signalsByTicker[s.ticker] = signalsByTicker[s.ticker] ?? [];
       signalsByTicker[s.ticker].push({
@@ -67,6 +80,12 @@ async function fetchHoldingsWithSignals(email: string, name: string | null) {
         strength: Number(s.strength),
         reason: String(s.reason ?? ""),
       });
+    }
+    for (const row of ar ?? []) {
+      analyzeByTicker.set(
+        (row as { ticker: string }).ticker,
+        (row as { result: { patterns?: FreshnessPatternInput[]; last_close?: number } }).result,
+      );
     }
   }
 
@@ -89,6 +108,17 @@ async function fetchHoldingsWithSignals(email: string, name: string | null) {
     else if (buy) { status = "green"; statusLabel = "🟢 매수 신호"; }
     else if (sigs.length > 0) { status = "yellow"; statusLabel = "🟡 신호 있음"; }
     else { status = "gray"; statusLabel = "⚪ 신호 없음"; }
+    // Freshness on BUY signals — distinguishes "fresh entry" vs
+    // "already +70% past breakout, not a new entry but still trending".
+    let fresh: { kind: string; runupPct: number } | null = null;
+    if (buy) {
+      const analyze = analyzeByTicker.get(w.ticker as string);
+      const lastClose = analyze?.last_close ?? 0;
+      if (lastClose > 0 && analyze?.patterns) {
+        const f = pickFreshest(analyze.patterns, lastClose);
+        if (f) fresh = { kind: f.kind, runupPct: f.runupPct };
+      }
+    }
     return {
       ...w,
       ticker_name: t?.name ?? null,
@@ -98,6 +128,7 @@ async function fetchHoldingsWithSignals(email: string, name: string | null) {
       statusLabel,
       exit,
       buy,
+      fresh,
     };
   });
 }
@@ -199,7 +230,10 @@ export default async function ClosingTradePage() {
                     </Link>
                     <span className="text-sm">{h.ticker_name ?? "—"}</span>
                   </div>
-                  <span className="text-sm">{h.statusLabel}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {h.fresh && <FreshnessChip fresh={h.fresh} compact />}
+                    <span className="text-sm">{h.statusLabel}</span>
+                  </div>
                 </div>
                 {h.entry_price != null && (
                   <div className="mt-1 text-xs text-muted-foreground">
@@ -210,6 +244,11 @@ export default async function ClosingTradePage() {
                 {h.exit && (
                   <div className="mt-1 text-xs text-rose-700 dark:text-rose-300">
                     ⚠️ {h.exit.reason}
+                  </div>
+                )}
+                {h.buy && h.fresh && h.fresh.runupPct > 30 && (
+                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                    🟢 매수 신호지만 {h.fresh.kind} 돌파 +{h.fresh.runupPct.toFixed(0)}% — 추가 진입 자리는 끝났음. 보유 유지만 권장.
                   </div>
                 )}
               </li>
@@ -239,7 +278,10 @@ export default async function ClosingTradePage() {
                     </Link>
                     <span className="text-sm">{h.ticker_name ?? "—"}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{h.statusLabel}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {h.fresh && <FreshnessChip fresh={h.fresh} compact />}
+                    <span className="text-xs text-muted-foreground">{h.statusLabel}</span>
+                  </div>
                 </div>
               </li>
             ))}
