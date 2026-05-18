@@ -257,13 +257,13 @@ def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
     if len(between_lows) < 2:
         return None
     b, d = between_lows[0], between_lows[-1]
-    # Neckline = linear interpolation y(last) between (b.idx,b.price) and (d.idx,d.price)
-    if d.idx == b.idx:
-        neckline = (b.price + d.price) / 2
-    else:
-        slope = (d.price - b.price) / (d.idx - b.idx)
-        last_idx = len(df) - 1
-        neckline = b.price + slope * (last_idx - b.idx)
+    # Neckline is fixed by the between-lows themselves. Extrapolating
+    # the line forward to the current bar would mis-place the neckline
+    # for old patterns (symmetric bug to detect_reverse_head_and_shoulders).
+    neckline = min(b.price, d.price)
+    # Sanity: H&S top has neckline strictly below the head.
+    if neckline >= c.price:
+        return None
 
     last_close = float(df["close"].iloc[-1])
     completed = last_close < neckline
@@ -328,12 +328,14 @@ def detect_reverse_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
     if len(between_highs) < 2:
         return None
     b, d = between_highs[0], between_highs[-1]
-    if d.idx == b.idx:
-        neckline = (b.price + d.price) / 2
-    else:
-        slope = (d.price - b.price) / (d.idx - b.idx)
-        last_idx = len(df) - 1
-        neckline = b.price + slope * (last_idx - b.idx)
+    # Neckline is fixed by the between-highs themselves, not extrapolated
+    # forward to the current bar. Extrapolating a downward-sloping neckline
+    # ~50 bars forward used to push it BELOW the head, producing negative
+    # `head_h` and a target below entry — nonsense for a bullish reversal.
+    neckline = max(b.price, d.price)
+    # Sanity: a valid inverse H&S has neckline strictly above the head.
+    if neckline <= c.price:
+        return None
 
     last_close = float(df["close"].iloc[-1])
     completed = last_close > neckline
@@ -346,6 +348,12 @@ def detect_reverse_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
     conf = min(conf, 0.97)
 
     head_h = neckline - c.price
+    # For bullish reversal: target projects above neckline by the head depth.
+    # Entry is the breakout (neckline) when newly completed, but if price
+    # has already run far above neckline the entry block becomes stale —
+    # use the breakout level so the displayed stop/target keep their book
+    # meaning. The stale-pattern guard lives in analyzer.py.
+    entry = neckline if completed else neckline
     target = neckline + head_h
 
     return Pattern(
@@ -354,7 +362,7 @@ def detect_reverse_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
         confidence=conf,
         completed=completed,
         detected_at=pd.to_datetime(df["date"].iloc[-1]) if "date" in df.columns else pd.to_datetime(df.index[-1]),
-        entry=last_close if completed else neckline,
+        entry=entry,
         stop=c.price * 0.97,
         target=target,
         reason=(

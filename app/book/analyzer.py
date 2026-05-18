@@ -165,18 +165,61 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     )
     action = _action_from_score(multi.book_signal, score, all_patterns)
 
-    # Build entry/stop/target from top completed bullish pattern (if any)
+    # Build entry/stop/target from top completed bullish pattern (if any).
+    # Skip stale patterns (detected_at more than ~2 months ago) so we
+    # don't surface trade plans from a breakout that already played out.
+    # Skip patterns that fail entry < target sanity for bullish plans —
+    # historically the H&S detectors could mis-orient the projection.
     entry_block = None
     if action in ("BUY", "STRONG_BUY"):
+        from datetime import datetime, timedelta
+        as_of_ts = pd.to_datetime(df["date"].iloc[-1])
+        STALE_DAYS = 60
+        last_close = float(df["close"].iloc[-1])
         for p in all_patterns:
-            if p["completed"] and p["direction"] == "bullish":
-                entry_block = {
-                    "entry": p["entry"],
-                    "stop": p["stop"],
-                    "target": p["target"],
-                    "based_on": f"{p['kind']} ({p.get('timeframe', 'daily')})",
-                }
-                break
+            if not (p["completed"] and p["direction"] == "bullish"):
+                continue
+            # Sanity: bullish plan must have entry < target and stop < entry.
+            entry_v = p.get("entry")
+            target_v = p.get("target")
+            stop_v = p.get("stop")
+            if entry_v is None or target_v is None or stop_v is None:
+                continue
+            if not (stop_v < entry_v < target_v):
+                continue
+            # Freshness: skip if the pattern completed too long ago — the
+            # breakout has already happened and the plan would be stale.
+            det = p.get("detected_at")
+            if det:
+                try:
+                    det_ts = pd.to_datetime(det)
+                    if (as_of_ts - det_ts) > timedelta(days=STALE_DAYS):
+                        continue
+                except Exception:
+                    pass
+            # Don't enter at a stale entry far below current price either.
+            if entry_v < last_close * 0.7:
+                continue
+            # Tighten the stop with a trailing 주봉 10MA when the pattern's
+            # traditional stop (pattern bottom) is too far below current
+            # price to be practical. Book's rule "10MA 이탈 = 청산" gives
+            # the natural trailing stop once a breakout has run.
+            tight_stop = None
+            if multi.weekly and multi.weekly.ma_10:
+                tight_stop = multi.weekly.ma_10 * 0.97
+            elif multi.monthly and multi.monthly.ma_10:
+                tight_stop = multi.monthly.ma_10 * 0.97
+            effective_stop = max(stop_v, tight_stop) if tight_stop else stop_v
+            entry_block = {
+                "entry": entry_v,
+                "stop": effective_stop,
+                "target": target_v,
+                "based_on": (
+                    f"{p['kind']} ({p.get('timeframe', 'daily')})"
+                    + ("  · 손절은 주봉 10MA" if effective_stop != stop_v else "")
+                ),
+            }
+            break
         # Fallback: 10MA-based stop. Prefer daily; under weekly input
         # (US via Naver) fall back to weekly MA.
         if entry_block is None:
