@@ -6,6 +6,7 @@ import { RegimeBadge } from "@/components/regime-badge";
 import { StatePill } from "@/components/state-pill";
 import { MacroDial } from "@/components/macro-dial";
 import { HelpTip } from "@/components/help-tip";
+import { GlobalNews } from "@/components/global-news";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
@@ -134,6 +135,8 @@ export default async function DashboardPage() {
       </header>
 
       <MacroDial />
+
+      <GlobalNews />
 
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
