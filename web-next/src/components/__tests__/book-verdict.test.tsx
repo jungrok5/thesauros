@@ -138,6 +138,73 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     ).toBeInTheDocument();
   });
 
+  it("랠리 후 조정 branch — GOOGL-style top with upper-wick reversal", () => {
+    const r = makeResult({
+      ticker: "GOOGL",
+      action: "BUY",
+      book_score: 0.6,
+      last_close: 396.94,
+      position_in_52w: 0.95,
+      rally_8w_pct: 0.16,
+      consolidation_ratio: 0.038,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 396.94, ma_10: 345.46,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 220.15, above_ma_240: true,
+          alignment_score: 0.6, overall_score: 0.88, label: "강세",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      patterns: [],
+      last_candle: {
+        date: "2026-05-18", open: 395.69, high: 408.61, low: 394.53, close: 396.94,
+        volume: 26_000_000,
+        body_pct: 0.09, upper_wick_pct: 0.83, lower_wick_pct: 0.08,
+        close_position: 0.17, is_bullish: true,
+        tags: ["그레이브스톤도지"], in_safe_zone_75: false,
+      },
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/랠리 후 조정.*반전 주의/)).toBeInTheDocument();
+    expect(screen.getByText(/8주 \+16% 랠리.*52주 신고가 95%/)).toBeInTheDocument();
+    expect(screen.getByText(/그레이브스톤도지.*반전 주의/)).toBeInTheDocument();
+    expect(screen.getByText(/신규 매수 자리 아님/)).toBeInTheDocument();
+    // Must NOT misfire 매복 (semantically opposite)
+    expect(screen.queryByText(/매복 · 포킹 대기/)).toBeNull();
+  });
+
+  it("랠리 후 조정 does NOT fire when 52w position low (mid-range box)", () => {
+    const r = makeResult({
+      action: "STRONG_BUY",
+      position_in_52w: 0.55,  // mid-range — could be 매복 territory
+      rally_8w_pct: 0.05,
+      consolidation_ratio: 0.04,
+      patterns: [
+        {
+          kind: "MA 수렴 매복", direction: "neutral", confidence: 0.55,
+          completed: false, detected_at: "2026-05-22",
+          entry: 100, stop: 90, target: null, reason: "",
+          timeframe: "weekly", extra: {},
+        },
+      ],
+      last_candle: {
+        date: "2026-05-22", open: 100, high: 101, low: 98, close: 99,
+        volume: 50000, body_pct: 0.20, upper_wick_pct: 0.25, lower_wick_pct: 0.55,
+        close_position: 0.33, is_bullish: false, tags: ["교수형"], in_safe_zone_75: null,
+      },
+      volume_case: {
+        case: 12, label_kr: "수렴기 거래량 감소",
+        direction: "bullish", confidence: 0.65, reason: "",
+      },
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/매복.*포킹 대기/)).toBeInTheDocument();
+    expect(screen.queryByText(/랠리 후 조정/)).toBeNull();
+  });
+
   it("HOLD branch — IONQ-style catalyst-after narrative", () => {
     const r = makeResult({
       ticker: "IONQ",

@@ -123,6 +123,33 @@ export function BookVerdict({ result }: Props) {
       return verdictCard("amber", "⚠️", "추세 유효 · 진입 자리 지남", lines, warnings);
     }
 
+    // ── 랠리 후 조정 (post-rally exhaustion): price within 10 % of
+    //    52-week high after a meaningful run-up, now consolidating
+    //    with indecision candles / drying volume. Semantically OPPOSITE
+    //    of 매복 — 매복 is pre-breakout supply absorption, this is
+    //    post-rally distribution risk. GOOGL 2026-05-18 was the test
+    //    case: 52w pos 95 %, +16 % over 6 weeks, 그레이브스톤도지
+    //    (big upper wick) at the top. Must be checked BEFORE 매복 so
+    //    GOOGL doesn't get the wrong narrative.
+    if (isPostRallyCaution(r)) {
+      const ma5 = weekly?.ma_10;   // page doesn't carry 5MA — use 10MA
+      const rally = Math.round((r.rally_8w_pct ?? 0) * 100);
+      const pos = Math.round((r.position_in_52w ?? 0) * 100);
+      const lcTag = (r.last_candle?.tags ?? []).find((t) =>
+        ["그레이브스톤도지", "유성형", "역망치형", "도지", "눈썹캔들"].includes(t),
+      );
+      const lines = [
+        `최근 8주 +${rally}% 랠리 후 52주 신고가 ${pos}% 자리에서 단기 조정.`
+        + (lcTag ? ` 마지막 캔들 ${lcTag} — 책: 반전 주의.` : ""),
+        "책 표현: 큰 상승 끝의 도지/긴 위꼬리 = 매수세 소진 신호.",
+        ma5
+          ? `보유 중이면 주봉 10MA(${formatPrice(ma5, ticker)}) 이탈 시 청산 고려. 신규 매수 자리 아님.`
+          : "보유 중이면 추세 이탈 시 청산. 신규 매수 자리 아님.",
+        "다음 확인: 금요일 종가가 10MA 위 마감하면 추세 유지, 아래면 추세 약화.",
+      ];
+      return verdictCard("amber", "🟡", "랠리 후 조정 · 반전 주의", lines, warnings);
+    }
+
     // ── 매복 단계 (Ambush / Forking-setup): book's "기간 조정 / 빨래
     //    널기" state — MAs converged, volume drying up, no trigger
     //    candle yet. Even when action says STRONG_BUY (trend is up,
@@ -268,7 +295,47 @@ function nextDecisionLine(ma10w: number | null | undefined, ticker: string): str
  *   - last candle is small body with single dominant wick (망치 / 교수 /
  *     역망치 / 유성) OR doji / 눈썹 — i.e., indecision
  */
+/**
+ * Post-rally caution: price near 52-week high after a meaningful run-up,
+ * showing a top-reversal candle. The semantic OPPOSITE of 매복:
+ *   매복 = pre-breakout supply absorption (mid-range, optimistic setup)
+ *   post-rally caution = exhaustion at the top (distribution risk)
+ *
+ * For GOOGL 2026-05-18: position 95 %, +16 % over 6 weeks, 그레이브스톤도지
+ * — clearly the latter. Falling into the 매복 branch sent the wrong
+ * message ("기다리면 폭발할 자리") to a user holding GOOGL at +45 %.
+ *
+ * Triggers when:
+ *   - position_in_52w ≥ 0.85 (near recent high)
+ *   - rally_8w_pct ≥ 0.10  (meaningful recent gain)
+ *   - the last candle has an upper-wick rejection signal
+ *     (그레이브스톤도지 / 유성형 / 역망치형) OR a tight 4-bar box
+ */
+function isPostRallyCaution(r: AnalysisResult): boolean {
+  const pos = r.position_in_52w;
+  const rally = r.rally_8w_pct;
+  if (typeof pos !== "number" || pos < 0.85) return false;
+  if (typeof rally !== "number" || rally < 0.10) return false;
+  const tags = r.last_candle?.tags ?? [];
+  const upperWickReversal =
+    tags.includes("그레이브스톤도지")
+    || tags.includes("유성형")
+    || tags.includes("역망치형")
+    || ((r.last_candle?.upper_wick_pct ?? 0) > 0.5);
+  const tightBox =
+    typeof r.consolidation_ratio === "number"
+    && r.consolidation_ratio <= 0.06;
+  return upperWickReversal || tightBox;
+}
+
 function isAmbushSetup(r: AnalysisResult): boolean {
+  // Disqualify when price is near 52-week high — that's post-rally
+  // caution territory (different verdict above), not pre-breakout
+  // accumulation. 매복's whole semantic is "supply still being
+  // absorbed in the box"; a chart at 95 % of 52w is past that phase.
+  const pos = r.position_in_52w;
+  if (typeof pos === "number" && pos >= 0.85) return false;
+
   const hasSetupPattern = (r.patterns ?? []).some(
     (p) => typeof p.kind === "string" && p.kind.includes("수렴 매복"),
   );

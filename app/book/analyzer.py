@@ -288,6 +288,34 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     except Exception:
         cons_ratio = None
 
+    # 52-week position — distinguishes 매복 (pre-breakout consolidation,
+    # mid-range) from 랠리 후 조정 (post-rally pullback near recent
+    # high). For GOOGL 2026-05-18: position 95 %, 6-week rally +16 %,
+    # gravestone doji = book's 매도 반전 신호, NOT 매복 setup.
+    try:
+        tail52 = df.tail(52)
+        hi_52 = float(tail52["high"].max())
+        lo_52 = float(tail52["low"].min())
+        pos_52 = (
+            float((last_close - lo_52) / (hi_52 - lo_52))
+            if hi_52 > lo_52 else 0.5
+        )
+    except Exception:
+        pos_52 = None
+
+    # Recent rally magnitude — last N weeks % gain. Used by the
+    # post-rally verdict to decide whether the consolidation is
+    # post-rally exhaustion vs mid-range accumulation.
+    try:
+        rally_window = min(8, len(df) - 1)
+        rally_start = float(df["close"].iloc[-rally_window - 1])
+        rally_pct = (
+            float((last_close / rally_start) - 1)
+            if rally_start > 0 else 0.0
+        )
+    except Exception:
+        rally_pct = None
+
     return {
         "ticker": ticker,
         "as_of": str(df["date"].iloc[-1].date()),
@@ -303,6 +331,8 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "reverse_accumulation": reverse_accum,
         "entry_plan": entry_block,
         "consolidation_ratio": cons_ratio,
+        "position_in_52w": pos_52,
+        "rally_8w_pct": rally_pct,
     }
 
 
