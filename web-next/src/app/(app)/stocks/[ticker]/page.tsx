@@ -20,6 +20,7 @@ import { TickerSearch } from "@/components/ticker-search";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
+import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
@@ -298,6 +299,12 @@ export default async function StockDetailPage({ params }: PageProps) {
           />
         )}
       </div>
+
+      {/* Company overview renders for every canonical ticker, even when
+          analysis hasn't been computed yet — it's purely external data
+          (DART / SEC) and matches the "what is this company?" question
+          a user has the moment they open the page. */}
+      {isCanonical && <CompanyProfile ticker={ticker} />}
 
       {!isCanonical ? (
         <div className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-sm">

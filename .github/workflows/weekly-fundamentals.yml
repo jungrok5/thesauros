@@ -38,6 +38,18 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
           python -m app.data.ingest_dart
+      - name: Company profile ingest (DART + SEC EDGAR)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          # Refresh company overview + recent filings for every active
+          # KR ticker + every watchlisted US ticker. Light load
+          # (~3K API calls), runs in <10 min.
+          python -m app.data.ingest_company_profile
       - name: Evaluate financials + factors
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
