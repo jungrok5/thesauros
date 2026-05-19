@@ -29,7 +29,7 @@ import requests
 
 from app.config import DART_API_KEY, DART_BASE_URL
 # DuckDB references removed — this module now reads/writes Supabase only.
-# DART corp_code cache lives on disk at data/dart_corp_code.parquet.
+# DART corp_code cache lives on disk at data/dart_corp_code.csv.
 
 
 # Account → XBRL-style concept mapping
@@ -74,16 +74,18 @@ def _have_key() -> bool:
 def fetch_corp_code_map() -> pd.DataFrame:
     """Download the full corpCode.xml zip and return (corp_code, stock_code, name).
 
-    Cached on first call into data/dart_corp_code.parquet.
+    Cached on first call into data/dart_corp_code.csv.
     """
     from io import BytesIO
     import zipfile
     import xml.etree.ElementTree as ET
     from app.config import DATA_DIR
 
-    cache = DATA_DIR / "dart_corp_code.parquet"
+    # CSV (not parquet) — corp_code map is 3 string columns × ~3K rows;
+    # CSV is enough and lets us skip the pyarrow/fastparquet dep.
+    cache = DATA_DIR / "dart_corp_code.csv"
     if cache.exists():
-        return pd.read_parquet(cache)
+        return pd.read_csv(cache, dtype=str).fillna("")
 
     if not _have_key():
         raise RuntimeError("DART_API_KEY not set.")
@@ -105,7 +107,7 @@ def fetch_corp_code_map() -> pd.DataFrame:
             "corp_name": name.strip(),
         })
     df = pd.DataFrame(rows)
-    df.to_parquet(cache, index=False)
+    df.to_csv(cache, index=False)
     return df
 
 
