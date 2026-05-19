@@ -608,7 +608,9 @@ export default function GuidePage() {
             ⭐ 최적 · 🟢 좋음 · 🟡 가능 (절세 효과 ↓) · ❌ 매매 불가
           </p>
         </header>
-        <div className="overflow-x-auto">
+
+        {/* Desktop: 5열 매트릭스 — md+ */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/20">
@@ -634,6 +636,28 @@ export default function GuidePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile: 자산별 카드 — 가로 스크롤 없이 세로 흐름으로 읽기 */}
+        <ul className="md:hidden divide-y divide-border">
+          {ACCOUNT_ASSET.map((row) => (
+            <li key={row.asset} className="px-3 py-3 space-y-2">
+              <div className="text-xs font-semibold whitespace-pre-line leading-snug">
+                {row.asset}
+              </div>
+              <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+                <dt className="text-muted-foreground">연금저축</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.pension}</dd>
+                <dt className="text-muted-foreground">IRP</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.irp}</dd>
+                <dt className="text-muted-foreground">ISA</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.isa}</dd>
+                <dt className="text-muted-foreground">일반계좌</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.general}</dd>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
         <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
           💡 핵심 룰: <strong className="text-foreground">국내 상장 미국 ETF는 연금/ISA에서 매매차익 비과세</strong> — 일반계좌
           22% 양도세 대비 압도적 유리. 미국 직접 ETF/주식은 일반계좌만. 한국 개별주는 ISA/일반계좌.
@@ -669,7 +693,8 @@ export default function GuidePage() {
             ⭐ = 절세 우위 · ⭐⭐ = 강력 추천 · 같은 위험도라도 계좌가 다르면 매매차익 비과세 / 양도세 / 배당세 효과 다름.
           </p>
         </header>
-        <div className="overflow-x-auto">
+        {/* Desktop: 4열 매트릭스 — md+ */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/20">
@@ -693,6 +718,24 @@ export default function GuidePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile: 위험도별 카드 */}
+        <ul className="md:hidden divide-y divide-border">
+          {TIER_ACCOUNT_MAP.map((row) => (
+            <li key={row.type} className="px-3 py-3 space-y-2">
+              <div className="text-xs font-semibold">{row.type}</div>
+              <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+                <dt className="text-muted-foreground">연금/IRP/DC</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.pension}</dd>
+                <dt className="text-muted-foreground">ISA</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.isa}</dd>
+                <dt className="text-muted-foreground">일반계좌</dt>
+                <dd className="whitespace-pre-line leading-relaxed">{row.general}</dd>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
         <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
           💡 핵심: <strong className="text-foreground">국내 상장 미국 ETF는 연금/IRP에서 매매차익 0%</strong>, ISA에서는 한국 개별주 200만 비과세 활용,
           일반계좌만 미국 직접 ETF/주식 가능 (양도세 22% · 연 250만 공제).
@@ -736,7 +779,8 @@ export default function GuidePage() {
             📱 국내 대표 증권사 5개 — 메뉴 위치
           </h2>
         </header>
-        <div className="overflow-x-auto">
+        {/* Desktop: 4열 표 — md+ */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/20">
@@ -761,6 +805,27 @@ export default function GuidePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile: 증권사별 카드 */}
+        <ul className="md:hidden divide-y divide-border">
+          {BROKERS.map((b) => (
+            <li key={b.name} className="px-3 py-3 space-y-2">
+              <div>
+                <div className="text-xs font-semibold">{b.name}</div>
+                <div className="text-[10px] text-muted-foreground">{b.app}</div>
+              </div>
+              <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+                <dt className="text-muted-foreground">연금/IRP</dt>
+                <dd className="leading-relaxed">{b.pensionPath}</dd>
+                <dt className="text-muted-foreground">ISA</dt>
+                <dd className="leading-relaxed">{b.isaPath}</dd>
+                <dt className="text-muted-foreground">자동매수</dt>
+                <dd className="leading-relaxed">{b.autoBuy}</dd>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
         <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
           💡 메뉴 라벨은 앱 버전에 따라 달라질 수 있음 — 못 찾으면{" "}
           <strong>앱 검색창에 &quot;연금저축&quot; / &quot;IRP&quot; / &quot;ISA&quot; 검색</strong>이 가장 빠름.
