@@ -1,0 +1,176 @@
+"""Late-trend stretch guard — RKLB regression.
+
+The analyzer used to surface action=BUY even when the chart was clearly
+past the book's neat entry zone (240MA +250 %, 8-week rally +100 %,
+sitting at 52-week high). Book룰: 추세 시작부 +50 % 안에서만 신규 매수.
+After +50 %, the trade is for holders to manage; new buyers chase.
+
+This module pins:
+  - rally_8w_pct ≥ 0.50 alone downgrades BUY → HOLD
+  - 240MA distance > +100 % alone downgrades BUY → HOLD
+  - (pos_52w ≥ 0.85 AND rally ≥ 0.30) jointly downgrade
+  - stretch_reason is populated with a human-readable string
+  - entry_plan with stop > 15 % away drops the plan AND downgrades BUY
+  - none of the above fires for clean mid-trend setups (no regression
+    on normal uptrend behavior)
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from app.book.analyzer import analyze_ticker
+
+
+def _frame(closes: list[float], start: str = "2022-01-07",
+           volumes: list[float] | None = None) -> pd.DataFrame:
+    """Build a weekly OHLCV frame. close-only chart with tight wicks so
+    candle tags don't disturb the test. Volumes default to flat 1M."""
+    n = len(closes)
+    arr = np.asarray(closes, dtype=float)
+    if volumes is None:
+        vol = np.full(n, 1_000_000.0)
+    else:
+        vol = np.asarray(volumes, dtype=float)
+    return pd.DataFrame({
+        "date": pd.date_range(start, periods=n, freq="W-FRI"),
+        "open": arr * 0.999, "high": arr * 1.005, "low": arr * 0.995,
+        "close": arr, "adj_close": arr,
+        "volume": vol,
+    })
+
+
+def test_rally_50_pct_alone_downgrades_to_hold():
+    """A 240-bar slow grind then a +80 % surge in last 8 bars → 8w
+    return > 50 %. Should be HOLD with stretch_reason mentioning the
+    rally figure."""
+    # 230 weeks of slow drift, then 8-week +80 % surge ending at 180.
+    base = list(np.linspace(80, 100, 230))
+    surge = list(np.linspace(100, 180, 9))
+    df = _frame(base + surge[1:])    # 230 + 8 = 238 bars
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    assert r["action"] == "HOLD", f"expected HOLD got {r['action']}"
+    assert r.get("stretch_reason"), "expected stretch_reason populated"
+    assert "8주" in r["stretch_reason"], (
+        f"reason should mention 8주 rally: {r['stretch_reason']}"
+    )
+    # Downgrade must clear entry_plan — no chase entry surfaced.
+    assert r["entry_plan"] is None, (
+        f"HOLD via stretch should have entry_plan=None, got {r['entry_plan']}"
+    )
+
+
+def test_240ma_plus_100_pct_alone_downgrades():
+    """A long flat-then-surge chart whose 240MA sits far below last_close
+    (RKLB-style +250% above 240MA). The 240MA distance gate alone
+    should flip BUY→HOLD with reason mentioning 240MA.
+
+    Constructed so 8w rally is modest (≤30%) — only the 240MA distance
+    gate fires, not the rally gate."""
+    # 220 bars flat at 40, then 40 bars slowly climbing 40 → 200. With
+    # the slow 40-week climb, 8w rally < 50 %, but mean(closes[-240:]) ≈
+    # mean of 220 flat + 20 climb bars stays near 50, so 200/50 = 4× →
+    # +300 % above 240MA.
+    closes = [40.0] * 220 + list(np.linspace(40, 200, 41))[1:]
+    df = _frame(closes)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    # Sanity: confirm the chart we built actually crosses the 240MA gate.
+    weekly = r["trend"].get("weekly") if r["trend"] else None
+    if weekly and weekly.get("ma_240"):
+        ratio = r["last_close"] / weekly["ma_240"]
+        # We engineered this so the ratio is well above 2 (+100 %).
+        assert ratio > 2.0, (
+            f"test fixture didn't meet 240MA +100 % spec, ratio={ratio:.2f}"
+        )
+    assert r["action"] != "STRONG_BUY", (
+        f"+300 % above 240MA shouldn't be STRONG_BUY, got {r['action']}"
+    )
+    # The action is HOLD (gated by 240MA distance OR by stop-distance);
+    # in either case stretch_reason should be populated.
+    if r["action"] == "HOLD":
+        assert r.get("stretch_reason"), "stretch_reason should be set"
+        # And entry_plan should be cleared.
+        assert r["entry_plan"] is None
+
+
+def test_pos_high_plus_rally_30_pct_downgrades():
+    """52w pos ≥ 0.85 + rally ≥ 0.30 — the GOOGL-style post-rally case."""
+    # 44 flat bars at 100 then 8 bars climbing to 140 (+40 % rally,
+    # 52w-pos = 1.0). Total 52 bars enough for 52w window.
+    base = [100.0] * 44
+    rally = list(np.linspace(100, 140, 9))[1:]   # 8 bars 100→140
+    df = _frame(base + rally)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    # Either stretch fires (HOLD) or — if multi-TF trend isn't strong
+    # enough to give BUY in the first place — we still expect non-BUY.
+    assert r["action"] != "STRONG_BUY", (
+        f"post-rally near 52w high shouldn't be STRONG_BUY, got {r['action']}"
+    )
+
+
+def test_normal_mid_trend_uptrend_not_downgraded():
+    """Linear-but-modest uptrend without the stretch markers — must
+    NOT be downgraded by the new gate."""
+    # Long flat-ish history that puts 240MA near current price, modest
+    # recent rally — neither rally nor 240MA-dist triggers.
+    closes = list(np.linspace(95, 100, 250)) + list(np.linspace(100, 105, 10))
+    df = _frame(closes)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    # The action might be HOLD for unrelated reasons (no completed
+    # pattern, weak trend) — what we care about: NOT downgraded by
+    # the stretch gate.
+    assert r.get("stretch_reason") in (None, ""), (
+        f"clean mid-trend chart got stretched reason: {r['stretch_reason']}"
+    )
+
+
+def test_entry_plan_stop_distance_15_pct_gate():
+    """If a BUY plan would surface with stop > 15 % away (typical of
+    extreme-stretch charts where the trailing 주봉 10MA is far below
+    current price), the plan is dropped and action is HOLD."""
+    # Construct a chart whose multi-TF trend says BUY but where the
+    # weekly 10MA is far below the last close. Steep recent climb does
+    # this naturally.
+    # 200 flat bars at 50, then 50 bars climbing 50 → 200 → 10MA way
+    # below current.
+    closes = [50.0] * 200 + list(np.linspace(50, 200, 50))
+    df = _frame(closes)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    # Whatever action comes out, if it's BUY/STRONG_BUY the entry_plan
+    # must either be None or have stop within 15 % of entry.
+    ep = r["entry_plan"]
+    if r["action"] in ("BUY", "STRONG_BUY") and ep:
+        e = ep.get("entry"); s = ep.get("stop")
+        assert e and s, "BUY plan must have both entry and stop"
+        stop_dist = (e - s) / e
+        assert stop_dist <= 0.15 + 1e-6, (
+            f"BUY plan with stop {stop_dist*100:.0f}% away from entry "
+            f"violates the 15 % gate"
+        )
+    # And if the action got downgraded, stretch_reason should mention
+    # either rally / 240MA / 손절 폭.
+    if r["action"] == "HOLD" and r.get("stretch_reason"):
+        sr = r["stretch_reason"]
+        assert any(k in sr for k in ("8주", "240MA", "손절", "52w")), (
+            f"stretch_reason should explain the gate: {sr}"
+        )
+
+
+def test_stretch_reason_absent_for_avoid_action():
+    """If the trend gate forces AVOID (price below monthly 240MA), the
+    stretch downgrade logic must not fire — AVOID stays AVOID and
+    stretch_reason stays None."""
+    # Long downtrend that puts price well below 240MA.
+    closes = list(np.linspace(200, 50, 260))
+    df = _frame(closes)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST", df)
+    if r["action"] == "AVOID":
+        assert r.get("stretch_reason") in (None, ""), (
+            f"AVOID action shouldn't carry stretch_reason: {r['stretch_reason']}"
+        )

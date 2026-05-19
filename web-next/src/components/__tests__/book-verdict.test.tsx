@@ -330,6 +330,76 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     expect(screen.getByText(/240MA.*아래.*죽은 차트/)).toBeInTheDocument();
   });
 
+  // ── 추세 유효 · 자리 지남 (analyzer stretch downgrade) ───────────
+  // The analyzer flips BUY/STRONG_BUY → HOLD and stamps stretch_reason
+  // when the chart is past the book's neat entry zone (rally ≥ 50 %,
+  // 240MA distance > +100 %, or 52w pos ≥ 0.85 + rally ≥ 0.30, or
+  // stop > 15 % away). UI must render a dedicated verdict, not the
+  // generic 관망 fallback.
+  it("renders 추세 유효 · 자리 지남 when analyzer stamps stretch_reason (RKLB-style)", () => {
+    const r = makeResult({
+      ticker: "RKLB",
+      action: "HOLD",
+      last_close: 124.77,
+      stretch_reason: "8주 +115% (책 +50% 룰 위반) · 240MA 대비 +250%",
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 124.77, ma_10: 86.86,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 35.66, above_ma_240: true,
+          alignment_score: 0.6, overall_score: 0.88, label: "강세",
+        },
+        monthly: {
+          timeframe: "monthly", price: 124.77, ma_10: 75,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: null, above_ma_240: null,
+          alignment_score: 0.5, overall_score: 1.0, label: "강세",
+        },
+        book_signal: "BUY", book_reason: "정배열 + 추세 살아있음",
+      },
+      patterns: [],
+      entry_plan: null,
+    });
+    render(<BookVerdict result={r} />);
+    // Title chip "추세 유효 · 자리 지남" — appears in <h2>
+    expect(screen.getByRole("heading", { name: /자리 지남/ })).toBeInTheDocument();
+    // First body line carries the verbatim stretch_reason
+    expect(screen.getByText(/8주 \+115%.*240MA 대비 \+250%/)).toBeInTheDocument();
+    // Second line is the 240MA-distance narrative line (>50 % path)
+    expect(screen.getByText(/주봉 240MA.*벗어남/)).toBeInTheDocument();
+    // Holder-trailing-stop guidance
+    expect(screen.getByText(/주봉 10MA.*86\.86.*이탈/)).toBeInTheDocument();
+    // Friday next-decision line
+    expect(screen.getByText(/다음 결정 시점.*금요일/)).toBeInTheDocument();
+    // Must NOT render the generic catalyst-narrative 관망 verdict
+    expect(screen.queryByText(/한 줄 평.*관망/)).toBeNull();
+  });
+
+  it("stretch verdict does not fire when stretch_reason is null (normal HOLD)", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 80,
+      stretch_reason: null,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 80, ma_10: 75,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 50, above_ma_240: true,
+          alignment_score: 0.3, overall_score: 0.4, label: "강세",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+      patterns: [],
+    });
+    render(<BookVerdict result={r} />);
+    // Normal HOLD path — generic 관망 card with 240MA narrative
+    expect(screen.getByText(/한 줄 평.*관망/)).toBeInTheDocument();
+    expect(screen.queryByText(/자리 지남/)).toBeNull();
+  });
+
   it("renders 🟢 강한 매수 for a clean fresh-pattern setup", () => {
     const r = makeResult({
       action: "STRONG_BUY",

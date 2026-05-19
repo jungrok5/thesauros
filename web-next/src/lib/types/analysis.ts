@@ -83,6 +83,12 @@ export type AnalysisResult = {
   position_in_52w?: number | null;
   /** Trailing 8-bar return as a fraction. 0.16 = +16 % over 8 weeks. */
   rally_8w_pct?: number | null;
+  /** When the analyzer downgraded a BUY/STRONG_BUY to HOLD because the
+   *  chart is in late-trend stretch territory (rally ≥ 50 %, 240MA
+   *  distance > +100 %, 52w pos ≥ 0.85 + rally ≥ 0.30, or stop wider
+   *  than 15 %), this carries the human-readable reason for the
+   *  BookVerdict 추세 유효 · 자리 지남 branch. */
+  stretch_reason?: string | null;
   reverse_accumulation: {
     detected: boolean;
     occurrences: number;

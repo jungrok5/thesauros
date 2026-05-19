@@ -165,6 +165,61 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     )
     action = _action_from_score(multi.book_signal, score, all_patterns)
 
+    # Pre-compute stretch metrics so the post-rally guard can downgrade
+    # action BEFORE entry_plan is built. Three signals book treats as
+    # "추세는 살았지만 자리 한참 지남":
+    #   - 8-bar trailing return ≥ 50 %         → 책 "+50 % 룰" 직접 위반
+    #   - last_close / ma_240 − 1 > 1.0 (+100%)→ 240MA 한참 위 (RKLB +250 %)
+    #   - 52-w position ≥ 0.85 AND rally ≥ 0.30→ 52w 최고가 근처 + 단기 급등
+    # If any fires while action is BUY/STRONG_BUY, downgrade to HOLD so
+    # the entry_plan branch below never offers a chase entry. We record
+    # the gate that fired in `stretch_reason` for UI surfacing.
+    last_close = float(df["close"].iloc[-1])
+    try:
+        tail52_pre = df.tail(52)
+        _hi52 = float(tail52_pre["high"].max())
+        _lo52 = float(tail52_pre["low"].min())
+        pos_52w_pre = (
+            float((last_close - _lo52) / (_hi52 - _lo52))
+            if _hi52 > _lo52 else 0.5
+        )
+    except Exception:
+        pos_52w_pre = None
+    try:
+        _rw = min(8, len(df) - 1)
+        _start = float(df["close"].iloc[-_rw - 1])
+        rally_pre = float((last_close / _start) - 1) if _start > 0 else 0.0
+    except Exception:
+        rally_pre = None
+    ma_240 = None
+    if multi.weekly and multi.weekly.ma_240:
+        ma_240 = float(multi.weekly.ma_240)
+    elif multi.monthly and multi.monthly.ma_240:
+        ma_240 = float(multi.monthly.ma_240)
+    ma240_dist = (
+        (last_close / ma_240) - 1.0 if ma_240 and ma_240 > 0 else None
+    )
+
+    stretch_reason: Optional[str] = None
+    if action in ("BUY", "STRONG_BUY"):
+        reasons = []
+        if rally_pre is not None and rally_pre >= 0.50:
+            reasons.append(f"8주 +{rally_pre * 100:.0f}% (책 +50% 룰 위반)")
+        if ma240_dist is not None and ma240_dist > 1.0:
+            reasons.append(f"240MA 대비 +{ma240_dist * 100:.0f}%")
+        if (
+            pos_52w_pre is not None
+            and pos_52w_pre >= 0.85
+            and rally_pre is not None
+            and rally_pre >= 0.30
+        ):
+            reasons.append(
+                f"52w 위치 {pos_52w_pre * 100:.0f}% + 8주 +{rally_pre * 100:.0f}%"
+            )
+        if reasons:
+            stretch_reason = " · ".join(reasons)
+            action = "HOLD"
+
     # Build entry/stop/target from top completed bullish pattern (if any).
     # Skip stale patterns (detected_at more than ~2 months ago) so we
     # don't surface trade plans from a breakout that already played out.
@@ -271,6 +326,34 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
                 # Drop the malformed plan instead of surfacing it.
                 entry_block = None
 
+    # Stop-distance sanity for BUY plans. Book룰: 손절 폭은 진입가
+    # 대비 8~10 % 내. 폭이 -15 % 를 넘어가면 추세 후반부에서 10MA가
+    # 진입가에서 한참 멀어진 케이스(RKLB +250 % 위에서 stop 주봉 10MA
+    # = -37 %)다. 진입가-stop 거리만으로도 책 정신상 신규 매수 자격 X.
+    if (
+        entry_block is not None
+        and action in ("BUY", "STRONG_BUY")
+    ):
+        e = entry_block.get("entry")
+        s = entry_block.get("stop")
+        if e is not None and s is not None and e > 0:
+            stop_dist = (e - s) / e
+            if stop_dist > 0.15:
+                entry_block = None
+                # The action is no longer actionable as a fresh entry;
+                # downgrade so the verdict / UI reflects "보유는 OK,
+                # 신규는 X" rather than "BUY without plan".
+                if action in ("BUY", "STRONG_BUY"):
+                    action = "HOLD"
+                    if stretch_reason is None:
+                        stretch_reason = (
+                            f"손절 폭 {stop_dist * 100:.0f}% (책 룰 -10% 초과)"
+                        )
+                    else:
+                        stretch_reason += (
+                            f" · 손절 폭 {stop_dist * 100:.0f}%"
+                        )
+
     # Consolidation / 박스권 헤드라인 signal — used by the BookVerdict
     # 매복 detector. We pre-compute it here so the page doesn't need to
     # re-fetch bars: the (max-min)/last_close of the most recent N bars.
@@ -288,33 +371,11 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     except Exception:
         cons_ratio = None
 
-    # 52-week position — distinguishes 매복 (pre-breakout consolidation,
-    # mid-range) from 랠리 후 조정 (post-rally pullback near recent
-    # high). For GOOGL 2026-05-18: position 95 %, 6-week rally +16 %,
-    # gravestone doji = book's 매도 반전 신호, NOT 매복 setup.
-    try:
-        tail52 = df.tail(52)
-        hi_52 = float(tail52["high"].max())
-        lo_52 = float(tail52["low"].min())
-        pos_52 = (
-            float((last_close - lo_52) / (hi_52 - lo_52))
-            if hi_52 > lo_52 else 0.5
-        )
-    except Exception:
-        pos_52 = None
-
-    # Recent rally magnitude — last N weeks % gain. Used by the
-    # post-rally verdict to decide whether the consolidation is
-    # post-rally exhaustion vs mid-range accumulation.
-    try:
-        rally_window = min(8, len(df) - 1)
-        rally_start = float(df["close"].iloc[-rally_window - 1])
-        rally_pct = (
-            float((last_close / rally_start) - 1)
-            if rally_start > 0 else 0.0
-        )
-    except Exception:
-        rally_pct = None
+    # 52-week position + 8-week rally were computed earlier (pre-action)
+    # so the stretch guard could consume them; we just re-surface them in
+    # the result for the page / BookVerdict.
+    pos_52 = pos_52w_pre
+    rally_pct = rally_pre
 
     return {
         "ticker": ticker,
@@ -333,6 +394,7 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "consolidation_ratio": cons_ratio,
         "position_in_52w": pos_52,
         "rally_8w_pct": rally_pct,
+        "stretch_reason": stretch_reason,
     }
 
 

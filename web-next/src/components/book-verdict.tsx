@@ -197,6 +197,32 @@ export function BookVerdict({ result }: Props) {
     return verdictCard("emerald", "🟢", r.action === "STRONG_BUY" ? "강한 매수" : "매수", lines, warnings);
   }
 
+  // ── HOLD due to late-trend stretch (analyzer downgrade) ─────────
+  // The analyzer downgrades BUY/STRONG_BUY to HOLD and stamps
+  // stretch_reason when the chart looks like "추세는 살았지만 자리
+  // 한참 지남" — RKLB +250% above 240MA, GOOGL post-rally, SK텔레콤
+  // chase. Different from the pure pattern-stale branch above (that
+  // one runs when action is still BUY): here action is HOLD, no
+  // entry_plan, and we want a 매수 자격 X verdict, not the generic
+  // "관망" copy.
+  if (r.stretch_reason) {
+    const ma10w = weekly?.ma_10 ?? null;
+    const ma240 = weekly?.ma_240 ?? null;
+    const above240Pct =
+      ma240 && ma240 > 0 ? (last / ma240 - 1) * 100 : null;
+    const lines = [
+      `추세는 살아있지만 신규 매수 자리는 한참 지남 — ${r.stretch_reason}.`,
+      above240Pct != null && above240Pct > 50
+        ? `현재가는 주봉 240MA(${formatPrice(ma240!, ticker)}) 대비 +${above240Pct.toFixed(0)}% 위 — 책의 신규 진입 영역에서 벗어남.`
+        : "책 룰: 추세 시작부 +50% 안에서만 신규 매수. 그 위는 보유 평가용.",
+      ma10w
+        ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산 — 그때까지는 추세 유지.`
+        : "보유 중이면 추세 이탈 시 청산.",
+      nextDecisionLine(ma10w, ticker),
+    ];
+    return verdictCard("amber", "🟡", "추세 유효 · 자리 지남", lines, warnings);
+  }
+
   // ── HOLD / fallback ─────────────────────────────────────────────
   // Generic "no patterns + no clear action" branch used to render one
   // boilerplate sentence. For tickers like IONQ that have a clear
