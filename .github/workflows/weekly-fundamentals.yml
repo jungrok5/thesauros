@@ -1,4 +1,15 @@
 name: Weekly Fundamentals + Evaluation
+
+# Workflow runs many heavy ingests (DART, SEC, market signals, eval).
+# Two safeguards against any single step monopolizing the budget:
+#   - PYTHONUNBUFFERED=1 globally → logs flush in real time, easier to
+#     triage which step actually hangs (block-buffering hid this when
+#     the 60-min cancel killed a stuck DART step with no console output).
+#   - `timeout` shell wrapper on each heavy step → a stuck upstream
+#     (DART corpCode download, KRX 503s, etc.) hard-fails after its
+#     budget instead of soaking the whole hour.
+env:
+  PYTHONUNBUFFERED: "1"
 # Pulls KR corporate fundamentals from DART OpenAPI, then runs the rule-
 # based financials/factors evaluator. Stores into Supabase tables
 # `fundamentals`, `financials_eval`, `factors_eval`. Site reads these
@@ -20,7 +31,12 @@ on:
 jobs:
   fundamentals:
     runs-on: ubuntu-latest
-    timeout-minutes: 60   # DART throttles; full KR universe takes time
+    # 120 min total — DART (~15m) + SEC (~5m engagement-only) + market
+    # signals (~10m) + company profile (~5m) + eval (~5m) + 2 retention
+    # sweeps (~1m each). 90m would be tight; 120m absorbs occasional
+    # API slowdowns and avoids the "60-min cap killed a healthy run"
+    # failure mode.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,14 +59,21 @@ jobs:
           # that slipped through during the run.
           python -m app.db.retention
       - name: DART fundamentals ingest (Supabase direct)
+        # `timeout` shell wrapper: hard-fail after 25 min so a stuck
+        # corpCode download or DART rate-limit storm can't soak the
+        # whole 120-min workflow budget. `continue-on-error` so later
+        # steps (SEC, market signals) still run when DART struggles.
+        # See PYTHONUNBUFFERED env at top — keeps logs visible if the
+        # timeout kicks in.
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-        run: |
-          python -m app.data.ingest_dart
+        run: timeout 25m python -m app.data.ingest_dart
       - name: DART disclosures ingest (KR corporate filings)
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -64,8 +87,9 @@ jobs:
           # keeps daily-scan focused on price/flow refresh.
           # 90-day backfill so the Saturday catch-up picks up the
           # whole prior week + buffer for any past misses.
-          python -m app.db.ingest_news --days-back 90
+          timeout 40m python -m app.db.ingest_news --days-back 90
       - name: Market signals — KR short sales + dividends + warnings
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -73,8 +97,9 @@ jobs:
         run: |
           # pykrx (shorts + dividends) + Naver scrape (warnings).
           # Engagement-set filter inside the script keeps this bounded.
-          python -m app.data.ingest_market_signals
+          timeout 20m python -m app.data.ingest_market_signals
       - name: SEC EDGAR fundamentals + filings (US tickers)
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -85,8 +110,9 @@ jobs:
           # submissions → `disclosures`. SEC fair-use throttles at 10 r/s;
           # the module sleeps 0.15s/req so it stays comfortable. Rate-
           # limit headroom keeps this <15 min for the current US set.
-          python -m app.data.ingest_sec
+          timeout 15m python -m app.data.ingest_sec
       - name: Company profile ingest (DART + SEC EDGAR)
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -97,14 +123,16 @@ jobs:
           # Refresh company overview + recent filings for every active
           # KR ticker + every watchlisted US ticker. Light load
           # (~3K API calls), runs in <10 min.
-          python -m app.data.ingest_company_profile
+          timeout 15m python -m app.data.ingest_company_profile
       - name: Evaluate financials + factors
+        # Eval is fast (~5 min) and is the final value-add of this
+        # workflow — let it run to completion (no continue-on-error).
+        # 10-min timeout absorbs slow Supabase batches.
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          python -m app.db.eval_financials --verbose
+        run: timeout 10m python -m app.db.eval_financials --verbose
       - name: Retention sweep (post-ingest)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
