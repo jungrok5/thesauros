@@ -254,7 +254,7 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
             reason="매수세 증발, 추세 사망. 책 케이스 2.",
         )
 
-    # ---- Case 1: sideways + flat volume
+    # ---- Case 1: sideways + flat volume (책 케이스 1 본래 정의)
     if trend == SIDE and not (VOL_UP or VOL_DOWN):
         return VolumeCase(
             case=1,
@@ -264,11 +264,102 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
             reason="큰 상승 신호 없음, 분산 상태. 책 케이스 1.",
         )
 
+    # ---- Soft fallback: meaningful zone/trend combos that don't fit
+    # any of the 11 book cases sharply (e.g. middle-zone + uptrend +
+    # mild-volume-up like IONQ 2026-05-18 with vol_ratio=1.27). The
+    # book labels these as "Case 1 변형" — interpretable context, not
+    # high-conviction signal. We surface them as low-confidence
+    # neutrals instead of letting them fall into "분류 불명확".
+    if trend == UP:
+        if zone == "top":
+            # Top-zone uptrend with moderate volume — could be either
+            # late-stage 매집 (vol ≤ 1.0, mild distribution risk) or
+            # continuation (vol slightly up, neither surge nor drying).
+            # Book treats this as "추세 막바지 관찰" — confidence low.
+            if vol_ratio < 1.0:
+                return VolumeCase(
+                    case=7,
+                    label_kr="상투권 거래량 약감소 (매집 후반)",
+                    direction="neutral",
+                    confidence=0.45,
+                    reason=(
+                        f"상투권 상승 + 거래량 -{(1-vol_ratio)*100:.0f}%. "
+                        "책 case 7 변형: 세력 매집 마무리 가능성, "
+                        "하지만 case 9 (털기) 직전일 수도. 위꼬리 봉 주시."
+                    ),
+                )
+            return VolumeCase(
+                case=1,
+                label_kr="상투권 추세 진행 (변동성 평이)",
+                direction="neutral",
+                confidence=0.40,
+                reason=(
+                    f"상투권 +{(vol_ratio-1)*100:.0f}% 거래량 (3배 미달). "
+                    "추세 유지되지만 신규 매수 자리 X — 책: 보유 평가용."
+                ),
+            )
+        if zone == "middle":
+            return VolumeCase(
+                case=1,
+                label_kr="추세 진행 중 (정상 거래량)",
+                direction="neutral",
+                confidence=0.40,
+                reason=(
+                    f"중간대 상승 추세, 거래량 +{(vol_ratio-1)*100:.0f}% "
+                    "(폭증 미달). 책: 큰 신호 없음, 추세 유지 관찰."
+                ),
+            )
+        if zone == "bottom":
+            return VolumeCase(
+                case=1,
+                label_kr="바닥 반전 시도 (확정 미흡)",
+                direction="neutral",
+                confidence=0.40,
+                reason=(
+                    f"바닥권 상승 시도, 거래량 +{(vol_ratio-1)*100:.0f}% "
+                    "(3배 임계 미달). 책: case 3 후보, 거래량 확인 필요."
+                ),
+            )
+    if trend == DOWN:
+        if zone == "top":
+            return VolumeCase(
+                case=10,
+                label_kr="상투 후 급락 시작 (위험)",
+                direction="bearish",
+                confidence=0.55,
+                reason=(
+                    f"상투권 + 하락 추세, 거래량 {vol_ratio:.2f}×. "
+                    "책 case 10: 세력 설거지 의심. 청산 + 신규 매수 X."
+                ),
+            )
+        if zone == "middle":
+            return VolumeCase(
+                case=11,
+                label_kr="조정 진행 (위험 관찰)",
+                direction="bearish",
+                confidence=0.40,
+                reason=(
+                    "중간대 조정 진행. 거래량 결정적 시그널 부재. "
+                    "10MA 이탈 시 청산 권고."
+                ),
+            )
+    if trend == SIDE:
+        return VolumeCase(
+            case=1,
+            label_kr=f"{zone}대 박스권 (방향성 미정)",
+            direction="neutral",
+            confidence=0.35,
+            reason=(
+                f"가격대 {zone} 박스권, 거래량 {vol_ratio:.2f}× "
+                "(특이 신호 없음). 책: 매매 보류."
+            ),
+        )
+
     return VolumeCase(
         case=0,
         label_kr="분류 불명확",
         direction="neutral",
-        confidence=0.40,
+        confidence=0.30,
         reason=f"zone={zone}, trend={trend}, vol_ratio={vol_ratio:.2f}",
     )
 

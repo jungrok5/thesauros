@@ -8,6 +8,7 @@ import {
   type FlowSummary,
 } from "@/components/investor-flow-chip";
 import { BookVerdict } from "@/components/book-verdict";
+import { BookSummaryTable } from "@/components/book-summary-table";
 import { formatNumber, cn } from "@/lib/utils";
 
 // pattern.kind comes from the Python analyzer as Korean strings. Map them
@@ -30,92 +31,11 @@ function patternTerm(kind: string): string | null {
   return null;
 }
 
-// Candle tags emitted by the analyzer ("양봉", "장대양봉", "눈썹캔들" ...).
-const CANDLE_TAG_TERM: Record<string, string> = {
-  "장대양봉": "jangdae_yangbong",
-  "눈썹캔들": "nunsseop_candle",
-  "양봉": "yangbong",
-  "음봉": "eumbong",
-};
-
 const TF_TERM: Record<string, string> = {
   daily: "tf_daily",
   weekly: "tf_weekly",
   monthly: "tf_monthly",
 };
-
-function TrendTile({
-  name,
-  tf,
-}: {
-  name: string;
-  tf: AnalysisResult["trend"]["daily"];
-}) {
-  if (!tf) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-4 text-sm">
-        <div className="text-muted-foreground mb-1">[{name}]</div>
-        <div>데이터 부족</div>
-      </div>
-    );
-  }
-  const labelColor =
-    tf.label === "강세"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : tf.label === "약세" || tf.label === "데드"
-        ? "text-rose-600 dark:text-rose-400"
-        : "text-muted-foreground";
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <header className="flex items-center justify-between mb-2">
-        <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          [{name}]
-        </span>
-        <span className={cn("text-sm font-medium", labelColor)}>{tf.label}</span>
-      </header>
-      <div className="flex items-baseline justify-between mb-3">
-        <span className="text-xs text-muted-foreground">score</span>
-        <span className="font-mono text-base font-medium">
-          {tf.overall_score >= 0 ? "+" : ""}
-          {tf.overall_score.toFixed(2)}
-        </span>
-      </div>
-      <dl className="space-y-1 text-xs">
-        <div className="flex justify-between">
-          <dt className="text-muted-foreground">price</dt>
-          <dd className="font-mono">{formatNumber(tf.price)}</dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-muted-foreground">10MA</dt>
-          <dd className="font-mono">
-            {formatNumber(tf.ma_10)}{" "}
-            <span
-              className={
-                tf.above_ma_10
-                  ? "text-emerald-600 dark:text-emerald-400 text-[10px]"
-                  : "text-rose-600 dark:text-rose-400 text-[10px]"
-              }
-            >
-              {tf.above_ma_10 ? "▲ 위" : "▼ 아래"}
-            </span>
-          </dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-muted-foreground">
-            <HelpTip term="dolbanji_240ma">240MA</HelpTip>
-          </dt>
-          <dd className="font-mono">
-            {tf.ma_240 !== null ? formatNumber(tf.ma_240) : "—"}
-          </dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-muted-foreground">정배열</dt>
-          <dd className="font-mono">{tf.alignment_score.toFixed(2)}</dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
 
 function PatternCard({
   p,
@@ -256,158 +176,56 @@ export function AnalysisView({
 
       <BookVerdict result={r} />
 
-      {r.trend.book_reason && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
-            추세 판정
-          </div>
-          <p className="text-sm">{r.trend.book_reason}</p>
-        </div>
-      )}
+      {/* 책 정신 정리표 — 시간프레임/캔들/거래량/패턴/4등분선/외인을 한
+          표에 집약. 이전엔 6개 카드로 흩어져 있던 정보를 사용자 매뉴얼
+          분석 표 형식 그대로 노출 (Phase 2 P3 UX 정리, 2026-05-19). */}
+      <BookSummaryTable result={r} flow={flow} />
 
-      <section className={cn(
-        "grid grid-cols-1 gap-3",
-        // Daily tile is hidden post weekly-pivot (always null). Only show
-        // when explicitly populated (legacy data or future intraday source).
-        r.trend.daily ? "md:grid-cols-3" : "md:grid-cols-2",
-      )}>
-        <TrendTile name="월봉" tf={r.trend.monthly} />
-        <TrendTile name="주봉" tf={r.trend.weekly} />
-        {r.trend.daily && <TrendTile name="일봉" tf={r.trend.daily} />}
-      </section>
-
-      {r.last_candle && (
-        <section className="rounded-lg border border-border bg-card p-4">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            최근 캔들 ({r.last_candle.date})
+      {/* 무효화되지 않은 완성 패턴이 있을 때만 detail 섹션. 한 줄로
+          요약된 정보는 정리표가 이미 surface하므로, 자세히 보고싶은
+          사용자만 펼침. */}
+      {r.patterns.some((p) => p.completed && !p.invalidated) && (
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-2.5 cursor-pointer text-xs font-semibold tracking-wider uppercase text-muted-foreground hover:text-foreground">
+            감지된 패턴 자세히 ({r.patterns.filter((p) => p.completed && !p.invalidated).length}건)
+          </summary>
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {r.patterns
+              .filter((p) => p.completed && !p.invalidated)
+              .map((p, i) => (
+                <PatternCard key={`${p.kind}-${p.timeframe}-${i}`} p={p} lastClose={r.last_close} />
+              ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-mono">
-              O {formatNumber(r.last_candle.open)} · H{" "}
-              {formatNumber(r.last_candle.high)} · L{" "}
-              {formatNumber(r.last_candle.low)} · C{" "}
-              {formatNumber(r.last_candle.close)}
-            </span>
-            <span
-              className={cn(
-                "text-xs px-1.5 py-0.5 rounded border",
-                r.last_candle.is_bullish
-                  ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                  : "border-rose-500/40 text-rose-700 dark:text-rose-300",
-              )}
-            >
-              <HelpTip term={r.last_candle.is_bullish ? "yangbong" : "eumbong"}>
-                {r.last_candle.is_bullish ? "양봉" : "음봉"}
-              </HelpTip>
-            </span>
-            {r.last_candle.tags.map((t) => {
-              const tagTerm = CANDLE_TAG_TERM[t];
-              return (
-                <span
-                  key={t}
-                  className="text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground"
-                >
-                  {tagTerm ? <HelpTip term={tagTerm}>{t}</HelpTip> : t}
-                </span>
-              );
-            })}
-          </div>
-          {r.last_candle.in_safe_zone_75 !== null && (
-            <p
-              className={cn(
-                "mt-2 text-sm",
-                r.last_candle.in_safe_zone_75
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-amber-600 dark:text-amber-400",
-              )}
-            >
-              <HelpTip term="safe_zone_75">
-                {r.last_candle.in_safe_zone_75
-                  ? "✓ 4등분선 75% 안전지대 — 다음 봉 상승 확률 高"
-                  : "⚠ 4등분선 75% 아래 — 추세 약화 가능"}
-              </HelpTip>
-            </p>
-          )}
-        </section>
-      )}
-
-      {r.patterns.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
-            감지된 패턴 ({r.patterns.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {r.patterns.map((p, i) => (
-              <PatternCard key={`${p.kind}-${p.timeframe}-${i}`} p={p} lastClose={r.last_close} />
-            ))}
-          </div>
-        </section>
+        </details>
       )}
 
       {r.reversals.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
-            되돌림 패턴 ({r.reversals.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-2.5 cursor-pointer text-xs font-semibold tracking-wider uppercase text-muted-foreground hover:text-foreground">
+            되돌림 패턴 자세히 ({r.reversals.length}건)
+          </summary>
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             {r.reversals.map((p, i) => (
               <PatternCard key={`rev-${p.kind}-${i}`} p={p} lastClose={r.last_close} />
             ))}
           </div>
-        </section>
+        </details>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {r.volume_case && (
-          <section className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-              <HelpTip term="volume_case_generic">거래량 분류</HelpTip>
-            </div>
-            <div className="font-medium text-sm mb-1">
-              <HelpTip
-                term={
-                  r.volume_case.case === 0
-                    ? "volume_case_0"
-                    : r.volume_case.case === 9
-                      ? "volume_case_9"
-                      : "volume_case_generic"
-                }
-              >
-                Case {r.volume_case.case} · {r.volume_case.label_kr}
-              </HelpTip>
-            </div>
-            <p className="text-xs text-muted-foreground mb-1">
-              {r.volume_case.reason}
-            </p>
-            <span
-              className={cn(
-                "text-xs",
-                r.volume_case.direction === "bullish"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : r.volume_case.direction === "bearish"
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-muted-foreground",
-              )}
-            >
-              {r.volume_case.direction} · 신뢰도{" "}
-              {(r.volume_case.confidence * 100).toFixed(0)}%
-            </span>
-          </section>
-        )}
-
-        {r.reverse_accumulation && (
-          <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
-            <div className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
-              ⭐ <HelpTip term="reverse_accumulation">역매집 감지</HelpTip>
-            </div>
-            <p className="text-sm">{r.reverse_accumulation.reason}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              발생 {r.reverse_accumulation.occurrences}회 · 바닥{" "}
-              {formatNumber(r.reverse_accumulation.floor)}
-            </p>
-          </section>
-        )}
-      </div>
+      {/* 역매집 감지: 책 정신상 "심봤다" 시그널. 정리표에 한 줄 흡수
+          돼있지 않으므로 별도 카드 유지. 단 발견된 경우에만 표시. */}
+      {r.reverse_accumulation && (
+        <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+          <div className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
+            ⭐ <HelpTip term="reverse_accumulation">역매집 감지</HelpTip>
+          </div>
+          <p className="text-sm">{r.reverse_accumulation.reason}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            발생 {r.reverse_accumulation.occurrences}회 · 바닥{" "}
+            {formatNumber(r.reverse_accumulation.floor)}
+          </p>
+        </section>
+      )}
 
       {r.entry_plan && (() => {
         const ep = r.entry_plan;
