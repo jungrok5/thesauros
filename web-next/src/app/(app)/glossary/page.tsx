@@ -9,7 +9,10 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { GLOSSARY } from "@/lib/glossary";
 
-export const dynamic = "force-static";
+// NB: `dynamic = "force-static"` was here, but conflicted with the
+// (app)/layout.tsx auth() check — at build time `auth()` returns null →
+// `redirect("/login")` got baked into the static HTML. Hard refresh then
+// served that cached redirect.
 
 // Grouped sections (manual curation, simpler than auto-grouping by key prefix).
 const SECTIONS: Array<{

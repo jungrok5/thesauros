@@ -15,7 +15,11 @@ import Link from "next/link";
 import { ArrowLeft, AlertTriangle, ArrowRight, ChevronRight } from "lucide-react";
 import { HelpTip } from "@/components/help-tip";
 
-export const dynamic = "force-static";
+// NB: `dynamic = "force-static"` was here, but it conflicted with the
+// (app)/layout.tsx auth() check — at build time `auth()` returns null →
+// `redirect("/login")` got baked into the static HTML. Hard refresh then
+// served that cached redirect. Content is constants only; Next.js infers
+// optimization without forcing static.
 
 // ─────────────────────────────────────────────────────────────────────
 // 1. 한눈 cheat-sheet
