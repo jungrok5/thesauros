@@ -52,11 +52,28 @@ def resample_to_period(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
 
 def add_moving_averages(df: pd.DataFrame, periods: List[int] = None,
                         price_col: str = "close") -> pd.DataFrame:
+    """Compute rolling MAs.
+
+    Bars-shortage policy (2026-05-19 honesty pass):
+      - Short MAs (≤ 60 bars): min_periods = p // 3 so 5MA/10MA/20MA/60MA
+        emit early — book룰에서 단기 MA는 추세 시작부터 의미 있음.
+      - Long MAs (> 60 bars, esp. 240MA): min_periods = p * 2/3.
+        Otherwise a US ticker with only 110 weeks of Naver-sourced
+        bars would emit a "240MA" that's actually just a 110-week mean
+        — misrepresenting the book's structural cycle anchor (p324).
+        Now `ma_240` stays NULL until we have ≥ 160 weeks (~3 years),
+        and the analyzer's score-rescale path handles the absence
+        explicitly (trend.py L195-201).
+    """
     periods = periods or MA_PERIODS
     out = df.copy()
     for p in periods:
+        if p > 60:
+            min_periods = max(1, int(p * 2 / 3))
+        else:
+            min_periods = max(1, p // 3)
         out[f"ma_{p}"] = out[price_col].rolling(
-            window=p, min_periods=max(1, p // 3)
+            window=p, min_periods=min_periods,
         ).mean()
     return out
 

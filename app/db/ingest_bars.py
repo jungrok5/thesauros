@@ -432,11 +432,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception as e:
             log.error("%s ingest failed: %s", m, e)
 
-    if not markets or (markets & set(US_MARKETS)):
+    # US ingest:
+    #   - explicit --markets US* → full US universe (heavy, manual only)
+    #   - default cron (markets={KOSPI,KOSDAQ}) → watchlist-only path so
+    #     user-added US tickers still get fresh bars + analysis. This
+    #     was the missing branch — the old "if not markets or markets &
+    #     US_MARKETS" guard skipped US entirely under the cron's default
+    #     KOSPI/KOSDAQ filter, leaving the 6,870 US universe at 0 rows.
+    if markets and (markets & set(US_MARKETS)):
         try:
-            n_total += run_us(watchlist_only=not markets)
+            n_total += run_us(watchlist_only=False)
         except Exception as e:
-            log.error("US ingest failed: %s", e)
+            log.error("US ingest (universe) failed: %s", e)
+    else:
+        try:
+            n_total += run_us(watchlist_only=True)
+        except Exception as e:
+            log.error("US ingest (watchlist) failed: %s", e)
 
     log.info("done in %.1fs: total rows upserted=%d",
              time.time() - t0, n_total)
