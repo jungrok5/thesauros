@@ -23,6 +23,10 @@ import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
 import { FundamentalVerdicts } from "@/components/fundamental-verdicts";
+import {
+  MarketWarningBanner,
+  ShortAndDividendCards,
+} from "@/components/market-signals";
 import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
@@ -240,7 +244,14 @@ export default async function StockDetailPage({ params }: PageProps) {
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
     isCanonical
       ? fetchStockContext(ticker)
-      : Promise.resolve({ disclosures: [], fin: null, fac: null }),
+      : Promise.resolve({
+          disclosures: [],
+          fin: null,
+          fac: null,
+          warnings: [],
+          shorts: [],
+          dividend: null,
+        }),
   ]);
   const result = cached.result;
 
@@ -339,11 +350,20 @@ export default async function StockDetailPage({ params }: PageProps) {
               진행 중입니다 (~3분). 잠시 후 새로고침하면 최신 결과가 표시됩니다.
             </div>
           )}
+          {/* CRITICAL: warning banner before anything else. If a stock
+              is 거래정지 / 관리종목, every other widget below is
+              irrelevant to the buy/sell decision. */}
+          <MarketWarningBanner warnings={ctx.warnings} />
           <MarketHoursNotice />
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
           <AnalysisView result={result} flow={flow} />
           <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
+          <ShortAndDividendCards
+            shorts={ctx.shorts}
+            dividend={ctx.dividend}
+            todayIso={new Date().toISOString().slice(0, 10)}
+          />
           <div>
             <h2 className="mb-2 text-lg font-semibold tracking-tight">
               차트 (시각적 검증)

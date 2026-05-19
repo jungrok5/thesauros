@@ -12,6 +12,7 @@ import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
 import { MarketTicker } from "@/components/market-ticker";
 import { MarketActionCard } from "@/components/market-action-card";
+import { SeasonalBanner } from "@/components/seasonal-banner";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
@@ -180,6 +181,10 @@ export default async function DashboardPage() {
       </header>
 
       <MarketTicker />
+
+      <SeasonalBanner
+        todayIso={new Date().toISOString().slice(0, 10)}
+      />
 
       <MarketActionCard
         guidance={row.one_line_guidance}

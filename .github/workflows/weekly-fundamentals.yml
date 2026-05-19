@@ -53,6 +53,15 @@ jobs:
           # 90-day backfill so the Saturday catch-up picks up the
           # whole prior week + buffer for any past misses.
           python -m app.db.ingest_news --days-back 90
+      - name: Market signals — KR short sales + dividends + warnings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # pykrx (shorts + dividends) + Naver scrape (warnings).
+          # Engagement-set filter inside the script keeps this bounded.
+          python -m app.data.ingest_market_signals
       - name: SEC EDGAR fundamentals + filings (US tickers)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

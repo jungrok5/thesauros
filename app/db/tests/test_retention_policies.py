@@ -22,9 +22,12 @@ _REQUIRED_TABLES = {
     "disclosures",
     "scan_results",
     "alerts",
-    "fundamentals",   # added 2026-05-19 with SEC ingest
+    "fundamentals",     # added 2026-05-19 with SEC ingest
     "analyze_results",
-    "feedback",       # added 2026-05-19 with /feedback page
+    "feedback",         # added 2026-05-19 with /feedback page
+    "short_sales",      # added 2026-05-19 with market signals (027)
+    "market_warnings",  # ditto
+    "dividend_info",    # ditto
     # search_history is self-trimming via DB trigger — exempt from rule below
 }
 
@@ -37,6 +40,9 @@ _NEEDS_ENGAGEMENT_FILTER = {
     "disclosures",
     "scan_results",
     "analyze_results",
+    "short_sales",
+    "market_warnings",
+    "dividend_info",
 }
 
 

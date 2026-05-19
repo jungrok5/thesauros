@@ -222,6 +222,61 @@ POLICIES: list[Policy] = [
         """,
         "closed ≥ 90 days",
     ),
+    # Short-sales history: daily rows × ~2700 KR tickers grow ~700K/year.
+    # 90 days is enough for trend cards + matches scan_results retention.
+    (
+        "short_sales",
+        "DELETE FROM short_sales WHERE day < CURRENT_DATE - INTERVAL '90 days'",
+        "90 days",
+    ),
+    # Short-sales engagement filter — match bars/fundamentals so a
+    # one-time-searched ticker doesn't keep accumulating daily rows.
+    (
+        "short_sales",
+        """
+        DELETE FROM short_sales WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
+    # market_warnings + dividend_info don't accumulate per-day — single
+    # row per (ticker, level) / (ticker) respectively. Stale rows are
+    # overwritten in place by the next ingest. Just sweep tickers
+    # outside the engagement set.
+    (
+        "market_warnings",
+        """
+        DELETE FROM market_warnings WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
+    (
+        "dividend_info",
+        """
+        DELETE FROM dividend_info WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
     # search_history is self-trimming via the trg_trim_search_history
     # trigger (30 newest per user). No retention rule needed.
     # investor_flow is KR-only by construction (Naver frgn page), so
