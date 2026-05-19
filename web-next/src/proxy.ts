@@ -19,7 +19,19 @@ export default auth((req) => {
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
-    pathname === "/sw.js";
+    pathname === "/sw.js" ||
+    // Social-preview crawlers (KakaoTalk, Facebook, Slack, Twitter, …)
+    // fetch these without a session — keeping them behind auth made link
+    // previews show a blank /login redirect instead of the OG image.
+    // Next.js exposes opengraph-image.tsx / icon.tsx at these literal
+    // paths; the trailing hash variant appears when a route group emits
+    // multiple sizes, so use `startsWith` to cover both.
+    pathname.startsWith("/opengraph-image") ||
+    pathname.startsWith("/twitter-image") ||
+    pathname.startsWith("/icon") ||
+    pathname.startsWith("/apple-icon") ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml";
 
   if (isPublic) return NextResponse.next();
 

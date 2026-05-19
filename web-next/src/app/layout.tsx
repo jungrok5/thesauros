@@ -13,12 +13,21 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Production-ish absolute base for OG/Twitter cards. Falls back to the
-// Vercel-assigned preview URL when the env isn't set; in local dev
-// social previews don't matter so localhost is fine.
+// Production-ish absolute base for OG/Twitter cards. Resolution order:
+//   1. NEXT_PUBLIC_SITE_URL  — explicit override (e.g. custom domain).
+//   2. VERCEL_PROJECT_PRODUCTION_URL — the project's prod alias
+//      (e.g. "thesauros2026.vercel.app"), stable across deploys.
+//   3. VERCEL_URL — the per-deployment URL (e.g. "thesauros-km3y...").
+//      Last resort because each push changes it, so a freshly-cached
+//      KakaoTalk preview can point to a deployment that 404s.
+//   4. localhost — dev fallback; social previews don't matter locally.
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000");
 
 const DESC =
   "한국 종목 (KOSPI / KOSDAQ) 매주 금요일 자동 주봉 스캔 — 17종 캔들 패턴 + " +

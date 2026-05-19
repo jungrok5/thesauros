@@ -1,6 +1,9 @@
+import { headers } from "next/headers";
 import { signIn } from "@/auth";
 import { safeCallback } from "@/lib/safe-redirect";
-import { Compass, LineChart, Map } from "lucide-react";
+import { Compass, LineChart, Map, AlertTriangle } from "lucide-react";
+import { detectInAppBrowser } from "@/lib/in-app-browser";
+import { OpenInBrowserHelp } from "./open-in-browser-help";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +32,13 @@ const FEATURES = [
 export default async function LoginPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const callbackUrl = safeCallback(sp.callbackUrl);
+
+  // Google OAuth blocks embedded WebViews ("허용되지 않은 사용자
+  // 에이전트"). Detect KakaoTalk / Naver / Facebook / Instagram in-app
+  // browsers server-side and surface a banner with a "open in browser"
+  // helper instead of letting the user hit the dead-end OAuth screen.
+  const h = await headers();
+  const inApp = detectInAppBrowser(h.get("user-agent"));
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-background text-foreground overflow-hidden">
@@ -79,6 +89,25 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
           {/* CTA */}
           <div className="px-7 py-6 space-y-4">
+            {inApp.isInApp && (
+              <div className="rounded-lg border-2 border-amber-500/50 bg-amber-500/10 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                      {inApp.app === "KakaoTalk"
+                        ? "카카오톡 안에서는 Google 로그인이 막혀 있습니다"
+                        : `${inApp.app ?? "이 앱"} 안에서는 Google 로그인이 막혀 있습니다`}
+                    </div>
+                    <p className="text-xs text-amber-800/90 dark:text-amber-200/80 leading-relaxed">
+                      Google 보안 정책상 앱 안 브라우저에서는 OAuth 로그인이
+                      차단됩니다. 아래 버튼으로 Chrome / Safari 에서 열어주세요.
+                    </p>
+                  </div>
+                </div>
+                <OpenInBrowserHelp />
+              </div>
+            )}
             <form
               action={async () => {
                 "use server";
