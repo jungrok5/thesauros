@@ -82,6 +82,7 @@ const STEPS: Step[] = [
       { label: "중도해지", value: "기타소득세 16.5% + 세공 반환" },
     ],
     tips: [
+      "★★★ 자동매수/적립식 ETF 설정 — 매월 1일/25일 같은 날 자동매수 → 책 정신의 \"분할 진입\" + 변동성 평균화. 인간 심리(공포·욕심)에 휘둘리지 X.",
       "ETF 매매 차익 비과세 (일반계좌 22% 양도세) — 미국 ETF에 최적.",
       "배당금도 인출 전까지 비과세 → 복리 효과.",
       "총급여 5,500 이하면 16.5% 환급 = 99만원, 초과면 13.2% = 79만원.",
@@ -115,6 +116,7 @@ const STEPS: Step[] = [
       { label: "퇴직금 합산", value: "퇴직금 IRP 이전 → 퇴직소득세 30% 감면" },
     ],
     tips: [
+      "★★★ 자동이체 + 자동매수 한 번에 설정 — 월급일에 IRP 자동 입금 → 정해진 ETF 자동 매수. 손 안 대고 5년 굴리면 책 정신상 \"버티기\" 자동 실행.",
       "ETF 매매 = 연금저축에 우선 배치 (위험자산 100% 가능). IRP는 채권·TDF·안전자산 위주.",
       "공격형 30% 안전자산은 액티브 채권 → 단순 단기채보다 1~3%p 추가 수익 가능.",
       "총급여 5,500 이하면 900만원 풀 납입 → 매년 약 148만원 환급 (월 12만원).",
@@ -192,6 +194,56 @@ const CHEAT: CheatRow[] = [
   { step: "3. IRP",          effect: "추가 49만원/년 (합산 148)", cap: "추가 300만원",  note: "위험 70% / 안전 30%" },
   { step: "4. ISA",          effect: "200만원 비과세 + 40만원*",   cap: "연 2,000 / 1억", note: "*만기 연금이전" },
   { step: "5. 직접투자",      effect: "한국 X · 미국 22%",          cap: "잉여 자금",    note: "이 사이트 핵심" },
+];
+
+// 5 major Korean brokers — menu paths for opening pension/ISA accounts +
+// setting up auto-buy / 적립식 매매. Paths are typical patterns — exact
+// label may vary by app version. Universal fallback: 앱 검색창에 "연금저축"
+// or "IRP" 검색.
+interface BrokerRow {
+  name: string;
+  app: string;
+  pensionPath: string;     // 연금저축/IRP 가입 + ETF 자동매수 경로
+  isaPath: string;
+  autoBuy: string;
+}
+
+const BROKERS: BrokerRow[] = [
+  {
+    name: "미래에셋증권",
+    app: "M-STOCK",
+    pensionPath: "메뉴 → 연금 → 연금저축펀드/IRP",
+    isaPath: "메뉴 → ISA → 중개형 ISA",
+    autoBuy: "종목 화면 → 자동주문 → 정기매수",
+  },
+  {
+    name: "NH투자증권",
+    app: "나무·QV",
+    pensionPath: "메뉴 → 연금 → 연금저축계좌/IRP",
+    isaPath: "메뉴 → ISA → 중개형",
+    autoBuy: "종목 → 자동매매 → 적립식",
+  },
+  {
+    name: "한국투자증권",
+    app: "한국투자 (eFriend)",
+    pensionPath: "전체 메뉴 → 연금 → 연금저축/IRP",
+    isaPath: "전체 메뉴 → ISA 계좌",
+    autoBuy: "주식 → 자동매수 설정",
+  },
+  {
+    name: "삼성증권",
+    app: "mPOP",
+    pensionPath: "메뉴 → 자산관리 → 연금 → 연금저축/IRP",
+    isaPath: "메뉴 → 자산관리 → ISA",
+    autoBuy: "ETF 주문 → 정기자동매수",
+  },
+  {
+    name: "키움증권",
+    app: "영웅문S/영웅문S#",
+    pensionPath: "좌측 메뉴 → 연금/ISA → 연금저축/IRP",
+    isaPath: "좌측 메뉴 → 연금/ISA → 중개형 ISA",
+    autoBuy: "주식 → 자동매매 → 적립식 매수",
+  },
 ];
 
 function StepCard({ s }: { s: Step }) {
@@ -391,6 +443,83 @@ export default function GuidePage() {
           <StepCard key={s.num} s={s} />
         ))}
       </div>
+
+      {/* 자동매수/적립식 박스 — 책 정신과 부합 */}
+      <section className="rounded-xl border-2 border-sky-500/40 bg-sky-500/5 p-5 space-y-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-sky-700 dark:text-sky-300">
+            ★★★ 가장 강력한 한 가지
+          </div>
+          <h2 className="text-lg font-semibold tracking-tight mt-1">
+            🔁 자동이체 + 자동매수 (적립식) 한 번 설정 → 평생 굴림
+          </h2>
+        </div>
+        <p className="text-sm leading-relaxed">
+          연금저축 / IRP는 매월 정해진 날에 자동이체 + 자동매수 (적립식 ETF) 설정 한 번
+          해두면 손 안 대고 운용 가능. 매월 동일 금액 매수 = <strong>분할 진입</strong>
+          (책 정신: 한 번에 다 사지 X, 분할로). 변동성 평균화 + 인간 심리(공포·욕심)에 휘둘리지 X.
+        </p>
+        <ul className="text-xs space-y-1 text-foreground/85">
+          <li className="flex gap-2">
+            <span className="text-sky-600 dark:text-sky-400 shrink-0">·</span>
+            <span><strong>자동이체</strong>: 월급일(예: 25일) → 연금저축 + IRP 계좌로 자동 입금</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-sky-600 dark:text-sky-400 shrink-0">·</span>
+            <span><strong>자동매수</strong>: 입금일 다음날 = 정해진 ETF 자동 매수 (TIGER 미국S&P500 / TDF 등)</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-sky-600 dark:text-sky-400 shrink-0">·</span>
+            <span><strong>분기에 한 번 확인</strong>: 비중 점검, 안전자산 30% 유지 (IRP), 매수가 평균 확인 </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-sky-600 dark:text-sky-400 shrink-0">·</span>
+            <span>책 정신: 와병투자 (누워서 투자) — 매수/매도 빈도 ↓ 일수록 수익률 ↑</span>
+          </li>
+        </ul>
+      </section>
+
+      {/* 5개 증권사 메뉴 위치 */}
+      <section className="rounded-xl border border-border bg-card overflow-hidden">
+        <header className="px-4 py-2.5 border-b border-border bg-muted/30">
+          <h2 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+            📱 국내 대표 증권사 5개 — 메뉴 위치
+          </h2>
+        </header>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/20">
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">증권사 · 앱</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">연금저축 / IRP</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">ISA</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">자동매수</th>
+              </tr>
+            </thead>
+            <tbody>
+              {BROKERS.map((b, i) => (
+                <tr
+                  key={b.name}
+                  className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium">{b.name}</div>
+                    <div className="text-[10px] text-muted-foreground">{b.app}</div>
+                  </td>
+                  <td className="px-3 py-2 align-top">{b.pensionPath}</td>
+                  <td className="px-3 py-2 align-top">{b.isaPath}</td>
+                  <td className="px-3 py-2 align-top">{b.autoBuy}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
+          💡 메뉴 라벨은 앱 버전에 따라 달라질 수 있음 — 못 찾으면{" "}
+          <strong>앱 검색창에 &quot;연금저축&quot; / &quot;IRP&quot; / &quot;ISA&quot; 검색</strong>이 가장 빠름.
+          {" "}수수료(운용·자산관리·매매)는 증권사별 차이가 있으니 가입 전 비교 권장.
+        </footer>
+      </section>
 
       {/* Final CTA */}
       <section className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 p-5 space-y-2">
