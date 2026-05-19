@@ -153,7 +153,6 @@ export default async function WatchlistPage() {
         {observing.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
             관찰 중인 종목이 없습니다.{" "}
-            <Link href="/recommendations" className="underline">추천 종목</Link> 또는{" "}
             <Link href="/stocks" className="underline">종목 검색</Link>에서 추가하세요.
           </div>
         ) : (

@@ -1,48 +1,43 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * E2E for the book-faithful site additions:
- *  - /watchlist redirects to /login when signed out
- *  - /recommendations redirects to /login when signed out
+ * E2E for the search-only site:
+ *  - Auth-required pages (/watchlist, /stocks) redirect to /login when signed out
  *  - /api/watchlist returns 401 when signed out
- *  - /stocks redirects to /login when signed out
- *  - Sidebar nav items render (after sign-in flow — currently mocked check by
- *    visiting /login and verifying the static layout pieces.)
+ *
+ * Removed pages: /recommendations, /closing-trade, /themes — those features
+ * caused recurring false-positive false-positive bugs (LG우 type) due to
+ * universe-wide auto-classification. The site now focuses on user-driven
+ * search + on-demand analysis per ticker.
  */
-test.describe("Book-faithful site — public routes redirect", () => {
+test.describe("Search-only site — public routes redirect", () => {
   test("watchlist redirects to /login", async ({ page }) => {
     await page.goto("/watchlist");
-    // Auth-required pages now carry a ?callbackUrl=… so the post-login
-    // redirect can return the user to the original page.
-    await expect(page).toHaveURL(/\/login(\?|$)/);
-  });
-
-  test("recommendations redirects to /login", async ({ page }) => {
-    await page.goto("/recommendations");
-    // Auth-required pages now carry a ?callbackUrl=… so the post-login
-    // redirect can return the user to the original page.
     await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
   test("stocks redirects to /login", async ({ page }) => {
     await page.goto("/stocks");
-    // Auth-required pages now carry a ?callbackUrl=… so the post-login
-    // redirect can return the user to the original page.
     await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
-  test("closing-trade redirects to /login", async ({ page }) => {
-    await page.goto("/closing-trade");
-    // Auth-required pages now carry a ?callbackUrl=… so the post-login
-    // redirect can return the user to the original page.
-    await expect(page).toHaveURL(/\/login(\?|$)/);
+  test("removed /recommendations renders 404 (not /login redirect)", async ({ page }) => {
+    const r = await page.goto("/recommendations");
+    // Next.js serves 404 for an unrouted path. Either status 404 or content
+    // contains "404" / "not found" is acceptable — we just need to confirm
+    // the page is gone, NOT that auth gate intercepts (which would mean
+    // the route still exists).
+    expect(r?.status() ?? 404).toBeGreaterThanOrEqual(404);
   });
 
-  test("themes redirects to /login", async ({ page }) => {
-    await page.goto("/themes");
-    // Auth-required pages now carry a ?callbackUrl=… so the post-login
-    // redirect can return the user to the original page.
-    await expect(page).toHaveURL(/\/login(\?|$)/);
+  test("removed /closing-trade renders 404", async ({ page }) => {
+    const r = await page.goto("/closing-trade");
+    expect(r?.status() ?? 404).toBeGreaterThanOrEqual(404);
+  });
+
+  test("removed /themes renders 404", async ({ page }) => {
+    const r = await page.goto("/themes");
+    expect(r?.status() ?? 404).toBeGreaterThanOrEqual(404);
   });
 });
 

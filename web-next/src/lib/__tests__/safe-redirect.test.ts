@@ -36,8 +36,8 @@ describe("safeCallback", () => {
 
   it("allows ordinary same-site paths through unchanged", () => {
     expect(safeCallback("/stocks/017670.KS")).toBe("/stocks/017670.KS");
-    expect(safeCallback("/recommendations?sort=fresh")).toBe(
-      "/recommendations?sort=fresh",
+    expect(safeCallback("/watchlist?sort=fresh")).toBe(
+      "/watchlist?sort=fresh",
     );
     expect(safeCallback("/dashboard")).toBe("/dashboard");
   });

@@ -22,17 +22,16 @@ test.describe("Shared-link callbackUrl preservation", () => {
     expect(url.searchParams.get("callbackUrl")).toBe("/stocks/005930.KS");
   });
 
-  test("recommendations → /login keeps callbackUrl with querystring", async ({ page }) => {
-    await page.goto("/recommendations?sort=fresh&signal=buy");
+  test("watchlist → /login keeps callbackUrl with querystring", async ({ page }) => {
+    await page.goto("/watchlist?sort=fresh");
     await page.waitForURL(/\/login\?/, { timeout: 5_000 });
     const url = new URL(page.url());
     expect(url.pathname).toBe("/login");
     const cb = url.searchParams.get("callbackUrl");
     expect(cb).toBeTruthy();
-    expect(cb).toMatch(/^\/recommendations/);
+    expect(cb).toMatch(/^\/watchlist/);
     // Querystring should survive intact.
     expect(cb).toContain("sort=fresh");
-    expect(cb).toContain("signal=buy");
   });
 
   test("/dashboard → /login carries dashboard as callbackUrl", async ({ page }) => {
