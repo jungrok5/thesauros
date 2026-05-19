@@ -157,18 +157,36 @@ async function getWatchlistState(
   return { added: false, category: "observing" };
 }
 
-async function getAnalysis(ticker: string): Promise<AnalysisResult | null> {
+/** TTL after which cached analyze_results should trigger an on-demand
+ *  re-analysis. Weekly bars don't change Mon-Thu, so 24h covers the
+ *  steady state while still picking up the Friday close on Saturday. */
+const ANALYSIS_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface CachedAnalysis {
+  result: AnalysisResult | null;
+  /** True when the row is older than TTL (or missing entirely). UI
+   *  surfaces "분석 갱신 중" + the cron dispatch fires in parallel. */
+  stale: boolean;
+}
+
+async function getAnalysis(ticker: string): Promise<CachedAnalysis> {
   const sb = getServerClient();
   const { data, error } = await sb
     .from("analyze_results")
-    .select("result")
+    .select("result, updated_at")
     .eq("ticker", ticker)
     .maybeSingle();
   if (error) {
     console.error("analyze_results read:", error.message);
-    return null;
+    return { result: null, stale: true };
   }
-  return (data?.result as AnalysisResult | undefined) ?? null;
+  if (!data) return { result: null, stale: true };
+  const result = (data.result as AnalysisResult | undefined) ?? null;
+  const updatedAt = data.updated_at
+    ? new Date(data.updated_at as string).getTime()
+    : 0;
+  const stale = !result || Date.now() - updatedAt > ANALYSIS_TTL_MS;
+  return { result, stale };
 }
 
 async function getFlowSummary(ticker: string): Promise<
@@ -226,12 +244,25 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [result, watch, flow, sparkCloses] = await Promise.all([
-    isCanonical ? getAnalysis(ticker) : Promise.resolve(null),
+  const [cached, watch, flow, sparkCloses] = await Promise.all([
+    isCanonical ? getAnalysis(ticker) : Promise.resolve<CachedAnalysis>({ result: null, stale: true }),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
     isCanonical ? getSparklineCloses(ticker) : Promise.resolve<number[]>([]),
   ]);
+  const result = cached.result;
+
+  // On-demand analysis trigger — fire-and-forget. Search-only pivot:
+  // out-of-watchlist tickers no longer hit the nightly scan, so when
+  // a user opens /stocks/[ticker] and the cached row is missing or
+  // stale (> 24 h), we dispatch the analyze-ticker.yml workflow so
+  // the next page load shows fresh data (~2-3 min later). No-op when
+  // GITHUB_DISPATCH_TOKEN is absent (e.g. local dev).
+  if (isCanonical && cached.stale) {
+    const { dispatchAnalyzeTicker } = await import("@/lib/github-dispatch");
+    // Don't await — the page render must not block on the dispatch.
+    dispatchAnalyzeTicker(ticker).catch(() => {});
+  }
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -308,6 +339,12 @@ export default async function StockDetailPage({ params }: PageProps) {
         )
       ) : (
         <>
+          {cached.stale && (
+            <div className="rounded-md border border-sky-500/40 bg-sky-500/5 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
+              🔄 캐시된 분석을 보여드립니다 — 백그라운드에서 최신 분석이
+              진행 중입니다 (~3분). 잠시 후 새로고침하면 최신 결과가 표시됩니다.
+            </div>
+          )}
           <MarketHoursNotice />
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
