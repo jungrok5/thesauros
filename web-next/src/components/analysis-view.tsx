@@ -149,12 +149,15 @@ export function AnalysisView({
           <h1 className="text-3xl font-semibold tracking-tight font-mono">
             {r.ticker}
           </h1>
+          {/* Authoritative date + close live in <LastClose/> above this
+              card (fetched fresh from Naver/Yahoo). The analyzer's
+              embedded `r.as_of` is the underlying weekly bar's
+              week-ending date (Friday) which can disagree with the
+              actual last trading day — we hide it here to avoid the
+              two-dates-disagree confusion. `r.rows` and the cache ts
+              still convey "how much data was analyzed". */}
           <p className="mt-1 text-sm text-muted-foreground">
-            close{" "}
-            <span className="font-mono text-foreground">
-              {formatNumber(r.last_close)}
-            </span>{" "}
-            · as of {r.as_of} · {r.rows} bars · {ts}
+            {r.rows} bars · 분석 시각 {ts}
           </p>
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             <MultiTFMatrix

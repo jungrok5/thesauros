@@ -18,6 +18,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { decideBackLink } from "@/lib/back-link";
+import { isAnalysisStale } from "@/lib/market-staleness";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
@@ -161,15 +162,16 @@ async function getWatchlistState(
   return { added: false, category: "observing" };
 }
 
-/** TTL after which cached analyze_results should trigger an on-demand
- *  re-analysis. Weekly bars don't change Mon-Thu, so 24h covers the
- *  steady state while still picking up the Friday close on Saturday. */
-const ANALYSIS_TTL_MS = 24 * 60 * 60 * 1000;
-
 interface CachedAnalysis {
   result: AnalysisResult | null;
-  /** True when the row is older than TTL (or missing entirely). UI
-   *  surfaces "분석 갱신 중" + the cron dispatch fires in parallel. */
+  /** True when the row's `as_of` is older than the expected latest
+   *  completed trading day for the ticker's market — or when there's
+   *  no row at all. The UI surfaces "분석 갱신 중" and the page
+   *  dispatches an analyze-ticker workflow in parallel.
+   *
+   *  Market-aware staleness (see lib/market-staleness.ts) replaced
+   *  the older 24h TTL: a KR ticker viewed at 19:00 KST should already
+   *  have today's close, not Mon's. */
   stale: boolean;
 }
 
@@ -186,10 +188,7 @@ async function getAnalysis(ticker: string): Promise<CachedAnalysis> {
   }
   if (!data) return { result: null, stale: true };
   const result = (data.result as AnalysisResult | undefined) ?? null;
-  const updatedAt = data.updated_at
-    ? new Date(data.updated_at as string).getTime()
-    : 0;
-  const stale = !result || Date.now() - updatedAt > ANALYSIS_TTL_MS;
+  const stale = !result || isAnalysisStale(ticker, data.updated_at as string);
   return { result, stale };
 }
 
