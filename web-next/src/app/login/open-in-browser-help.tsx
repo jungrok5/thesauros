@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 
 /**
@@ -17,23 +17,24 @@ import { Copy, ExternalLink } from "lucide-react";
  * KakaoTalk / Naver / FB / Instagram / etc.
  */
 export function OpenInBrowserHelp() {
-  const [url, setUrl] = useState<string>("");
-  const [copied, setCopied] = useState(false);
-  const [chromeScheme, setChromeScheme] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const here = window.location.href;
-    setUrl(here);
-    // Android-only escape hatch — strip protocol because the Chrome
-    // intent expects bare host+path.
-    const ua = navigator.userAgent;
-    const isAndroid = /Android/i.test(ua);
-    if (isAndroid) {
-      const noProto = here.replace(/^https?:\/\//, "");
-      setChromeScheme(`googlechrome://navigate?url=${encodeURIComponent(noProto)}`);
+  // Lazy initializers run once during the first render, on the client
+  // only (this is a "use client" component). Using them instead of a
+  // useEffect avoids the React-19 `set-state-in-effect` lint rule, and
+  // also dodges the empty initial render → state-update flash. Since
+  // we're inside "use client" + reading window/navigator behind a
+  // typeof check, SSR safety is preserved.
+  const [url] = useState<string>(() =>
+    typeof window !== "undefined" ? window.location.href : "",
+  );
+  const [chromeScheme] = useState<string | null>(() => {
+    if (typeof window === "undefined" || typeof navigator === "undefined") {
+      return null;
     }
-  }, []);
+    if (!/Android/i.test(navigator.userAgent)) return null;
+    const noProto = window.location.href.replace(/^https?:\/\//, "");
+    return `googlechrome://navigate?url=${encodeURIComponent(noProto)}`;
+  });
+  const [copied, setCopied] = useState(false);
 
   async function copy() {
     if (!url) return;
