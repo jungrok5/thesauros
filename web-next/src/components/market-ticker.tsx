@@ -4,11 +4,14 @@
  * Realtime market ribbon — KOSPI / KOSDAQ / S&P / NASDAQ / VIX / 환율 /
  * 美10Y / WTI / Gold / BTC. Polls /api/quotes/realtime every 60s.
  *
- * Replaces the dashboard's stale-by-cron indices view. The slow macro
- * cards below remain cron-fed (CPI / PPI / M2 / 실업률 etc.) because
- * those genuinely only move on monthly/quarterly schedules.
+ * Layout adapts to viewport — mobile uses a 2-column grid so users
+ * don't have to horizontal-scroll through 11 tiles; md+ keeps the
+ * original ribbon shape so the whole snapshot fits in one row.
+ * Each tile includes a ~1mo sparkline (sparkline data lives on the
+ * same API response — no extra fetch).
  */
 import { useEffect, useState } from "react";
+import { Sparkline } from "@/components/sparkline";
 
 type Quote = {
   symbol: string;
@@ -17,6 +20,7 @@ type Quote = {
   change: number | null;
   change_pct: number | null;
   as_of: number | null;
+  sparkline: number[] | null;
 };
 
 function fmt(price: number | null, symbol: string): string {
@@ -64,12 +68,20 @@ export function MarketTicker() {
     };
   }, []);
 
+  const items = quotes ?? Array(11).fill(null);
   return (
     <section className="rounded-xl border border-border bg-card p-3">
-      <div className="overflow-x-auto -mx-1 px-1">
+      {/* Mobile (< sm): 2-col grid — vertical scroll is fine, easier
+          to scan than a long horizontal one. md+: original ribbon */}
+      <div className="grid grid-cols-2 gap-1.5 sm:hidden">
+        {items.map((q, i) => (
+          <Tile key={q?.symbol ?? i} q={q} variant="grid" />
+        ))}
+      </div>
+      <div className="hidden sm:block overflow-x-auto -mx-1 px-1">
         <div className="flex items-stretch gap-1 min-w-max">
-          {(quotes ?? Array(11).fill(null)).map((q, i) => (
-            <Tile key={q?.symbol ?? i} q={q} />
+          {items.map((q, i) => (
+            <Tile key={q?.symbol ?? i} q={q} variant="row" />
           ))}
         </div>
       </div>
@@ -80,10 +92,22 @@ export function MarketTicker() {
   );
 }
 
-function Tile({ q }: { q: Quote | null }) {
+function Tile({
+  q,
+  variant,
+}: {
+  q: Quote | null;
+  variant: "grid" | "row";
+}) {
+  // Grid (mobile) wants full container width; row (desktop) wants
+  // fixed compact width so the ribbon stays predictable.
+  const widthCls = variant === "grid"
+    ? "w-full"
+    : "min-w-[120px] sm:min-w-[132px]";
+
   if (!q) {
     return (
-      <div className="min-w-[96px] sm:min-w-[110px] rounded-md border border-border bg-background/40 p-2">
+      <div className={`${widthCls} rounded-md border border-border bg-background/40 p-2`}>
         <div className="text-[11px] text-muted-foreground">—</div>
         <div className="mt-1 text-sm font-mono">…</div>
       </div>
@@ -96,18 +120,32 @@ function Tile({ q }: { q: Quote | null }) {
     up ? "text-rose-600 dark:text-rose-400"    // KR convention: up = red
       : dn ? "text-sky-600 dark:text-sky-400"  // down = blue
         : "text-muted-foreground";
+  // Match the sparkline stroke to the tile's tone (KR red/blue).
+  const sparkColor = up ? "#dc2626" : dn ? "#2563eb" : "#94a3b8";
   const stale = staleLabel(q.as_of);
   return (
-    <div className="min-w-[96px] sm:min-w-[110px] rounded-md border border-border bg-background/40 p-2">
+    <div className={`${widthCls} rounded-md border border-border bg-background/40 p-2`}>
       <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-        <span>{q.label}</span>
-        {stale && <span className="text-[9px] opacity-60">{stale}</span>}
+        <span className="truncate">{q.label}</span>
+        {stale && <span className="text-[9px] opacity-60 shrink-0">{stale}</span>}
       </div>
-      <div className="mt-1 text-sm font-mono">{fmt(q.price, q.symbol)}</div>
-      <div className={`text-[11px] font-mono ${tone}`}>
-        {pct == null
-          ? "—"
-          : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`}
+      <div className="mt-1 flex items-center justify-between gap-1">
+        <div>
+          <div className="text-sm font-mono leading-tight">{fmt(q.price, q.symbol)}</div>
+          <div className={`text-[11px] font-mono ${tone} leading-tight`}>
+            {pct == null
+              ? "—"
+              : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`}
+          </div>
+        </div>
+        {q.sparkline && q.sparkline.length >= 2 && (
+          <Sparkline
+            closes={q.sparkline}
+            width={variant === "grid" ? 56 : 48}
+            height={26}
+            color={sparkColor}
+          />
+        )}
       </div>
     </div>
   );

@@ -341,11 +341,30 @@ def main(argv: list[str] | None = None) -> int:
 
     verb = "would delete" if args.dry_run else "deleted"
     total = 0
+    touched: set[str] = set()
     for table, sql, desc in POLICIES:
         n = prune_one(table, sql, dry_run=args.dry_run)
         total += n
+        if n > 0:
+            touched.add(table)
         log.info("%-15s (retain %s)  %s %d rows", table, desc, verb, n)
     log.info("total: %s %d rows", verb, total)
+
+    # VACUUM (non-FULL) on tables that lost rows so dead tuples are
+    # marked reusable. Doesn't shrink the table on disk (that needs
+    # VACUUM FULL which locks the table — bad for a live site), but
+    # keeps further inserts from growing the heap. Autovacuum normally
+    # handles this but defaults are conservative (20% dead tuples), so
+    # we nudge it whenever we just did a big delete.
+    if not args.dry_run and touched:
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                for tbl in sorted(touched):
+                    try:
+                        cur.execute(f"VACUUM {tbl}")
+                        log.info("VACUUM %s done", tbl)
+                    except Exception as e:
+                        log.warning("VACUUM %s failed: %s", tbl, e)
     return 0
 
 

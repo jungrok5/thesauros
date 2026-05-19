@@ -22,6 +22,9 @@ type Quote = {
   change_pct: number | null;
   currency: string | null;
   as_of: number | null;     // unix seconds
+  // Last ~22 daily closes (≈ 1 month) for sparklines. Newest last.
+  // null when Yahoo response had no timeseries (rare, but defensive).
+  sparkline: number[] | null;
 };
 
 // Display order = render order. Korean label first because most users
@@ -40,14 +43,18 @@ const SYMBOLS: { symbol: string; label: string }[] = [
   { symbol: "BTC-USD", label: "BTC" },
 ];
 
+// 1mo range gives us ~22 daily bars — enough for a sparkline that
+// shows the current trend without the response getting heavy. Same
+// single round-trip as before (no extra calls).
 const CHART_URL =
-  "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=2d";
+  "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1mo";
 
 async function fetchOne(label: string, symbol: string): Promise<Quote> {
   const url = CHART_URL.replace("{symbol}", encodeURIComponent(symbol));
   const empty: Quote = {
     symbol, label, price: null, prev_close: null,
     change: null, change_pct: null, currency: null, as_of: null,
+    sparkline: null,
   };
   try {
     const res = await fetch(url, {
@@ -71,6 +78,15 @@ async function fetchOne(label: string, symbol: string): Promise<Quote> {
       price != null && prev != null ? price - prev : null;
     const changePct =
       change != null && prev ? (change / prev) * 100 : null;
+    // Yahoo's `indicators.quote[0].close` is the daily close timeseries
+    // (with null entries on non-trading days for some symbols); strip
+    // nulls so the sparkline component can drawn a clean polyline.
+    const closesRaw: (number | null)[] =
+      r.indicators?.quote?.[0]?.close ?? [];
+    const sparkline = closesRaw.filter(
+      (v): v is number => typeof v === "number" && Number.isFinite(v),
+    );
+
     return {
       symbol, label,
       price,
@@ -79,6 +95,7 @@ async function fetchOne(label: string, symbol: string): Promise<Quote> {
       change_pct: changePct,
       currency: typeof meta.currency === "string" ? meta.currency : null,
       as_of: typeof meta.regularMarketTime === "number" ? meta.regularMarketTime : null,
+      sparkline: sparkline.length >= 2 ? sparkline : null,
     };
   } catch {
     return empty;
