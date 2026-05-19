@@ -63,3 +63,8 @@ scripts/restore_book_transcripts.py
 book_images/**/transcripts/
 book_images/**/charts/
 book_images/**/SUMMARY*.md
+
+# Live-data dump produced by re-running the Python analyzer on real
+# bars (committed test would freeze it stale — keep regenerable). The
+# vitest book-verdict-live.test.tsx skips when this file is absent.
+web-next/src/__tests__/_live_data.json

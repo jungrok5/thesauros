@@ -210,16 +210,41 @@ export function BookVerdict({ result }: Props) {
     const ma240 = weekly?.ma_240 ?? null;
     const above240Pct =
       ma240 && ma240 > 0 ? (last / ma240 - 1) * 100 : null;
-    const lines = [
+    // Surface a candle-reversal callout when the last bar shows top
+    // exhaustion signals — 그레이브스톤도지/유성형/역망치/눈썹/도지
+    // OR very large upper wick (>0.5). This preserves the GOOGL-style
+    // narrative ("그레이브스톤도지 — 반전 주의") that previously lived
+    // in the post-rally-caution branch, which now can't fire because
+    // the analyzer stretch gate downgrades action to HOLD first.
+    const lcTags = r.last_candle?.tags ?? [];
+    const reversalTag = lcTags.find((t) =>
+      ["그레이브스톤도지", "유성형", "역망치형", "도지", "눈썹캔들"]
+        .includes(t),
+    );
+    const bigUpperWick =
+      (r.last_candle?.upper_wick_pct ?? 0) > 0.5
+      && (r.last_candle?.body_pct ?? 1) < 0.3;
+    const reversalCandle = reversalTag
+      || (bigUpperWick ? "긴 위꼬리 캔들" : null);
+    const lines: string[] = [
       `추세는 살아있지만 신규 매수 자리는 한참 지남 — ${r.stretch_reason}.`,
+    ];
+    if (reversalCandle) {
+      lines.push(
+        `마지막 캔들 ${reversalCandle} — 책: 큰 상승 끝의 위꼬리/도지 = 매수세 소진. 반전 주의.`,
+      );
+    }
+    lines.push(
       above240Pct != null && above240Pct > 50
         ? `현재가는 주봉 240MA(${formatPrice(ma240!, ticker)}) 대비 +${above240Pct.toFixed(0)}% 위 — 책의 신규 진입 영역에서 벗어남.`
         : "책 룰: 추세 시작부 +50% 안에서만 신규 매수. 그 위는 보유 평가용.",
+    );
+    lines.push(
       ma10w
         ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산 — 그때까지는 추세 유지.`
         : "보유 중이면 추세 이탈 시 청산.",
-      nextDecisionLine(ma10w, ticker),
-    ];
+    );
+    lines.push(nextDecisionLine(ma10w, ticker));
     return verdictCard("amber", "🟡", "추세 유효 · 자리 지남", lines, warnings);
   }
 
