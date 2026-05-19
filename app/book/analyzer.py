@@ -605,9 +605,18 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     except Exception:
         indicators_dict = None
 
+    # Naver labels in-progress weekly bars with the Friday week-ending
+    # date (e.g. Tuesday's partial-week close gets date=this Friday).
+    # That looks like a future date to a user reading the page on Tue.
+    # Clamp `as_of` to min(bar_date, today) so the label is never in
+    # the future — the price itself is right (it's the latest tick),
+    # only the date label was misleading.
+    from datetime import date as _date
+    _bar_d = df["date"].iloc[-1].date()
+    _as_of_d = min(_bar_d, _date.today())
     return {
         "ticker": ticker,
-        "as_of": str(df["date"].iloc[-1].date()),
+        "as_of": str(_as_of_d),
         "last_close": round(float(df["close"].iloc[-1]), 4),
         "rows": len(df),
         "action": action,

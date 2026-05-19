@@ -12,41 +12,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
-import { escapeTgHtml, notifyAdmins } from "@/lib/telegram";
+import { notifyAdmins } from "@/lib/telegram";
+import { formatFeedbackNotification } from "@/lib/admin-notifications";
+import { parseFeedbackInput } from "@/lib/feedback-validation";
 
 export const dynamic = "force-dynamic";
-
-const TITLE_MAX = 120;
-const BODY_MAX = 4000;
-const URL_MAX = 500;
-const VALID_CATEGORIES = new Set(["bug", "feature", "other"]);
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  const body = await req.json().catch(() => ({}));
+  const parsed = parseFeedbackInput(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
   const userId = await ensureUserId(
     session.user.email.toLowerCase(),
     session.user.name ?? null,
   );
   const userEmail = session.user.email.toLowerCase();
-
-  const body = await req.json().catch(() => ({}));
-  const category = String(body.category ?? "").trim();
-  const title = String(body.title ?? "").trim().slice(0, TITLE_MAX);
-  const text = String(body.body ?? "").trim().slice(0, BODY_MAX);
-  const pageUrl = body.page_url
-    ? String(body.page_url).slice(0, URL_MAX)
-    : null;
   const userAgent = req.headers.get("user-agent")?.slice(0, 500) ?? null;
-
-  if (!VALID_CATEGORIES.has(category)) {
-    return NextResponse.json({ error: "invalid category" }, { status: 400 });
-  }
-  if (!title || !text) {
-    return NextResponse.json({ error: "missing title or body" }, { status: 400 });
-  }
 
   const sb = getServerClient();
   const { data, error } = await sb
@@ -54,10 +43,10 @@ export async function POST(req: NextRequest) {
     .insert({
       user_id: userId,
       user_email: userEmail,
-      category,
-      title,
-      body: text,
-      page_url: pageUrl,
+      category: parsed.category,
+      title: parsed.title,
+      body: parsed.body,
+      page_url: parsed.pageUrl,
       user_agent: userAgent,
     })
     .select("id")
@@ -67,20 +56,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
 
-  const labelByCat: Record<string, string> = {
-    bug: "🐛 버그",
-    feature: "💡 건의",
-    other: "💬 기타",
-  };
-  const tg =
-    `${labelByCat[category] ?? category} #${data.id}\n` +
-    `<b>${escapeTgHtml(title)}</b>\n` +
-    `from ${escapeTgHtml(userEmail)}\n` +
-    `\n` +
-    `${escapeTgHtml(text.slice(0, 600))}` +
-    (text.length > 600 ? "…" : "") +
-    `\n\n→ /admin/feedback`;
-  void notifyAdmins(tg);
+  void notifyAdmins(
+    formatFeedbackNotification({
+      id: data.id,
+      category: parsed.category,
+      title: parsed.title,
+      body: parsed.body,
+      userEmail,
+    }),
+  );
 
   return NextResponse.json({ ok: true, id: data.id });
 }

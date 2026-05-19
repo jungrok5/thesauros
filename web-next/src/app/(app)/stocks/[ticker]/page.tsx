@@ -17,6 +17,7 @@
  */
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { decideBackLink } from "@/lib/back-link";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
@@ -208,34 +209,6 @@ async function getFlowSummary(ticker: string): Promise<
     i += Number(r.institution_net) || 0;
   }
   return { foreignNet: f, institutionNet: i, latestDay: data[0].day };
-}
-
-/**
- * Decide where the back-link sends the user. We read the Referer (set
- * by the browser on same-tab nav) and infer the meaningful origin:
- *
- *   /watchlist*  → "관심 종목으로"
- *   anything else (or no Referer at all — direct hit, fresh tab) → "종목 검색"
- *
- * We deliberately don't try to chain history. If the user came from
- * /watchlist → /stocks/AAPL → /stocks/MSFT (via a related link), the
- * Referer on the MSFT page is /stocks/AAPL, not /watchlist — so the
- * back link goes to /stocks (search), which is the right "step out"
- * destination. The user always has the browser back button for true
- * history walking.
- */
-function decideBackLink(referer: string | null): { href: string; label: string } {
-  if (!referer) return { href: "/stocks", label: "종목 검색" };
-  try {
-    const url = new URL(referer);
-    const path = url.pathname;
-    if (path === "/watchlist" || path.startsWith("/watchlist/")) {
-      return { href: "/watchlist", label: "관심 종목으로" };
-    }
-  } catch {
-    /* malformed Referer header — treat as no info */
-  }
-  return { href: "/stocks", label: "종목 검색" };
 }
 
 export default async function StockDetailPage({ params }: PageProps) {

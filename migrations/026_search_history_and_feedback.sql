@@ -24,12 +24,16 @@ CREATE INDEX IF NOT EXISTS idx_search_history_user_recent
 -- a user runs hundreds of searches a day.
 CREATE OR REPLACE FUNCTION trim_search_history() RETURNS TRIGGER AS $$
 BEGIN
+    -- Secondary sort on `id DESC` breaks ties: two inserts in the same
+    -- microsecond (test fixtures, fast double-submits) get a stable
+    -- order so the trigger keeps the actually-newer row. The id column
+    -- is a monotonic BIGSERIAL so this is always correct.
     DELETE FROM search_history
      WHERE user_id = NEW.user_id
        AND id NOT IN (
            SELECT id FROM search_history
             WHERE user_id = NEW.user_id
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 30
        );
     RETURN NEW;

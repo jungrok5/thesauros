@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
-import { escapeTgHtml, notifyAdmins } from "@/lib/telegram";
+import { notifyAdmins } from "@/lib/telegram";
+import { formatAccessRequestNotification } from "@/lib/admin-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -77,17 +78,13 @@ export async function POST(req: NextRequest) {
 
   // Telegram-notify admins so they can triage in /admin/access. Fire-
   // and-forget — never blocks the user's response on Telegram delivery.
-  const email = escapeTgHtml(session.user.email);
-  const name = session.user.name ? escapeTgHtml(session.user.name) : null;
-  const reasonHtml = reason ? escapeTgHtml(reason) : "(사유 없음)";
-  const text =
-    `🆕 <b>접근 요청</b>\n` +
-    `${name ? `${name} ` : ""}&lt;${email}&gt;\n` +
-    `\n` +
-    `<i>${reasonHtml}</i>\n` +
-    `\n` +
-    `→ /admin/access 에서 승인/거절`;
-  void notifyAdmins(text);
+  void notifyAdmins(
+    formatAccessRequestNotification(
+      session.user.email,
+      session.user.name ?? null,
+      reason,
+    ),
+  );
 
   return NextResponse.json({ ok: true });
 }

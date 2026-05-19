@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServerClient } from "@/lib/supabase";
+import { clampAsOfToToday } from "@/lib/as-of-clamp";
 
 export const dynamic = "force-dynamic";
 
@@ -61,9 +62,17 @@ export async function GET(
   const changePct =
     change != null && prevClose ? (change / prevClose) * 100 : null;
 
+  // See lib/as-of-clamp.ts — Naver weekly bars carry the Friday
+  // week-ending date, so mid-week the latest bar's date is in the
+  // future. Clamp to today.
+  const asOf = clampAsOfToToday(
+    latest.bar_date as string,
+    new Date().toISOString().slice(0, 10),
+  );
+
   return NextResponse.json({
     ticker,
-    as_of: latest.bar_date,
+    as_of: asOf,
     price: close,
     change,
     change_pct: changePct,
