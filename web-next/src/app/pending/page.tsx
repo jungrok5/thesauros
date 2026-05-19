@@ -36,8 +36,15 @@ export default async function PendingPage() {
     session.user.name ?? null,
   );
 
-  // If this page is reached but status is already approved, bounce home.
-  if (status === "approved") redirect("/dashboard");
+  // NB: we deliberately DO NOT `redirect("/dashboard")` when status is
+  // approved here, even though it would feel natural. Doing so creates
+  // a redirect loop with the proxy when the JWT cookie has a stale
+  // "pending" status (the proxy still sends them here, /pending sends
+  // them back, ad infinitum → ERR_TOO_MANY_REDIRECTS). Instead we
+  // render an "approved!" banner with a manual continue button. The
+  // auth.ts JWT callback refreshes the token from DB every 60 s, so
+  // a fresh request after that lets the proxy admit the user
+  // unconditionally.
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-4">
@@ -49,7 +56,9 @@ export default async function PendingPage() {
           </p>
         </header>
 
-        {status === "rejected" ? (
+        {status === "approved" ? (
+          <ApprovedBanner />
+        ) : status === "rejected" ? (
           <div
             className="rounded-md border border-rose-500/40 bg-rose-500/5 p-4 text-sm space-y-2"
             data-testid="status-rejected"
@@ -94,10 +103,12 @@ export default async function PendingPage() {
           </div>
         )}
 
-        <PendingForm
-          initialReason={request?.reason ?? ""}
-          alreadyPending={!!request?.requested_at && !request.decided_at}
-        />
+        {status !== "approved" && (
+          <PendingForm
+            initialReason={request?.reason ?? ""}
+            alreadyPending={!!request?.requested_at && !request.decided_at}
+          />
+        )}
 
         <form
           action={async () => {
@@ -113,6 +124,38 @@ export default async function PendingPage() {
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Rendered when the DB says "approved" but the user's JWT cookie still
+ * carries the older "pending" status (rendering /pending instead of
+ * /dashboard, where they belong). The auth.ts JWT callback refreshes
+ * the token at most every 60 s; in the meantime we offer an explicit
+ * continue button. Reloading /dashboard after the next request goes
+ * through clean — the proxy admits the user with the refreshed token.
+ */
+function ApprovedBanner() {
+  return (
+    <div
+      className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4 text-sm space-y-3"
+      data-testid="status-approved"
+    >
+      <div className="font-medium text-emerald-700 dark:text-emerald-300">
+        ✅ 사용 요청이 승인되었습니다!
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        세션 토큰이 자동으로 갱신되는 데 최대 1분 정도 걸릴 수 있습니다.
+        아래 버튼을 누르면 대시보드로 이동합니다 — 처음 한 번은 새로고침이
+        한 번 필요할 수도 있어요.
+      </p>
+      <a
+        href="/dashboard"
+        className="inline-block w-full text-center rounded-md bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm font-medium transition-colors"
+      >
+        대시보드로 이동
+      </a>
     </div>
   );
 }

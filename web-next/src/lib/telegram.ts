@@ -79,17 +79,26 @@ export function escapeTgHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+export type SendResult = { ok: true } | { ok: false; reason: string };
+
 export async function sendTelegram(
   chatId: number | string,
   text: string,
-): Promise<void> {
+): Promise<SendResult> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    console.error("TELEGRAM_BOT_TOKEN missing");
-    return;
+    // Loud, structured log so Vercel function-logs surface the missing-env
+    // case as the root cause instead of a silent "no notification". The
+    // bot token is a GitHub Actions secret used by telegram_worker.py;
+    // it must ALSO be set in Vercel for site-side notifications.
+    console.error(
+      "[telegram] TELEGRAM_BOT_TOKEN missing in Vercel env — add it at " +
+      "Project Settings → Environment Variables (Production + Preview).",
+    );
+    return { ok: false, reason: "no-token" };
   }
   try {
-    await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
+    const res = await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -99,22 +108,36 @@ export async function sendTelegram(
         disable_web_page_preview: true,
       }),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[telegram] HTTP ${res.status}: ${body.slice(0, 200)}`);
+      return { ok: false, reason: `http-${res.status}` };
+    }
+    return { ok: true };
   } catch (e) {
-    console.error("sendTelegram failed:", e);
+    console.error("[telegram] fetch threw:", e);
+    return { ok: false, reason: "fetch-error" };
   }
 }
 
+export type NotifyAdminsResult = {
+  attempted: number;
+  delivered: number;
+  failed: number;
+  reason?: string;
+};
+
 /**
  * Send the same message to every admin user who's linked Telegram.
- * Fire-and-forget — caller doesn't block on delivery and a missing
- * `TELEGRAM_BOT_TOKEN` is just a console warning. Used for ops alerts
- * (access requests, feedback submissions) where the user-facing
- * response shouldn't depend on Telegram availability.
+ * Used for ops alerts (access requests, feedback submissions) where
+ * the user-facing response shouldn't depend on Telegram availability.
  *
  * Each admin gets their own message because Telegram doesn't support
- * broadcast — we just fan out individual sendMessage calls.
+ * broadcast — we just fan out individual sendMessage calls. The return
+ * value lets callers (or test endpoints) report on success without
+ * scraping function logs.
  */
-export async function notifyAdmins(text: string): Promise<void> {
+export async function notifyAdmins(text: string): Promise<NotifyAdminsResult> {
   const sb = getServerClient();
   const { data, error } = await sb
     .from("users")
@@ -122,15 +145,31 @@ export async function notifyAdmins(text: string): Promise<void> {
     .eq("role", "admin")
     .not("telegram_chat_id", "is", null);
   if (error) {
-    console.error("notifyAdmins read:", error.message);
-    return;
+    console.error("[notifyAdmins] users read:", error.message);
+    return { attempted: 0, delivered: 0, failed: 0, reason: "db-error" };
   }
   const chatIds = (data ?? [])
     .map((r) => r.telegram_chat_id as string | null)
     .filter((id): id is string => !!id);
   if (chatIds.length === 0) {
-    console.warn("notifyAdmins: no admins with linked Telegram chat_id");
-    return;
+    console.warn(
+      "[notifyAdmins] no admins with linked Telegram chat_id — " +
+      "promote a user to role='admin' and have them link via /settings → 텔레그램",
+    );
+    return { attempted: 0, delivered: 0, failed: 0, reason: "no-admins" };
   }
-  await Promise.all(chatIds.map((id) => sendTelegram(id, text)));
+  const results = await Promise.all(
+    chatIds.map((id) => sendTelegram(id, text)),
+  );
+  const delivered = results.filter((r) => r.ok).length;
+  const failed = results.length - delivered;
+  if (failed > 0) {
+    console.warn(
+      `[notifyAdmins] ${delivered}/${results.length} delivered. ` +
+      `Failure reasons: ${results.filter((r) => !r.ok)
+        .map((r) => (r.ok ? "" : r.reason))
+        .join(", ")}`,
+    );
+  }
+  return { attempted: chatIds.length, delivered, failed };
 }

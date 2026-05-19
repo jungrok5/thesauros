@@ -21,6 +21,8 @@ import { decideBackLink } from "@/lib/back-link";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
+import { FundamentalVerdicts } from "@/components/fundamental-verdicts";
+import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
@@ -233,10 +235,13 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [cached, watch, flow] = await Promise.all([
+  const [cached, watch, flow, ctx] = await Promise.all([
     isCanonical ? getAnalysis(ticker) : Promise.resolve<CachedAnalysis>({ result: null, stale: true }),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
+    isCanonical
+      ? fetchStockContext(ticker)
+      : Promise.resolve({ disclosures: [], fin: null, fac: null }),
   ]);
   const result = cached.result;
 
@@ -339,6 +344,7 @@ export default async function StockDetailPage({ params }: PageProps) {
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
           <AnalysisView result={result} flow={flow} />
+          <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
           <div>
             <h2 className="mb-2 text-lg font-semibold tracking-tight">
               차트 (시각적 검증)
@@ -354,7 +360,12 @@ export default async function StockDetailPage({ params }: PageProps) {
             <h2 className="mb-3 text-lg font-semibold tracking-tight">
               종목 정보
             </h2>
-            <StockContextTabs ticker={ticker} />
+            <StockContextTabs
+              ticker={ticker}
+              disclosures={ctx.disclosures}
+              fin={ctx.fin}
+              fac={ctx.fac}
+            />
           </div>
         </>
       )}

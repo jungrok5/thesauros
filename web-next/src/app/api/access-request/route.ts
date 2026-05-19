@@ -46,11 +46,18 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Resolve session ONCE — currentUserId() also calls auth() internally;
+  // the double-call was a stale pattern from an older draft and on some
+  // Vercel deploys the second auth() returned a different session shape.
   const session = await auth();
-  const userId = await currentUserId();
-  if (!userId || !session?.user?.email) {
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const userId = await ensureUserId(
+    session.user.email.toLowerCase(),
+    session.user.name ?? null,
+  );
+
   const body = await req.json().catch(() => ({}));
   const reason = body.reason
     ? String(body.reason).slice(0, REASON_MAX)
@@ -76,15 +83,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
 
-  // Telegram-notify admins so they can triage in /admin/access. Fire-
-  // and-forget — never blocks the user's response on Telegram delivery.
-  void notifyAdmins(
-    formatAccessRequestNotification(
-      session.user.email,
-      session.user.name ?? null,
-      reason,
-    ),
-  );
+  // Await the notify so we can log the result + surface a hint in the
+  // response if delivery failed. The user's POST is still fast (Telegram
+  // sendMessage is ~100-300ms); the extra latency is worth the loud
+  // failure mode vs fire-and-forget that silently drops.
+  let notify: Awaited<ReturnType<typeof notifyAdmins>> | null = null;
+  try {
+    notify = await notifyAdmins(
+      formatAccessRequestNotification(
+        session.user.email,
+        session.user.name ?? null,
+        reason,
+      ),
+    );
+    if (notify.delivered === 0) {
+      console.warn(
+        `[access-request] telegram notify failed: reason=${notify.reason ?? "unknown"} attempted=${notify.attempted}`,
+      );
+    }
+  } catch (e) {
+    console.error("[access-request] notifyAdmins threw:", e);
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, notify });
 }

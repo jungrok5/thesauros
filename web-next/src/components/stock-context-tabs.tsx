@@ -9,44 +9,19 @@
  * News is fetched in real-time from Naver Finance via /api/news/[ticker]
  * (5-minute ISR cache). See <NewsTabClient/>.
  */
-import { getServerClient, type DisclosureRow,
+import { type DisclosureRow,
          type FinancialsEvalRow, type FactorsEvalRow } from "@/lib/supabase";
 import { HelpTip } from "@/components/help-tip";
 import { NewsTabClient } from "@/components/news-tab-client";
 import { StockTabs } from "./stock-tabs";
-import {
-  interpretFinancials,
-  interpretFactors,
-  type Interpretation,
-} from "@/lib/fundamentals-interpret";
 
 interface Props {
   ticker: string;
-}
-
-async function fetchAll(ticker: string) {
-  const sb = getServerClient();
-  const [discR, finR, facR] = await Promise.all([
-    sb.from("disclosures")
-      .select("id, rcept_no, report_nm, report_type, filed_date, url")
-      .eq("ticker", ticker)
-      .order("filed_date", { ascending: false })
-      .limit(30),
-    sb.from("financials_eval")
-      .select("*")
-      .eq("ticker", ticker)
-      .maybeSingle(),
-    sb.from("factors_eval")
-      .select("*")
-      .eq("ticker", ticker)
-      .maybeSingle(),
-  ]);
-
-  return {
-    disclosures: (discR.data ?? []) as DisclosureRow[],
-    fin: finR.data as FinancialsEvalRow | null,
-    fac: facR.data as FactorsEvalRow | null,
-  };
+  /** Pre-fetched by the page so <FundamentalVerdicts/> at the top and
+   *  this component below don't duplicate Supabase reads. */
+  disclosures: DisclosureRow[];
+  fin: FinancialsEvalRow | null;
+  fac: FactorsEvalRow | null;
 }
 
 /**
@@ -80,67 +55,10 @@ function FreshnessNote({
 }
 
 const STALE_THRESHOLD_DAYS = 14;
-
-const INTERP_TONE_CLASSES: Record<
-  Interpretation["tone"],
-  { border: string; bg: string; text: string }
-> = {
-  good: {
-    border: "border-emerald-500/40",
-    bg: "bg-emerald-500/5",
-    text: "text-emerald-700 dark:text-emerald-300",
-  },
-  neutral: {
-    border: "border-amber-500/40",
-    bg: "bg-amber-500/5",
-    text: "text-amber-700 dark:text-amber-300",
-  },
-  warn: {
-    border: "border-orange-500/40",
-    bg: "bg-orange-500/5",
-    text: "text-orange-700 dark:text-orange-300",
-  },
-  bad: {
-    border: "border-rose-500/40",
-    bg: "bg-rose-500/5",
-    text: "text-rose-700 dark:text-rose-300",
-  },
-};
-
-function InterpretationCard({
-  interp,
-  title,
-}: {
-  interp: Interpretation;
-  title: string;
-}) {
-  const cls = INTERP_TONE_CLASSES[interp.tone];
-  return (
-    <section className={`rounded-xl border-2 ${cls.border} ${cls.bg} p-4 space-y-3`}>
-      <header className="flex items-baseline justify-between gap-3 flex-wrap">
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          {title}
-        </div>
-        <span
-          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls.border} ${cls.text} bg-background/40`}
-        >
-          {interp.label}
-        </span>
-      </header>
-      <p className="text-sm leading-relaxed">{interp.oneLiner}</p>
-      {interp.takeaways.length > 0 && (
-        <ul className="space-y-1 text-xs leading-relaxed">
-          {interp.takeaways.map((t, i) => (
-            <li key={i} className="flex gap-2">
-              <span className={cls.text}>·</span>
-              <span>{t}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
+// Interpretation cards moved out of the tabs — see <FundamentalVerdicts/>
+// rendered above-the-fold on the detail page. Keeping a brief banner
+// inside each tab pointing back up so users who jump into the tab
+// don't miss the headline judgment.
 
 function computeStale(updatedAt: string | undefined, nowMs: number): boolean {
   if (!updatedAt) return false;
@@ -231,12 +149,13 @@ function FinancialsTab({ fin, isStale }: { fin: FinancialsEvalRow | null; isStal
   ];
 
   const evals = fin.rules_eval ?? {};
-  const interp = interpretFinancials(fin);
 
   return (
     <div className="space-y-4">
       <FreshnessNote updatedAt={fin.updated_at} isStale={isStale} />
-      <InterpretationCard interp={interp} title="📋 재무제표 한 줄 평 + 도출" />
+      <p className="text-[11px] text-muted-foreground italic">
+        ↑ 페이지 상단의 <strong>재무 건전성</strong> 카드에 한 줄 평이 있습니다 — 아래는 3년치 원본 수치.
+      </p>
       {fin.summary_text && (
         <details className="rounded-lg border border-border bg-card">
           <summary className="px-4 py-2 cursor-pointer text-xs text-muted-foreground hover:bg-muted/30">
@@ -307,11 +226,12 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
       </div>
     );
   }
-  const interp = interpretFactors(fac);
   return (
     <div className="space-y-4">
       <FreshnessNote updatedAt={fac.updated_at} isStale={isStale} />
-      <InterpretationCard interp={interp} title="🎯 팩터 한 줄 평 + 도출" />
+      <p className="text-[11px] text-muted-foreground italic">
+        ↑ 페이지 상단의 <strong>가치투자 통과</strong> 카드에 한 줄 평이 있습니다 — 아래는 4축 점수 + 4대 스크리닝 통과 여부.
+      </p>
       {fac.summary_text && (
         <details className="rounded-lg border border-border bg-card">
           <summary className="px-4 py-2 cursor-pointer text-xs text-muted-foreground hover:bg-muted/30">
@@ -421,8 +341,7 @@ function GateBadge({ label, passed, term }: { label: string; passed: boolean | n
   return <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground px-3 py-1 text-xs">— {content}</span>;
 }
 
-export async function StockContextTabs({ ticker }: Props) {
-  const { disclosures, fin, fac } = await fetchAll(ticker);
+export function StockContextTabs({ ticker, disclosures, fin, fac }: Props) {
   // Server component runs once per request; Date.now() here is the request
   // timestamp, which is the correct reference for staleness vs updated_at.
   // eslint-disable-next-line react-hooks/purity

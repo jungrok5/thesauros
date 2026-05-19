@@ -107,9 +107,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async jwt({ token, user, trigger }) {
-      // On initial sign-in OR explicit session update, refresh role+status
-      // from the DB so admin promotions take effect without a re-login.
-      if (user?.email || trigger === "update") {
+      // Refresh role + access_status from the DB:
+      //   - on initial sign-in (`user.email` present)
+      //   - on explicit `update()` call from a client component
+      //   - every 60 s otherwise (TTL-based refresh)
+      //
+      // The TTL refresh is the fix for the post-approval redirect loop:
+      // before this, the token froze at sign-in's "pending" status and
+      // an admin approval didn't propagate until the user re-logged in.
+      // proxy.ts then kept bouncing them to /pending while /pending's
+      // server component (reading DB directly) bounced them back to
+      // /dashboard → ERR_TOO_MANY_REDIRECTS. With a 60 s TTL the token
+      // catches up to "approved" within a minute of approval.
+      const now = Date.now();
+      const TTL_MS = 60_000;
+      const tok = token as {
+        role?: string;
+        access_status?: string;
+        _fetchedAt?: number;
+      };
+      const stale = (tok._fetchedAt ?? 0) < now - TTL_MS;
+      const shouldRefresh = !!user?.email || trigger === "update" || stale;
+      if (shouldRefresh) {
         const email = (user?.email ?? token.email ?? "").toString().toLowerCase();
         if (email) {
           const sb = getServerClient();
@@ -120,9 +139,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             .maybeSingle();
           if (data) {
             token.sub = data.id as string;
-            (token as { role?: string }).role = data.role as string;
-            (token as { access_status?: string }).access_status =
-              data.access_status as string;
+            tok.role = data.role as string;
+            tok.access_status = data.access_status as string;
+            tok._fetchedAt = now;
           }
         }
       }
