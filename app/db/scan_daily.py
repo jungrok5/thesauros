@@ -456,6 +456,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--sp500-only", action="store_true",
                    help="restrict US markets (NASDAQ/NYSE/AMEX) to S&P 500 constituents — "
                         "keeps Supabase storage bounded")
+    p.add_argument("--watchlist-only", action="store_true",
+                   help="Scan ONLY tickers in any user's watchlist + recently-"
+                        "viewed tickers (last_accessed_at within 90d). Used "
+                        "in the search-only pivot to keep alert + analyze "
+                        "caches fresh for the names users actually care "
+                        "about, instead of nightly-scanning the full "
+                        "KR universe (~2,700) that nobody renders.")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -464,23 +471,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    tickers = _list_tickers(markets=args.markets,
-                            tickers=args.tickers,
-                            limit=args.limit,
-                            sp500_only=args.sp500_only)
+    if args.watchlist_only:
+        # Search-only pivot: scan only what users actually care about —
+        # tickers on any watchlist + recently-viewed (last_accessed_at
+        # within 90d, populated by /stocks/[ticker] visits). This keeps
+        # alert + analyze caches warm for the names that matter, instead
+        # of scanning 2,700 KR tickers nightly for an empty audience.
+        # Out-of-watchlist tickers stay handled by on-demand
+        # /api/analyze/[ticker] (24h cache).
+        tickers = _watchlist_tickers()
+        log.info("watchlist-only mode: %d tickers", len(tickers))
+    else:
+        tickers = _list_tickers(markets=args.markets,
+                                tickers=args.tickers,
+                                limit=args.limit,
+                                sp500_only=args.sp500_only)
 
-    # Always include every ticker that any user has added to their watchlist
-    # — even if it's outside the configured universe (e.g. NASDAQ mid-cap
-    # not in S&P 500). Cost is bounded by the user count × ~10 picks each.
-    # Only applies when scanning a market filter (not explicit --tickers).
-    if not args.tickers:
-        wl = _watchlist_tickers()
-        if wl:
-            before = len(tickers)
-            tickers = sorted(set(tickers) | set(wl))
-            added = len(tickers) - before
-            if added > 0:
-                log.info("+%d tickers from user watchlists", added)
+        # Always include every ticker that any user has added to their
+        # watchlist — even if it's outside the configured universe (e.g.
+        # NASDAQ mid-cap not in S&P 500). Cost is bounded by the user
+        # count × ~10 picks each. Only applies when scanning a market
+        # filter (not explicit --tickers).
+        if not args.tickers:
+            wl = _watchlist_tickers()
+            if wl:
+                before = len(tickers)
+                tickers = sorted(set(tickers) | set(wl))
+                added = len(tickers) - before
+                if added > 0:
+                    log.info("+%d tickers from user watchlists", added)
 
     if args.changed_pct > 0:
         before = len(tickers)

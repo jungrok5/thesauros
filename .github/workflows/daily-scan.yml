@@ -61,34 +61,29 @@ jobs:
           fi
           python -m app.db.ingest_bars
 
-      - name: Run scan_daily
+      - name: Run scan_daily (watchlist scope)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          KIS_ACCOUNT_NO: ${{ secrets.KIS_ACCOUNT_NO }}
-          KIS_ACCOUNT_PROD_CODE: ${{ secrets.KIS_ACCOUNT_PROD_CODE }}
-          KIS_ENV: "vts"
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          # Universe: KOSPI + KOSDAQ only. Site primary purpose = KR swing
-          # trading on weekly bars. User-watchlisted US tickers are
-          # auto-handled via the watchlist→analyze-ticker.yml dispatch
-          # path (Naver weekly source).
-          # Friday-only for the same reason as bar ingest: weekly W bar
-          # didn't change Mon-Thu so re-scanning would just rewrite
-          # identical analyze_results.
+          # Search-only pivot (2026-05-19): scan ONLY tickers users have
+          # on their watchlists. Out-of-watchlist tickers are analysed
+          # on demand via /api/analyze/[ticker] (24h cache) when a user
+          # opens /stocks/[ticker]. This keeps alerts + chip data warm
+          # for the names users care about without scanning ~2,700 KR
+          # tickers nightly for nobody.
+          # Friday-only — weekly W bar doesn't change Mon-Thu.
           dow=$(date -u +%u)
           if [ "$dow" != "5" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
             echo "Skipping scan on dow=$dow (only Friday + manual dispatch)"
             exit 0
           fi
-          python -m app.db.scan_daily --markets KOSPI KOSDAQ --years 2
+          python -m app.db.scan_daily --watchlist-only
 
       - name: Publish macro state
         env:
