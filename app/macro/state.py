@@ -76,7 +76,15 @@ def _yoy_pct(df: pd.DataFrame) -> Optional[float]:
 
 def _classify(value: float, yoy: Optional[float], thresholds: Dict, hist: pd.DataFrame
               ) -> tuple[str, str]:
-    """Return (state, verdict_kr) per threshold-rule type."""
+    """Return (state, verdict_kr) per threshold-rule type.
+
+    Verdict text is **meaning only** — the dashboard card renders
+    `value + unit` separately in its own cell, so the verdict line
+    used to display "211000.00% — 침체 진행" for unemployment-claims
+    (raw count, K units) just because the unemployment-rate branch
+    hardcoded "%" into the f-string. Now: drop the redundant value/
+    unit from verdict text, keep only the qualitative judgement.
+    """
     t = thresholds.get("type", "")
 
     if t == "yoy_pct":
@@ -84,14 +92,14 @@ def _classify(value: float, yoy: Optional[float], thresholds: Dict, hist: pd.Dat
         if yoy is None:
             return "NEUTRAL", "기준 YoY 데이터 부족"
         if yoy >= thresholds["bull"]:
-            return "BULL", f"YoY +{yoy:.1f}% — 자산 가격에 매우 우호"
+            return "BULL", "자산 가격에 매우 우호"
         if yoy >= thresholds["neutral"]:
-            return "BULL", f"YoY +{yoy:.1f}% — 우호적 흐름"
+            return "BULL", "우호적 흐름"
         if yoy >= thresholds["weak"]:
-            return "NEUTRAL", f"YoY {yoy:+.1f}% — 평이"
+            return "NEUTRAL", "평이"
         if yoy >= thresholds["bear"]:
-            return "CAUTION", f"YoY {yoy:+.1f}% — 약함"
-        return "BEAR", f"YoY {yoy:+.1f}% — 부정적, 위축"
+            return "CAUTION", "약함"
+        return "BEAR", "부정적, 위축"
 
     if t == "yoy_pct_optimal":
         # 인플레이션 (적정 밴드 벗어나면 둘 다 안 좋음)
@@ -99,27 +107,25 @@ def _classify(value: float, yoy: Optional[float], thresholds: Dict, hist: pd.Dat
             return "NEUTRAL", "YoY 미산정"
         if thresholds["danger_low"] <= yoy <= thresholds["danger_high"]:
             if thresholds["optimal_low"] <= yoy <= thresholds["optimal_high"]:
-                return "BULL", f"YoY {yoy:+.1f}% — Fed 타겟 부근, 이상적"
+                return "BULL", "Fed 타겟 부근, 이상적"
             if thresholds["warn_low"] <= yoy <= thresholds["warn_high"]:
-                return "NEUTRAL", f"YoY {yoy:+.1f}% — 적정 밴드"
+                return "NEUTRAL", "적정 밴드"
             if yoy > thresholds["warn_high"]:
-                return "CAUTION", f"YoY {yoy:+.1f}% — 인플레 과열 진행 중"
-            return "CAUTION", f"YoY {yoy:+.1f}% — 디스인플레/디플레 우려"
+                return "CAUTION", "인플레 과열 진행 중"
+            return "CAUTION", "디스인플레/디플레 우려"
         if yoy > thresholds["danger_high"]:
-            return "BEAR", f"YoY {yoy:+.1f}% — 인플레이션 위험"
-        return "BEAR", f"YoY {yoy:+.1f}% — 디플레이션 위험"
+            return "BEAR", "인플레이션 위험"
+        return "BEAR", "디플레이션 위험"
 
     if t == "sign":
         # 수익률곡선
         if value < thresholds["inverted_warn"]:
-            return "BEAR", f"{value:.2f}% — 역전됨 → 18~24개월 내 침체 가능 (책 핵심 경고)"
+            return "BEAR", "역전됨 → 18~24개월 내 침체 가능 (책 핵심 경고)"
         if value < thresholds["flattening_warn"]:
-            return "CAUTION", f"{value:.2f}% — 평탄화, 침체 위험 누적"
-        return "BULL", f"{value:.2f}% — 정상 형태, 경기 확장 시그널"
+            return "CAUTION", "평탄화, 침체 위험 누적"
+        return "BULL", "정상 형태, 경기 확장 시그널"
 
     if t == "level":
-        # VIX, 신용스프레드, 실업률, ISM 등 단순 레벨
-        # 키 이름으로 분기 (ISM/실업률은 high=bad가 아닌 inverse)
         good_max = thresholds.get("good_max")
         warn_max = thresholds.get("warn_max")
         bad_max = thresholds.get("bad_max")
@@ -132,71 +138,71 @@ def _classify(value: float, yoy: Optional[float], thresholds: Dict, hist: pd.Dat
         # VIX / 스프레드 (낮을수록 좋음)
         if calm_max is not None:
             if value <= calm_max:
-                return "BULL", f"{value:.2f} — 평온, 리스크온 환경"
+                return "BULL", "평온, 리스크온 환경"
             if value < warn_min:
-                return "NEUTRAL", f"{value:.2f} — 평상시 범위"
+                return "NEUTRAL", "평상시 범위"
             if value < panic_min:
-                return "CAUTION", f"{value:.2f} — 변동성 확대, 주의"
-            return "BEAR", f"{value:.2f} — 공포 / 신용 경색"
+                return "CAUTION", "변동성 확대, 주의"
+            return "BEAR", "공포 / 신용 경색"
 
-        # 실업률 (낮을수록 좋음)
+        # 실업률 (낮을수록 좋음) — and also incidentally what
+        # 실업수당청구 / 주택 착공 etc fall into. Verdict text says
+        # the meaning without claiming a "%" unit (caller's unit
+        # metadata is the source of truth).
         if good_max is not None and bad_max is not None:
             if value <= good_max:
-                return "BULL", f"{value:.2f}% — 고용 강함"
+                return "BULL", "고용 강함"
             if value <= warn_max:
-                return "NEUTRAL", f"{value:.2f}% — 보통"
+                return "NEUTRAL", "보통"
             if value <= bad_max:
-                return "CAUTION", f"{value:.2f}% — 약화 신호"
-            return "BEAR", f"{value:.2f}% — 침체 진행"
+                return "CAUTION", "약화 신호"
+            return "BEAR", "침체 진행"
 
         # PMI (높을수록 좋음, 50 기준)
         if good_min is not None and neutral_min is not None:
             if value >= good_min:
-                return "BULL", f"{value:.1f} — 경기 확장 (50 위)"
+                return "BULL", "경기 확장 (50 위)"
             if value >= neutral_min:
-                return "NEUTRAL", f"{value:.1f} — 경기 정체"
-            return "BEAR", f"{value:.1f} — 경기 수축"
+                return "NEUTRAL", "경기 정체"
+            return "BEAR", "경기 수축"
 
-        return "NEUTRAL", f"{value:.2f}"
+        return "NEUTRAL", ""
 
     if t == "level_yoy":
-        # Fed 금리 등: 절대 레벨 + 변화 둘 다 고려
         bull_level_max = thresholds.get("bull_level_max", 999)
         yoy_up = thresholds.get("yoy_up", 0.5)
         yoy_down = thresholds.get("yoy_down", -0.5)
-        # 절대 레벨이 낮고 (정책 우호) + 인하 중이면 BULL
         if yoy is not None:
             if value < bull_level_max and yoy <= yoy_down:
-                return "BULL", f"{value:.2f}, YoY {yoy:+.1f} — 인하 사이클, 자산 우호"
+                return "BULL", "인하 사이클, 자산 우호"
             if yoy >= yoy_up and value > bull_level_max:
-                return "BEAR", f"{value:.2f}, YoY {yoy:+.1f} — 인상 사이클, 자산 압박"
+                return "BEAR", "인상 사이클, 자산 압박"
         if value < bull_level_max:
-            return "NEUTRAL", f"{value:.2f}% — 완화적 수준"
-        return "CAUTION", f"{value:.2f}% — 긴축적 수준"
+            return "NEUTRAL", "완화적 수준"
+        return "CAUTION", "긴축적 수준"
 
     if t == "band":
         low, ml, mh, hi = thresholds["low"], thresholds["mid_low"], thresholds["mid_high"], thresholds["high"]
         if value < low:
-            return "CAUTION", f"{value:.2f} — 매우 낮음"
+            return "CAUTION", "매우 낮음"
         if value < ml:
-            return "NEUTRAL", f"{value:.2f} — 낮은 편"
+            return "NEUTRAL", "낮은 편"
         if value <= mh:
-            return "BULL" if (ml <= value <= mh) else "NEUTRAL", f"{value:.2f} — 적정 범위"
+            return "BULL" if (ml <= value <= mh) else "NEUTRAL", "적정 범위"
         if value <= hi:
-            return "CAUTION", f"{value:.2f} — 다소 높음"
-        return "BEAR", f"{value:.2f} — 매우 높음"
+            return "CAUTION", "다소 높음"
+        return "BEAR", "매우 높음"
 
     if t == "trend_ma200":
-        # 200일 이동평균선 대비 가격 위치
         if hist.empty or len(hist) < 50:
             return "NEUTRAL", "200MA 산정 불가"
         ma200 = hist["value"].tail(200).mean()
         ratio = (value - ma200) / ma200 * 100
         if ratio > 5:
-            return "BULL", f"200MA 대비 +{ratio:.1f}% — 상승 추세 (책 탑다운 우호)"
+            return "BULL", f"200MA 대비 +{ratio:.1f}% · 상승 추세 (책 탑다운 우호)"
         if ratio > -3:
-            return "NEUTRAL", f"200MA {ratio:+.1f}% — 추세 전환 구간"
-        return "BEAR", f"200MA 대비 {ratio:.1f}% — 하락 추세 (책: 인버스/현금)"
+            return "NEUTRAL", f"200MA {ratio:+.1f}% · 추세 전환 구간"
+        return "BEAR", f"200MA 대비 {ratio:.1f}% · 하락 추세 (책: 인버스/현금)"
 
     return "NEUTRAL", f"{value}"
 

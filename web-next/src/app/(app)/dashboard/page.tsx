@@ -1,13 +1,17 @@
 /**
  * Dashboard — macro overview. Reads everything from Supabase `macro_state`
  * (populated daily by the `publish_macro` cron). Pure Supabase, no FastAPI.
+ *
+ * UX restructure (2026-05-19): "오늘의 액션" 한 줄 결론 + 다음 단계
+ * 버튼을 최상단으로 끌어올림. 시장 레짐 + 5축 다이얼 + VIX / 수익률곡선 /
+ * MV=PQ를 한 카드(MarketActionCard)에 통합 (이전엔 3군데 중복). 거시
+ * 지표 34개 카드는 핵심 8개만 우선 노출, 나머지는 펼침 토글.
  */
-import { RegimeBadge } from "@/components/regime-badge";
 import { StatePill } from "@/components/state-pill";
-import { MacroDial } from "@/components/macro-dial";
 import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
 import { MarketTicker } from "@/components/market-ticker";
+import { MarketActionCard } from "@/components/market-action-card";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
@@ -34,6 +38,24 @@ const INDICATOR_TIPS: Record<string, string> = {
   yield_curve: "yield_curve",
   mv_pq: "mv_pq",
 };
+
+// Indicators that materially shape the buy/sell decision (book p324 +
+// chapter 7 탑다운). Surfaced as "핵심 거시" above the fold; rest fold
+// under a <details> toggle so the page doesn't dump 34 cards at once.
+// Keys must match macro_state.macro_indicators (populated by
+// app.macro.state via publish_macro cron — see actual snapshot).
+const CORE_INDICATORS = new Set<string>([
+  "cpi",                  // 소비자물가지수 (CPI YoY)
+  "ppi",                  // 생산자물가지수 (PPI YoY)
+  "m2_supply",            // M2 통화공급량
+  "real_rate_10y",        // 10년 실질금리
+  "fed_funds_rate",       // 미 연방기금금리
+  "yield_curve_10y_2y",   // 수익률곡선 10Y-2Y
+  "yield_curve_10y_3m",   // 수익률곡선 10Y-3M
+  "credit_spread_hy",     // HY 정크채 스프레드 (책: 리스크온/오프 시그널)
+  "dxy",                  // DXY 달러 지수
+  "tips_breakeven_10y",   // 기대 인플레이션
+]);
 
 // Macro state changes once per day via cron; 60s ISR is a generous
 // upper bound that lets the page serve from cache to subsequent users.
@@ -132,132 +154,126 @@ export default async function DashboardPage() {
   }
 
   const regime = row.regime;
-  const indicators = categorize(row.macro_indicators);
+  const allIndicators = Object.values(row.macro_indicators).filter(
+    (it) => !FAST_INDICATOR_KEYS.has(it.key.toLowerCase()),
+  );
+  const core = allIndicators
+    .filter((it) => CORE_INDICATORS.has(it.key.toLowerCase()))
+    .sort((a, b) => a.name_kr.localeCompare(b.name_kr, "ko-KR"));
+  const restByCategory = categorize(
+    Object.fromEntries(
+      allIndicators
+        .filter((it) => !CORE_INDICATORS.has(it.key.toLowerCase()))
+        .map((it) => [it.key, it]),
+    ) as Record<string, IndicatorState>,
+  );
   const updatedAt = new Date(row.updated_at).toLocaleString("ko-KR");
+  const restCount = allIndicators.length - core.length;
 
   return (
-    <div className="space-y-8 max-w-7xl">
-      <header className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">거시 환경</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            시세 띠는 실시간 (1분 갱신) · 거시 카드는 월간/분기 지표 (매일 자동 집계 · 마지막 갱신{" "}
-            <span className="font-mono opacity-70" suppressHydrationWarning>
-              {updatedAt}
-            </span>
-            )
-          </p>
-        </div>
-        <RegimeBadge regime={regime.regime} score={regime.score} />
+    <div className="space-y-6 max-w-7xl">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">거시 환경</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          탑다운 1단계 — 글로벌 + 거시 → 책 정신상 종목 진입 자격 판정. 실시간 시세는 띠로, 월간/분기 지표는 카드로.
+        </p>
       </header>
 
       <MarketTicker />
 
-      <MacroDial />
+      <MarketActionCard
+        guidance={row.one_line_guidance}
+        regime={regime.regime}
+        regimeScore={regime.score}
+        regimeNote={regime.note}
+        dialScores={row.dial_scores}
+        vixState={regime.vix_state}
+        yieldCurveInverted={regime.yield_curve_inverted}
+        mvPqSignal={row.mv_pq_signal}
+        updatedAt={updatedAt}
+      />
 
-      <GlobalNews />
-
-      <section className="rounded-xl border border-border bg-card p-5">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-          시장 레짐
-        </div>
-        <div className="flex items-center gap-3 mb-2">
-          <RegimeBadge regime={regime.regime} score={regime.score} />
-          <span className="text-sm text-foreground/80">{regime.note}</span>
-        </div>
-        <div className="text-xs text-muted-foreground mt-2 flex items-center gap-4 flex-wrap">
-          <span>지표 {regime.n_indicators}개 종합</span>
-          {regime.vix_state && (
-            <span>
-              <HelpTip term="vix_state">VIX 상태</HelpTip>: {regime.vix_state}
-            </span>
-          )}
-          <span>
-            <HelpTip term="yield_curve">수익률곡선</HelpTip>:{" "}
-            {regime.yield_curve_inverted ? (
-              <span className="text-rose-600 dark:text-rose-400">
-                역전 (침체 예고)
-              </span>
-            ) : (
-              <span className="text-emerald-600 dark:text-emerald-400">
-                정상
-              </span>
-            )}
-          </span>
-          {row.mv_pq_signal && (
-            <span>
-              <HelpTip term="mv_pq">MV=PQ</HelpTip>: {row.mv_pq_signal}
-            </span>
-          )}
-          {row.one_line_guidance && (
-            <span className="basis-full text-foreground/70">
-              {row.one_line_guidance}
-            </span>
-          )}
-        </div>
-      </section>
-
-      <div className="pt-4 border-t border-border/60">
-        <h2 className="text-sm font-semibold tracking-tight">월간/분기 거시 지표</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          CPI · PPI · M2 · 실업률 등 발표 빈도가 낮은 지표. 매일 17시 KST cron 으로 갱신.
-          실시간 시세는 위 띠를 참고하세요.
-        </p>
-      </div>
-
-      {Object.entries(indicators).map(([categoryLabel, items]) => (
-        <section key={categoryLabel}>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
-            {categoryLabel}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {items.map((it) => (
-              <article
-                key={it.key}
-                className="rounded-lg border border-border bg-card p-4 hover:bg-accent/40 transition-colors"
-              >
-                <header className="flex items-start justify-between gap-2 mb-1">
-                  <div className="font-medium text-sm text-foreground">
-                    {INDICATOR_TIPS[it.key] && GLOSSARY[INDICATOR_TIPS[it.key]] ? (
-                      <HelpTip term={INDICATOR_TIPS[it.key]}>{it.name_kr}</HelpTip>
-                    ) : (
-                      it.name_kr
-                    )}
-                  </div>
-                  <StatePill state={it.state} />
-                </header>
-                <div className="flex items-baseline gap-2 mb-2 flex-wrap">
-                  <span className="text-2xl font-mono font-medium">
-                    {formatNumber(it.value)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {it.unit}
-                  </span>
-                  {it.yoy_pct !== null && (
-                    <span
-                      className={
-                        it.yoy_pct >= 0
-                          ? "text-xs text-emerald-600 dark:text-emerald-400"
-                          : "text-xs text-rose-600 dark:text-rose-400"
-                      }
-                    >
-                      YoY {formatPct(it.yoy_pct)}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {it.verdict}
-                </p>
-                <div className="flex items-center justify-end mt-2 pt-2 border-t border-border/60">
-                  <span className="text-[10px] text-muted-foreground/70">
-                    {it.as_of ?? "—"}
-                  </span>
-                </div>
-              </article>
+      {/* 핵심 거시 지표 — 매매 결정에 직접 닿는 8~10개만 above-the-fold */}
+      {core.length > 0 && (
+        <section className="space-y-3">
+          <header>
+            <h2 className="text-sm font-semibold tracking-tight">핵심 거시 지표</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              책 정신상 매수/회피 자격에 직접 영향을 주는 지표만. 나머지는 아래 접힘.
+            </p>
+          </header>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {core.map((it) => (
+              <IndicatorCard key={it.key} it={it} />
             ))}
           </div>
         </section>
-      ))}
+      )}
+
+      <GlobalNews limit={6} />
+
+      {/* 나머지 지표 — 카테고리별 접힘 */}
+      {restCount > 0 && (
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-3 cursor-pointer text-sm font-semibold tracking-tight hover:bg-muted/40">
+            전체 거시 지표 ({restCount}개) — 카테고리별 펼침
+          </summary>
+          <div className="px-4 pb-4 space-y-5 pt-2">
+            {Object.entries(restByCategory).map(([categoryLabel, items]) => (
+              <div key={categoryLabel}>
+                <h3 className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                  {categoryLabel}
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {items.map((it) => (
+                    <IndicatorCard key={it.key} it={it} compact />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
+  );
+}
+
+function IndicatorCard({ it, compact = false }: { it: IndicatorState; compact?: boolean }) {
+  return (
+    <article
+      className={`rounded-lg border border-border bg-card hover:bg-accent/40 transition-colors ${compact ? "p-3" : "p-4"}`}
+    >
+      <header className="flex items-start justify-between gap-2 mb-1">
+        <div className={`font-medium ${compact ? "text-xs" : "text-sm"} text-foreground`}>
+          {INDICATOR_TIPS[it.key] && GLOSSARY[INDICATOR_TIPS[it.key]] ? (
+            <HelpTip term={INDICATOR_TIPS[it.key]}>{it.name_kr}</HelpTip>
+          ) : (
+            it.name_kr
+          )}
+        </div>
+        <StatePill state={it.state} />
+      </header>
+      <div className="flex items-baseline gap-2 mb-1 flex-wrap">
+        <span className={`${compact ? "text-lg" : "text-2xl"} font-mono font-medium`}>
+          {formatNumber(it.value)}
+        </span>
+        <span className="text-xs text-muted-foreground">{it.unit}</span>
+        {it.yoy_pct !== null && (
+          <span
+            className={
+              it.yoy_pct >= 0
+                ? "text-xs text-emerald-600 dark:text-emerald-400"
+                : "text-xs text-rose-600 dark:text-rose-400"
+            }
+          >
+            YoY {formatPct(it.yoy_pct)}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{it.verdict}</p>
+      <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground/70 text-right">
+        {it.as_of ?? "—"}
+      </div>
+    </article>
   );
 }
