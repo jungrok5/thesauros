@@ -14,12 +14,20 @@ data it needs:
   bars (W)        5 years  (≈260 weekly rows per ticker; book MAs go up to 240)
   bars (M)        5 years  (≈60 monthly rows per ticker)
   investor_flow   14 days  (site shows last 5; 14 buffers any drill-down)
-  disclosures     1 year   (site lists last 30; 1y for compliance dashboards)
+  disclosures     1 year + engagement set
+  fundamentals    engagement set only (5 years rolling per ticker)
   scan_results    inactive ≥ 30 days  (active signals stay; cron toggles flags)
 
 `macro_series`, `tickers`, `analyze_results`, `financials_eval`,
 `factors_eval` are either bounded by universe size or already
 overwritten in place; no retention needed.
+
+**Engagement set** = KR universe (KOSPI + KOSDAQ active) ∪ watchlisted
+tickers (category='holding' OR last_accessed_at within 90 days). Anything
+outside is "data we no longer need" — applies symmetrically to bars,
+fundamentals, disclosures, scan_results, analyze_results. The watchlist
+row itself is never touched; if the user re-visits, the next cron
+re-ingests.
 
 Note (2026-05-19): theme_daily / themes / theme_members were dropped
 along with the /themes page in the search-only pivot.
@@ -163,6 +171,43 @@ POLICIES: list[Policy] = [
         )
         """,
         "same engagement set",
+    ),
+    # `fundamentals` is per-(ticker, concept, fy). DART writes KR (already
+    # covered by the KOSPI/KOSDAQ universe arm); SEC writes US which can
+    # be unbounded if every searched US ticker keeps accumulating. Same
+    # engagement filter as bars — non-KR ticker must be watchlisted (or
+    # recently accessed) to keep its fundamentals.
+    (
+        "fundamentals",
+        """
+        DELETE FROM fundamentals WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
+    # `disclosures` already has the 1-year date filter above; this adds
+    # the engagement filter so a US ticker that was searched once a year
+    # ago doesn't keep its 30 SEC filings forever just because the
+    # date-based rule treats them as "fresh".
+    (
+        "disclosures",
+        """
+        DELETE FROM disclosures WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
     ),
     # investor_flow is KR-only by construction (Naver frgn page), so
     # the date-based 90d rule above already handles it.

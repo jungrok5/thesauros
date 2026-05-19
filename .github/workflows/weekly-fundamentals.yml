@@ -69,3 +69,14 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           python -m app.db.eval_financials --verbose
+      - name: Retention sweep (post-ingest)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # SEC ingest already filters to the engagement set, but DART
+          # writes the full KR universe and `analyze_results` /
+          # `disclosures` may still have rows for previously-engaged-but-
+          # now-stale tickers. Sweep keeps the 500MB tier honest.
+          python -m app.db.retention

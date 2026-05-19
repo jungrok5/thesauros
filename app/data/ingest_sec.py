@@ -356,18 +356,28 @@ def _upsert_disclosures(
 # ---------------------------------------------------------------------
 
 def _us_tickers_from_db() -> List[str]:
-    """Pull all US tickers from Supabase `tickers`. US = no .KS/.KQ suffix
-    and market in known US exchanges (NYSE, NASDAQ, NYSEARCA, AMEX, etc.).
+    """Pull US tickers we actually care about from Supabase. "Care about" =
+    in someone's watchlist or recently accessed (≤ 90 days). Mirrors the
+    engagement-set filter used in `app.db.retention` for bars/fundamentals.
+
+    Without this, every US ticker ever auto-seeded into `tickers` (via
+    search auto-complete) would be SEC-fetched weekly and stored
+    indefinitely — Supabase 500MB tier fills up fast.
     """
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT ticker FROM tickers
-                WHERE is_active = true
-                  AND ticker NOT LIKE '%.KS'
-                  AND ticker NOT LIKE '%.KQ'
-                  AND (market IS NULL OR market NOT IN ('KOSPI', 'KOSDAQ'))
+                SELECT DISTINCT t.ticker FROM tickers t
+                WHERE t.is_active = true
+                  AND t.ticker NOT LIKE '%.KS'
+                  AND t.ticker NOT LIKE '%.KQ'
+                  AND (t.market IS NULL OR t.market NOT IN ('KOSPI', 'KOSDAQ'))
+                  AND t.ticker IN (
+                    SELECT DISTINCT ticker FROM watchlist
+                     WHERE category = 'holding'
+                        OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+                  )
                 """
             )
             return [r[0] for r in cur.fetchall()]
