@@ -89,6 +89,11 @@ const SECTIONS: Array<{
       "mv_pq", "tips_spread", "ppi_yoy", "cpi_yoy", "vix_state", "yield_curve",
     ],
   },
+  {
+    heading: "💰 절세·연금 (한국 2026 세법)",
+    description: "직접 투자 전 거쳐야 할 5단계 셋팅의 세제 용어.",
+    keys: ["tax_pension_30", "tax_credit_pension", "isa_tax", "tax_isa_to_pension"],
+  },
 ];
 
 export default function GlossaryPage() {
