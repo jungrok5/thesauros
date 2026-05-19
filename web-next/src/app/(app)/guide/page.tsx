@@ -39,69 +39,13 @@ const CHEAT: CheatRow[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────
-// 2. 자산 × 계좌 매칭 매트릭스
+// 2. 🎯 위험도 3 tier (안정형 / 균형형 / 공격형)
 // ─────────────────────────────────────────────────────────────────────
-interface AccountAssetRow {
-  asset: string;
-  pension: string;
-  irp: string;
-  isa: string;
-  general: string;
-}
-const ACCOUNT_ASSET: AccountAssetRow[] = [
-  {
-    asset: "국내 상장 미국 ETF\n(TIGER 미국S&P500, 나스닥100 등)",
-    pension: "⭐ 최적\n매매차익·배당 비과세",
-    irp: "⭐ 최적 (위험 70%)",
-    isa: "⭐ 좋음\n200만원 비과세",
-    general: "🟡 22% 양도세",
-  },
-  {
-    asset: "국내 상장 배당 ETF\n(KODEX 미국배당다우존스 등)",
-    pension: "⭐ 최적\n배당 0% (인출까지)",
-    irp: "⭐",
-    isa: "🟢",
-    general: "🟡 15.4% 배당세",
-  },
-  {
-    asset: "혼합형 ETF\n(1Q 미국나스닥100미국채혼합50액티브 등)",
-    pension: "🟢",
-    irp: "⭐ 안전자산 30% 룰 우회\n(실제 주식 50% 포함)",
-    isa: "🟢",
-    general: "🟡",
-  },
-  {
-    asset: "미국 직접 ETF\n(SPY, VOO, QQQ 등)",
-    pension: "❌ 매매 불가",
-    irp: "❌",
-    isa: "❌",
-    general: "🟡 22% 양도세\n(연 250 공제)",
-  },
-  {
-    asset: "미국 개별 주식\n(애플, 테슬라 등)",
-    pension: "❌",
-    irp: "❌",
-    isa: "❌",
-    general: "🟢 유일한 선택",
-  },
-  {
-    asset: "한국 개별 주식",
-    pension: "❌",
-    irp: "❌",
-    isa: "🟢 200만원 비과세",
-    general: "⭐ 양도세 X\n(대주주 제외)",
-  },
-  {
-    asset: "한국 채권 ETF / TDF",
-    pension: "🟢",
-    irp: "⭐ 안전자산 30% 의무",
-    isa: "🟢",
-    general: "🟡",
-  },
-];
-
-// ─────────────────────────────────────────────────────────────────────
-// 3. 🎯 위험도 3 tier (안정형 / 균형형 / 공격형)
+//
+// 이전 "자산 × 계좌 매트릭스" (7행 × 5열) 섹션은 2026-05-20 제거 —
+// 사용자가 "두 군데에 같은 정보, 헷갈린다" 지적. 아래 TIER_ACCOUNT_MAP
+// (위험도 × 계좌별 + 구체 종목명) 이 같은 정보를 actionable 한 형태로
+// 이미 담고 있어 중복. 한 군데로 통합.
 // ─────────────────────────────────────────────────────────────────────
 //
 // 사용자 톤 명확화: 직접투자자 시점에서 S&P500 = 안정형 (시장 평균).
@@ -602,73 +546,10 @@ export default function GuidePage() {
         </div>
       </section>
 
-      {/* 자산 × 계좌 매칭 매트릭스 */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
-        <header className="px-4 py-2.5 border-b border-border bg-muted/30">
-          <h2 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-            🎯 어떤 자산을 어느 계좌에서? — 절세 매트릭스
-          </h2>
-          <p className="text-[10px] text-muted-foreground/80 mt-1">
-            ⭐ 최적 · 🟢 좋음 · 🟡 가능 (절세 효과 ↓) · ❌ 매매 불가
-          </p>
-        </header>
-
-        {/* Desktop: 5열 매트릭스 — md+ */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-0 bg-muted/20 min-w-[180px]">자산</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">연금저축</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">IRP</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">ISA</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">일반계좌</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ACCOUNT_ASSET.map((row, i) => (
-                <tr key={row.asset} className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}>
-                  <td className={`px-3 py-2 align-top sticky left-0 whitespace-pre-line font-medium ${i % 2 === 1 ? "bg-muted/10" : "bg-card"}`}>
-                    {row.asset}
-                  </td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.pension}</td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.irp}</td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.isa}</td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.general}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile: 자산별 카드 — 가로 스크롤 없이 세로 흐름으로 읽기 */}
-        <ul className="md:hidden divide-y divide-border">
-          {ACCOUNT_ASSET.map((row) => (
-            <li key={row.asset} className="px-3 py-3 space-y-2">
-              <div className="text-xs font-semibold whitespace-pre-line leading-snug">
-                {row.asset}
-              </div>
-              <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
-                <dt className="text-muted-foreground">연금저축</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.pension}</dd>
-                <dt className="text-muted-foreground">IRP</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.irp}</dd>
-                <dt className="text-muted-foreground">ISA</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.isa}</dd>
-                <dt className="text-muted-foreground">일반계좌</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.general}</dd>
-              </dl>
-            </li>
-          ))}
-        </ul>
-
-        <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
-          💡 핵심 룰: <strong className="text-foreground">국내 상장 미국 ETF는 연금/ISA에서 매매차익 비과세</strong> — 일반계좌
-          22% 양도세 대비 압도적 유리. 미국 직접 ETF/주식은 일반계좌만. 한국 개별주는 ISA/일반계좌.
-        </footer>
-      </section>
-
-      {/* 🎯 위험도 3-tier 종목 추천 */}
+      {/* 🎯 위험도 3-tier 종목 추천 — 이전엔 위에 "자산 × 계좌
+          매트릭스" (7행 × 5열) 가 추가로 있었지만, 같은 정보가 아래
+          "위험도 × 계좌별 매핑" 에 더 actionable 형태 (구체 종목명
+          포함) 로 있어 중복이라 제거 (2026-05-20). */}
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <header>
           <h2 className="text-base font-semibold tracking-tight">🎯 위험도별 종목 추천 (안정형 · 균형형 · 공격형)</h2>
