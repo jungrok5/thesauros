@@ -84,6 +84,42 @@ def quarter_safety(c: CandleParts, level: float = 0.75) -> Optional[bool]:
     return bool(c.close >= threshold)
 
 
+def quarter_zone(reference_bar_low: float, reference_bar_close: float,
+                 current_price: float) -> str:
+    """4등분선 zone of `current_price` against a reference bullish bar's
+    body (book p218-223 — the signature "4등분선 기법").
+
+    The book divides a 장대양봉's body (open..close) into quarters.
+    Subsequent price action is interpreted by which quarter the price
+    has retraced into:
+
+        ≥75% (안전지대): book says 다음 봉 상승 확률 75%. Treat as buy / add.
+        50%~75%        : soft warning, still alive.
+        25%~50%        : 매입원가 영역, red flag.
+        <25%           : 절대 자리 깨짐 — bullish bar is "dead", sell.
+
+    Args:
+        reference_bar_low: the bullish reference bar's OPEN (not low —
+            we measure body, not range; book is explicit p221).
+        reference_bar_close: the same bar's close.
+        current_price: today's close.
+
+    Returns one of "safe75" / "warn50" / "danger25" / "broken".
+    Returns "n/a" if the reference is non-bullish or zero-body.
+    """
+    body = reference_bar_close - reference_bar_low
+    if body <= 0:
+        return "n/a"
+    pos = (current_price - reference_bar_low) / body
+    if pos >= 0.75:
+        return "safe75"
+    if pos >= 0.50:
+        return "warn50"
+    if pos >= 0.25:
+        return "danger25"
+    return "broken"
+
+
 def classify_candle(c: CandleParts, body_avg: float, vol_avg: float) -> List[str]:
     """Classify a candle into one or more book categories.
 

@@ -97,6 +97,22 @@ export type AnalysisResult = {
    *  than 15 %), this carries the human-readable reason for the
    *  BookVerdict 추세 유효 · 자리 지남 branch. */
   stretch_reason?: string | null;
+  /** 4등분선 (book p218-223) safety zone of last_close against the
+   *  most recent 장대양봉 catalyst's body:
+   *    safe75   ≥ 75 % up the catalyst body (book: 매수 자리)
+   *    warn50   50–75 %  (관찰)
+   *    danger25 25–50 %  (매입원가 영역, red flag)
+   *    broken   < 25 %    (절대 자리 깨짐, 매도)
+   *    n/a      no catalyst pattern found
+   */
+  quarter_zone?: "safe75" | "warn50" | "danger25" | "broken" | "n/a" | null;
+  quarter_anchor?: {
+    open: number;
+    close: number;
+    q25?: number | null;
+    q50?: number | null;
+    q75?: number | null;
+  } | null;
   reverse_accumulation: {
     detected: boolean;
     occurrences: number;

@@ -324,6 +324,19 @@ export function BookVerdict({ result }: Props) {
             : "catalyst 직후 자리."),
       );
     }
+    // 4등분선 zone narrative (book p218-223 — signature mechanic).
+    // The analyzer computes quarter_zone from the catalyst's body so
+    // we don't have to recompute it here.
+    const zone = r.quarter_zone;
+    if (zone === "safe75") {
+      lines.push("📍 4등분선 75 % 안전지대 — 책: 다음 봉 상승 확률 75 %. 매집 살아있음.");
+    } else if (zone === "warn50") {
+      lines.push("📍 4등분선 50 %대 — 안전지대 살짝 이탈. 조정 진행 중.");
+    } else if (zone === "danger25") {
+      lines.push("📍 4등분선 25 ~ 50 % (매입원가 영역) — 책: 적신호.");
+    } else if (zone === "broken") {
+      lines.push("📍 4등분선 25 % 절대자리 깨짐 — 책: catalyst 부정, 매도 자리.");
+    }
     if (q25 != null) {
       lines.push(
         `손절: 장대양봉 25% 절대자리 ${formatPrice(q25, ticker)} 이탈 시 — ` +

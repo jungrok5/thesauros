@@ -330,6 +330,65 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     expect(screen.getByText(/240MA.*아래.*죽은 차트/)).toBeInTheDocument();
   });
 
+  // ── 4등분선 zone narrative (book p218-223, Phase 2 P1) ───────────
+  it("quarter_zone=safe75 → '안전지대' line in HOLD verdict", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 50,
+      quarter_zone: "safe75",
+      patterns: [{
+        kind: "장대양봉 catalyst", direction: "bullish", confidence: 0.8,
+        completed: true, detected_at: "2026-03-15",
+        entry: 40, stop: 35, target: 60, reason: "", timeframe: "weekly",
+        extra: {
+          catalyst_open: 30, catalyst_close: 48,
+          q25: 34.5, q50: 39, q75: 43.5,
+          bars_since: 8, runup_since: 4,
+        },
+      }],
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 50, ma_10: 45,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 30, above_ma_240: true,
+          alignment_score: 0.6, overall_score: 0.7, label: "강세",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/4등분선 75 % 안전지대/)).toBeInTheDocument();
+  });
+
+  it("quarter_zone=broken → '절대자리 깨짐' callout", () => {
+    const r = makeResult({
+      action: "HOLD",
+      last_close: 32,
+      quarter_zone: "broken",
+      patterns: [{
+        kind: "장대양봉 catalyst", direction: "bullish", confidence: 0.8,
+        completed: true, detected_at: "2026-03-15",
+        entry: 40, stop: 35, target: 60, reason: "", timeframe: "weekly",
+        extra: { catalyst_open: 30, catalyst_close: 48, q25: 34.5 },
+      }],
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 32, ma_10: 35,
+          above_ma_10: false, ma_10_slope_up: false,
+          ma_240: 30, above_ma_240: true,
+          alignment_score: 0.0, overall_score: 0.0, label: "관망",
+        },
+        monthly: null,
+        book_signal: "HOLD", book_reason: "",
+      },
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/4등분선 25 % 절대자리 깨짐/)).toBeInTheDocument();
+  });
+
   // ── 장대음봉 / 저승사자 branches (P0a in Phase 2) ────────────────
   it("장대음봉 stretch_reason → 장대음봉 · 매도 압력 verdict", () => {
     const r = makeResult({

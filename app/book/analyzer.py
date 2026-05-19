@@ -514,6 +514,40 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     pos_52 = pos_52w_pre
     rally_pct = rally_pre
 
+    # 4등분선 안전지대 판정 (book p218-223). Find the most recent
+    # 장대양봉 catalyst pattern, anchor the quarter zones on its body,
+    # then report where current_price sits.
+    quarter_zone_state: Optional[str] = None
+    quarter_anchor: Optional[Dict[str, Any]] = None
+    try:
+        from app.book.candles import quarter_zone as _qz
+        for p in all_patterns:
+            if not isinstance(p, dict):
+                continue
+            if "catalyst" not in (p.get("kind") or ""):
+                continue
+            ex = p.get("extra") or {}
+            cat_open = ex.get("catalyst_open")
+            cat_close = ex.get("catalyst_close")
+            if (
+                isinstance(cat_open, (int, float))
+                and isinstance(cat_close, (int, float))
+                and cat_close > cat_open > 0
+            ):
+                quarter_zone_state = _qz(
+                    float(cat_open), float(cat_close), last_close,
+                )
+                quarter_anchor = {
+                    "open": float(cat_open),
+                    "close": float(cat_close),
+                    "q25": ex.get("q25"),
+                    "q50": ex.get("q50"),
+                    "q75": ex.get("q75"),
+                }
+                break
+    except Exception:
+        quarter_zone_state = None
+
     return {
         "ticker": ticker,
         "as_of": str(df["date"].iloc[-1].date()),
@@ -532,6 +566,8 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "position_in_52w": pos_52,
         "rally_8w_pct": rally_pct,
         "stretch_reason": stretch_reason,
+        "quarter_zone": quarter_zone_state,
+        "quarter_anchor": quarter_anchor,
     }
 
 

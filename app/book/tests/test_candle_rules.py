@@ -85,3 +85,38 @@ def test_asymmetric_wick_takes_priority_over_eyebrow():
     tags = classify_candle(c, body_avg=2, vol_avg=1000)
     assert "망치형" in tags, tags
     assert "눈썹캔들" not in tags, "asymmetric candle should not also tag 눈썹"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 4등분선 (book p218-223) — the book's signature mechanic
+# ─────────────────────────────────────────────────────────────────────
+
+def test_quarter_zone_safe75():
+    """Current price ≥ 75 % up the bullish body → safe75 (책: 매수)."""
+    from app.book.candles import quarter_zone
+    # Bull bar 100 → 200 (body 100). 175 = 75 % up.
+    assert quarter_zone(100, 200, 180) == "safe75"
+    assert quarter_zone(100, 200, 220) == "safe75"
+    assert quarter_zone(100, 200, 175) == "safe75"
+
+
+def test_quarter_zone_warn50():
+    from app.book.candles import quarter_zone
+    assert quarter_zone(100, 200, 160) == "warn50"
+    assert quarter_zone(100, 200, 150) == "warn50"
+
+
+def test_quarter_zone_danger25_and_broken():
+    from app.book.candles import quarter_zone
+    assert quarter_zone(100, 200, 140) == "danger25"
+    assert quarter_zone(100, 200, 125) == "danger25"
+    # Below 25 % = 절대자리 깨짐
+    assert quarter_zone(100, 200, 120) == "broken"
+    assert quarter_zone(100, 200, 80) == "broken"
+
+
+def test_quarter_zone_na_for_non_bullish_reference():
+    """Bearish or zero-body reference returns n/a."""
+    from app.book.candles import quarter_zone
+    assert quarter_zone(200, 100, 150) == "n/a"
+    assert quarter_zone(100, 100, 100) == "n/a"
