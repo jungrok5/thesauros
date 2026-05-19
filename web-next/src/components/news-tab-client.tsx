@@ -64,7 +64,7 @@ export function NewsTabClient({ ticker }: { ticker: string }) {
   if (!resp.supported) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-        이 종목은 현재 뉴스 자동 수집 대상이 아닙니다. (네이버 증권 종목 뉴스 = 한국 종목 한정)
+        이 종목은 현재 뉴스 자동 수집 대상이 아닙니다.
       </div>
     );
   }

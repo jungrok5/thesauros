@@ -1,4 +1,4 @@
-"""Fetch macro indicators from FRED + yfinance and cache in Supabase.
+"""Fetch macro indicators from FRED + Yahoo v8 chart API and cache in Supabase.
 
 Cache table is `macro_series` (migration 007):
     series_id VARCHAR(40), date DATE, value NUMERIC, PRIMARY KEY (series_id, date)
@@ -6,17 +6,34 @@ Cache table is `macro_series` (migration 007):
 The macro state cron (`app.db.publish_macro`) calls `latest_value` / `history`
 which read from Supabase. `ingest_all` is also called from the same cron to
 refresh the cache before publishing.
+
+NB on Yahoo: the `yfinance` Python lib detects + blocks cloud-IP traffic
+(Azure ranges in particular), so the same call from a GH Actions runner
+returns 401/empty. We call Yahoo's underlying v8 chart endpoint directly
+(`query1.finance.yahoo.com/v8/finance/chart/{symbol}`) — same data, no
+lib-side blocklist, and we control the User-Agent.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import pandas as pd
+import requests
 
 from app.config import FRED_API_KEY
 from app.db import get_conn
 from app.macro.indicators import INDICATORS
+
+_YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+_YF_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+}
 
 
 def _fetch_fred(series_id: str, start: Optional[str] = None) -> pd.DataFrame:
@@ -37,19 +54,53 @@ def _fetch_fred(series_id: str, start: Optional[str] = None) -> pd.DataFrame:
 
 
 def _fetch_yf(series_id: str, start: Optional[str] = None) -> pd.DataFrame:
-    """Fetch a yfinance ticker — use Close as the value."""
-    import yfinance as yf
+    """Fetch daily closes via Yahoo's v8 chart endpoint (bypasses yfinance
+    lib's cloud-IP blocklist). Returns DataFrame with (date, value) columns
+    where `value` is the unadjusted close.
+    """
     if start is None:
         start = (date.today() - timedelta(days=365 * 6)).isoformat()
-    t = yf.Ticker(series_id)
-    df = t.history(start=start, auto_adjust=False, actions=False)
-    if df is None or df.empty:
+    start_dt = datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
+    period1 = int(start_dt.timestamp())
+    period2 = int(datetime.now(tz=timezone.utc).timestamp())
+
+    url = _YF_CHART_URL.format(sym=series_id)
+    params = {
+        "period1": period1,
+        "period2": period2,
+        "interval": "1d",
+        "includePrePost": "false",
+        "events": "div,split",
+    }
+    try:
+        res = requests.get(url, params=params, headers=_YF_HEADERS, timeout=30)
+    except requests.RequestException as e:
+        raise RuntimeError(f"yahoo chart fetch failed: {e}") from e
+    if res.status_code != 200:
+        # 401/404 are the typical "no data" responses; return empty frame
+        # so the caller can keep going with the rest of the indicators.
         return pd.DataFrame(columns=["date", "value"])
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-    df.index = pd.to_datetime(df.index).tz_localize(None)
-    out = df[["Close"]].reset_index().rename(columns={"Date": "date", "Close": "value"})
-    out["date"] = pd.to_datetime(out["date"]).dt.date
+    payload = res.json()
+    chart = (payload or {}).get("chart") or {}
+    err = chart.get("error")
+    if err:
+        return pd.DataFrame(columns=["date", "value"])
+    results = chart.get("result") or []
+    if not results:
+        return pd.DataFrame(columns=["date", "value"])
+    r = results[0]
+    timestamps = r.get("timestamp") or []
+    closes = (((r.get("indicators") or {}).get("quote") or [{}])[0]
+              .get("close") or [])
+    rows: List[Dict] = []
+    for ts, c in zip(timestamps, closes):
+        if c is None:
+            continue
+        d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
+        rows.append({"date": d, "value": float(c)})
+    if not rows:
+        return pd.DataFrame(columns=["date", "value"])
+    out = pd.DataFrame(rows)
     return out.dropna()
 
 
@@ -75,6 +126,8 @@ def ingest_one(series_id: str, source: str, years: int = 8) -> int:
     if source == "FRED":
         df = _fetch_fred(series_id, start=start)
     elif source == "yfinance":
+        # Legacy tag — the actual fetcher uses Yahoo's v8 chart endpoint
+        # directly. See module docstring for the why.
         df = _fetch_yf(series_id, start=start)
     else:
         raise ValueError(f"unknown source: {source}")

@@ -120,7 +120,7 @@ POLICIES: list[Policy] = [
     # money in it). Anything outside that set has its generated data
     # purged. The watchlist row itself is NEVER touched — the user
     # owns it. If they view the ticker again, last_accessed_at refreshes
-    # and the next cron regenerates the data from yfinance/FDR.
+    # and the next cron regenerates the data via Naver / FDR / SEC.
     # ──────────────────────────────────────────────────────────────────
     (
         "bars",

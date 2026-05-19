@@ -38,6 +38,18 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
           python -m app.data.ingest_dart
+      - name: SEC EDGAR fundamentals + filings (US tickers)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          # Mirrors DART for the US side: companyfacts → `fundamentals`,
+          # submissions → `disclosures`. SEC fair-use throttles at 10 r/s;
+          # the module sleeps 0.15s/req so it stays comfortable. Rate-
+          # limit headroom keeps this <15 min for the current US set.
+          python -m app.data.ingest_sec
       - name: Company profile ingest (DART + SEC EDGAR)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

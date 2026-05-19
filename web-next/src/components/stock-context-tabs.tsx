@@ -88,7 +88,7 @@ function DisclosuresTab({ items }: { items: DisclosureRow[] }) {
   if (items.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-        공시가 아직 적재되지 않았습니다. (DART, 한국 종목만)
+        공시가 아직 적재되지 않았습니다. (KR: DART, US: SEC EDGAR — 주간 갱신)
       </div>
     );
   }
@@ -139,7 +139,7 @@ function FinancialsTab({ fin, isStale }: { fin: FinancialsEvalRow | null; isStal
   if (!fin) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-        재무 데이터가 적재되지 않았습니다. (DART 한국 종목 우선 지원)
+        재무 데이터가 적재되지 않았습니다. (KR: DART, US: SEC EDGAR — 주간 갱신, 신규 종목은 다음 사이클 후 표시)
       </div>
     );
   }

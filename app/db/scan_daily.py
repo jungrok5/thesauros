@@ -5,9 +5,9 @@ run the book analyzer and publish the *active* (recently completed) signals
 to the `scan_results` table.
 
 Strategy:
-  • READ bars from local DuckDB (pit_db) — already populated by ingest_*.
-    Falls back to yfinance for tickers missing locally (covered by Phase 2
-    ingest expansion).
+  • READ bars from Supabase (populated by ingest_bars via Naver weekly /
+    monthly endpoints — yfinance is bypassed because the lib detects and
+    blocks cloud-IP traffic on GH Actions).
   • RUN app.book.analyzer.analyze_ticker(ticker, df) — single-shot pipeline.
   • EXTRACT triggered signals into scan_results rows of (signal_type,
     timeframe, detected_at, strength, reason, params).

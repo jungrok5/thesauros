@@ -3,8 +3,10 @@
 Each indicator entry contains:
   - key:        short slug used in DB / API
   - name_kr:    Korean display name
-  - source:     "FRED" or "yfinance"
-  - series_id:  FRED series ID or yfinance ticker
+  - source:     "FRED" or "yfinance" (latter is a legacy tag — the actual
+                fetcher calls Yahoo's v8 chart endpoint directly, since
+                the yfinance lib blocks cloud-IP traffic on GH Actions)
+  - series_id:  FRED series ID or Yahoo Finance symbol
   - unit:       display unit ("%", "$", "index", "bps")
   - category:   one of {policy, liquidity, growth, inflation, sentiment, commodity, fx, breadth}
   - book_ref:   page citation in the book
