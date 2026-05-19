@@ -1,15 +1,23 @@
 """Static-analysis tests for retention policies.
 
-We don't actually execute the DELETEs against the live DB — that would
-churn real data and depend on a network. Instead we lock the policy
-catalog itself: every table that grows from cron-fed ingest must have at
-least one rule in `POLICIES`, and the engagement-set filter wording must
-appear in the rules for tables that store per-ticker data.
+Two layers of safety:
+
+  1. **Manual checklist** (`_REQUIRED_TABLES`): explicit table names we
+     KNOW must have retention. Catches removals of existing rules.
+
+  2. **Auto-discovery**: scan `migrations/*.sql` for `CREATE TABLE`
+     statements and assert each user-data table has a policy (or is on
+     the exempt list). Catches FORGETTING to add a rule when a new
+     ingest table is introduced — the failure mode the user worried
+     about ("새로 적재되는 테이블이 생기면 같이 룰 추가하고있고?").
 
 If a future PR adds a new ingest target (e.g. earnings transcripts) and
-forgets the matching retention rule, this test fails.
+forgets the matching retention rule, the auto-discovery layer fails.
 """
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 from app.db import retention
 
@@ -30,6 +38,62 @@ _REQUIRED_TABLES = {
     "dividend_info",    # ditto
     # search_history is self-trimming via DB trigger — exempt from rule below
 }
+
+# Tables that DON'T need a retention rule, with the reason:
+#   - bounded by row count (1 row per ticker / user / etc.)
+#   - has its own trimming mechanism (trigger, RPC, app-level)
+#   - reference / config / one-time-write surface
+# When the auto-discovery layer flags a NEW table missing from POLICIES,
+# either add a rule to retention.POLICIES OR add the name here with a
+# reason. Both are explicit decisions — neither happens by accident.
+_RETENTION_EXEMPT = {
+    "users",                  # bounded by signup count; has its own e2e GC
+    "watchlist",              # bounded by user × ticker, user-owned
+    "tickers",                # universe master; bounded by exchanges
+    "alert_preferences",      # 1 row per user × signal_type
+    "access_requests",        # 1 row per user (UPSERT)
+    "telegram_link_tokens",   # short-lived; consumed once
+    "telegram_bot_state",     # 1 row total
+    "search_history",         # self-trimming AFTER INSERT trigger
+    "company_profile",        # 1 row per ticker
+    "macro_series",           # bounded by N indicators × years (cap inside)
+    "macro_state",            # 1 row total
+    "financials_eval",        # 1 row per ticker, overwritten
+    "factors_eval",           # 1 row per ticker, overwritten
+    "dividend_info",          # 1 row per ticker (covered by engagement filter)
+    "push_subscriptions",     # 1 row per user × endpoint
+    "health_ping",            # 1 row total — Supabase keepalive ping
+}
+
+# Tables created in migrations but later dropped — ignored by discovery.
+_RETENTION_DROPPED = {
+    "themes", "theme_daily", "theme_members",   # dropped 2026-05-19
+    "chart_data",                                 # dropped migration 014
+    "news",                                       # dropped migration 015
+    "trade_log",                                  # dropped migration 024
+    "bars_daily",                                 # dropped migration 025
+}
+
+
+def _all_tables_in_migrations() -> set[str]:
+    """Walk migrations/*.sql, collect every CREATE TABLE IF NOT EXISTS
+    target, minus the ones explicitly dropped later. Returns the
+    current logical schema as a set of table names.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    mig_dir = repo_root / "migrations"
+    if not mig_dir.exists():
+        return set()
+    create_re = re.compile(
+        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(\w+)",
+        re.IGNORECASE,
+    )
+    found: set[str] = set()
+    for sql_path in sorted(mig_dir.glob("*.sql")):
+        text = sql_path.read_text(encoding="utf-8")
+        for m in create_re.finditer(text):
+            found.add(m.group(1).lower())
+    return found - _RETENTION_DROPPED
 
 # Per-ticker tables that must additionally have an engagement-set filter
 # (`WHERE ticker NOT IN (...watchlist...)`). Without this, US tickers
@@ -89,3 +153,30 @@ def test_policy_descriptions_present():
     """Descriptions show up in cron logs; missing ones make triage hard."""
     for tbl, _, desc in retention.POLICIES:
         assert desc, f"{tbl} policy has empty description"
+
+
+def test_no_new_table_silently_skips_retention():
+    """Auto-discovery: every table CREATE'd by a migration must EITHER
+    have a retention rule OR be on the exempt list with a documented
+    reason. Catches the failure mode where someone adds a new ingest
+    table (e.g. `earnings_calendar`) but forgets to wire retention —
+    the table then grows forever and the Supabase 500 MB tier silently
+    fills up.
+
+    The fix when this fails: either add a rule to retention.POLICIES,
+    or add the table name to `_RETENTION_EXEMPT` above with a one-line
+    reason for why retention isn't needed.
+    """
+    discovered = _all_tables_in_migrations()
+    covered = _tables_in_policies() | _RETENTION_EXEMPT
+    unhandled = discovered - covered
+    assert not unhandled, (
+        f"Tables created by migrations but with no retention rule "
+        f"AND not on the exempt list: {sorted(unhandled)}.\n"
+        f"Either:\n"
+        f"  1. add a rule to retention.POLICIES (see existing entries), or\n"
+        f"  2. add the table to _RETENTION_EXEMPT with the reason "
+        f"(self-trimming / bounded / etc.)\n"
+        f"This test exists so adding an ingest table without retention "
+        f"can't slip through review."
+    )

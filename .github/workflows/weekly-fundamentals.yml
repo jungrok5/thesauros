@@ -30,6 +30,18 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: |
           pip install -r requirements.txt
+      - name: Retention sweep FIRST (free space before ingest)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # Same pattern as daily-scan — sweep before big writes so the
+          # Supabase 500 MB ceiling isn't tripped mid-cron (which would
+          # leave the DB in read-only mode + partial data). The trailing
+          # "Retention sweep (post-ingest)" step then catches anything
+          # that slipped through during the run.
+          python -m app.db.retention
       - name: DART fundamentals ingest (Supabase direct)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
