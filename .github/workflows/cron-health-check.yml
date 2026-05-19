@@ -1,0 +1,37 @@
+name: Cron Health Check
+# GitHub Actions occasionally skips a scheduled cron — daily-scan
+# missed the 08:00 UTC fire on 2026-05-19, leaving users with day-old
+# data. This workflow fires at 10:00 UTC Mon-Fri (2h after daily-scan)
+# and Telegrams admins if `analyze_results.updated_at` hasn't been
+# refreshed since the expected deadline.
+#
+# Light-weight — single Python script, ~5 sec, one Supabase query.
+
+on:
+  schedule:
+    # 10:00 UTC = 19:00 KST, weekdays. Two hours after daily-scan slot
+    # gives the pipeline plenty of headroom even on slow runs.
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - run: |
+          pip install -r requirements.txt
+      - name: Check cron health (Telegram alert if stale)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python -m app.db.cron_health

@@ -38,6 +38,21 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
           python -m app.data.ingest_dart
+      - name: DART disclosures ingest (KR corporate filings)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: |
+          # Moved here from daily-scan (2026-05-19) — DART per-company
+          # API call across the KR universe takes ~37 min, blowing the
+          # daily 60-min budget. Disclosures update weekly cadence at
+          # most for our display surface, so weekly is sufficient and
+          # keeps daily-scan focused on price/flow refresh.
+          # 90-day backfill so the Saturday catch-up picks up the
+          # whole prior week + buffer for any past misses.
+          python -m app.db.ingest_news --days-back 90
       - name: SEC EDGAR fundamentals + filings (US tickers)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

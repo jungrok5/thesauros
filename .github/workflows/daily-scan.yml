@@ -16,7 +16,11 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 75 min ceiling (was 60). DART ingest was moved to weekly so the
+    # critical path is now ~25 min (bars 7 + scan 1 + macro 1 +
+    # investor_flow 15 + telegram 1 + assertions 1); the headroom
+    # absorbs Naver/FDR slowdowns without flakiness.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -105,17 +109,13 @@ jobs:
           # caps (SK하이닉스/기아) so we replaced it.
           python -m app.db.ingest_investor_flow
 
-      - name: Ingest DART disclosures (KR)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}
-        run: |
-          # DART OpenAPI — only the 공시 (corporate filings) flow. News
-          # text is fetched in real-time from Naver via /api/news/[ticker]
-          # so this step covers disclosures only.
-          python -m app.db.ingest_news --days-back 7
+      # DART disclosure ingest moved to weekly-fundamentals.yml on
+      # 2026-05-19. It was the largest single-step on daily-scan (~37
+      # min for ~2,700 KR tickers via DART OpenAPI), pushing the
+      # workflow past the 60-min ceiling. Corporate filings update
+      # weekly cadence at most for our display surface — same as
+      # financials_eval — so consolidating there keeps daily-scan lean
+      # while disclosures stay current within a week.
 
       - name: Send Telegram + Web Push alerts
         env:
