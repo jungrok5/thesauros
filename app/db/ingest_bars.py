@@ -212,6 +212,23 @@ def fetch_kr_ticker(ticker: str, start: date, end: date) -> List[Tuple[Any, ...]
         "Close": "close", "Volume": "volume",
     })
     df["adj_close"] = df["close"]   # KR markets adjust in place
+    # FDR returns a "거래정지" placeholder row for non-trading days on
+    # the symbol — OHLV all zero, volume zero, only Close set (carries
+    # forward the prior close as a reference price). Persisting these
+    # poisons later analysis: 52w_low becomes 0, candle wicks become
+    # NaN/Inf, volume cases see every bar as "거래량 폭증". Drop them
+    # at the source so the weekly/monthly resample produces clean OHLC.
+    suspended = (
+        (df["open"].fillna(0) == 0)
+        & (df["high"].fillna(0) == 0)
+        & (df["low"].fillna(0) == 0)
+        & (df["volume"].fillna(0) == 0)
+    )
+    if suspended.any():
+        log.debug("fdr %s: dropping %d suspended-day rows", ticker, int(suspended.sum()))
+        df = df.loc[~suspended].copy()
+    if df.empty:
+        return []
     return _resample_daily_to_rows(ticker, df)
 
 

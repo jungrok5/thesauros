@@ -161,6 +161,41 @@ def test_entry_plan_stop_distance_15_pct_gate():
         )
 
 
+def test_pos_52w_ignores_zero_ohlv_corruption():
+    """Regression for the 009310.KS bug — bars table contained rows
+    with high=0 + low=0 (FDR's 거래정지 placeholder leaking through
+    the ingestor). The naive 52w window then computed low.min()=0,
+    yielding pos_52w = (last_close − 0) / (high.max() − 0) = 3.11
+    (i.e., 311 %). After the fix the window must exclude those rows
+    so pos_52w stays in [0, 1]."""
+    # 48 clean trading bars climbing 100 → 200, then 4 corrupt rows
+    # (OHLV=0 + close>0) appended at the tail. Last close = 200.
+    n_clean = 48
+    closes = list(np.linspace(100, 200, n_clean))
+    rows = []
+    for i, c in enumerate(closes):
+        rows.append({
+            "date": pd.Timestamp("2025-01-03") + pd.Timedelta(weeks=i),
+            "open": c * 0.99, "high": c * 1.01, "low": c * 0.98,
+            "close": c, "adj_close": c, "volume": 1_000_000.0,
+        })
+    # 4 corrupt rows
+    for i in range(4):
+        rows.append({
+            "date": pd.Timestamp("2025-01-03") + pd.Timedelta(weeks=n_clean + i),
+            "open": 0.0, "high": 0.0, "low": 0.0,
+            "close": 200.0, "adj_close": 200.0, "volume": 0.0,
+        })
+    df = pd.DataFrame(rows)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("CORRUPT.KS", df)
+    pos = r.get("position_in_52w")
+    # The whole point: pos must be a sane number in [0, 1].
+    assert pos is None or 0 <= pos <= 1.0001, (
+        f"pos_52w leaked outside [0,1] despite filter, got {pos}"
+    )
+
+
 def test_stretch_reason_absent_for_avoid_action():
     """If the trend gate forces AVOID (price below monthly 240MA), the
     stretch downgrade logic must not fire — AVOID stays AVOID and

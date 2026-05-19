@@ -177,12 +177,25 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     last_close = float(df["close"].iloc[-1])
     try:
         tail52_pre = df.tail(52)
-        _hi52 = float(tail52_pre["high"].max())
-        _lo52 = float(tail52_pre["low"].min())
-        pos_52w_pre = (
-            float((last_close - _lo52) / (_hi52 - _lo52))
-            if _hi52 > _lo52 else 0.5
-        )
+        # Defensive: FDR / Naver occasionally return OHLV=0 placeholder
+        # rows for non-trading / suspended days. The ingestor now drops
+        # them at source, but historical poisoning persists until the
+        # 504-ticker backfill clears. Exclude any bar with high=0 OR
+        # low=0 from the window so we never normalise against a 0 floor
+        # (the 009310.KS bug — 52w pos came out at 311 % because
+        # tail52_low.min() landed on a corrupt 0 row).
+        valid = tail52_pre[
+            (tail52_pre["high"] > 0) & (tail52_pre["low"] > 0)
+        ]
+        if len(valid) < 4:
+            pos_52w_pre = None
+        else:
+            _hi52 = float(valid["high"].max())
+            _lo52 = float(valid["low"].min())
+            pos_52w_pre = (
+                float((last_close - _lo52) / (_hi52 - _lo52))
+                if _hi52 > _lo52 else 0.5
+            )
     except Exception:
         pos_52w_pre = None
     try:
