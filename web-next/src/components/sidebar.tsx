@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   BookOpen,
   Compass,
+  Map,
   Menu,
   Search,
   Settings,
@@ -16,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/guide", label: "절세·연금 가이드", icon: Map },
   { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
