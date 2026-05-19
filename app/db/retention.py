@@ -209,6 +209,21 @@ POLICIES: list[Policy] = [
         """,
         "outside engagement set",
     ),
+    # Feedback tickets: keep open + in-progress forever; closed ones
+    # (resolved or wont-fix) are dead weight after 90 days. updated_at
+    # is bumped by the touch_feedback_updated_at trigger on status
+    # changes, so this counts from when the ticket actually closed.
+    (
+        "feedback",
+        """
+        DELETE FROM feedback
+         WHERE status IN ('resolved', 'wont_fix')
+           AND updated_at < CURRENT_DATE - INTERVAL '90 days'
+        """,
+        "closed ≥ 90 days",
+    ),
+    # search_history is self-trimming via the trg_trim_search_history
+    # trigger (30 newest per user). No retention rule needed.
     # investor_flow is KR-only by construction (Naver frgn page), so
     # the date-based 90d rule above already handles it.
     # E2E test artifacts — Playwright sessions upsert @e2e.test users

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { escapeTgHtml, notifyAdmins } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
   const userId = await currentUserId();
-  if (!userId) {
+  if (!userId || !session?.user?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({}));
@@ -72,5 +74,20 @@ export async function POST(req: NextRequest) {
     console.error("access_request upsert:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
+
+  // Telegram-notify admins so they can triage in /admin/access. Fire-
+  // and-forget — never blocks the user's response on Telegram delivery.
+  const email = escapeTgHtml(session.user.email);
+  const name = session.user.name ? escapeTgHtml(session.user.name) : null;
+  const reasonHtml = reason ? escapeTgHtml(reason) : "(사유 없음)";
+  const text =
+    `🆕 <b>접근 요청</b>\n` +
+    `${name ? `${name} ` : ""}&lt;${email}&gt;\n` +
+    `\n` +
+    `<i>${reasonHtml}</i>\n` +
+    `\n` +
+    `→ /admin/access 에서 승인/거절`;
+  void notifyAdmins(text);
+
   return NextResponse.json({ ok: true });
 }

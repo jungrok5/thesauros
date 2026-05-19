@@ -1,0 +1,62 @@
+/**
+ * /api/admin/feedback/[id] — admin-only status + notes mutation.
+ *
+ *   PATCH  body: { status?, admin_notes? }
+ *      Update the ticket. Role check happens here in addition to the
+ *      proxy gate so a misconfigured proxy doesn't accidentally open
+ *      this surface.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { getServerClient } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
+
+const VALID_STATUS = new Set(["open", "in_progress", "resolved", "wont_fix"]);
+const NOTES_MAX = 2000;
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  const u = session?.user as { role?: string; email?: string } | undefined;
+  if (!u?.email) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (u.role !== "admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const { id: idStr } = await params;
+  const id = parseInt(idStr, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const patch: { status?: string; admin_notes?: string | null } = {};
+  if (body.status !== undefined) {
+    const s = String(body.status);
+    if (!VALID_STATUS.has(s)) {
+      return NextResponse.json({ error: "invalid status" }, { status: 400 });
+    }
+    patch.status = s;
+  }
+  if (body.admin_notes !== undefined) {
+    patch.admin_notes = body.admin_notes
+      ? String(body.admin_notes).slice(0, NOTES_MAX)
+      : null;
+  }
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "no changes" }, { status: 400 });
+  }
+
+  const sb = getServerClient();
+  const { error } = await sb.from("feedback").update(patch).eq("id", id);
+  if (error) {
+    console.error("admin feedback patch:", error.message);
+    return NextResponse.json({ error: "db error" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}

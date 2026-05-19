@@ -103,3 +103,34 @@ export async function sendTelegram(
     console.error("sendTelegram failed:", e);
   }
 }
+
+/**
+ * Send the same message to every admin user who's linked Telegram.
+ * Fire-and-forget — caller doesn't block on delivery and a missing
+ * `TELEGRAM_BOT_TOKEN` is just a console warning. Used for ops alerts
+ * (access requests, feedback submissions) where the user-facing
+ * response shouldn't depend on Telegram availability.
+ *
+ * Each admin gets their own message because Telegram doesn't support
+ * broadcast — we just fan out individual sendMessage calls.
+ */
+export async function notifyAdmins(text: string): Promise<void> {
+  const sb = getServerClient();
+  const { data, error } = await sb
+    .from("users")
+    .select("telegram_chat_id")
+    .eq("role", "admin")
+    .not("telegram_chat_id", "is", null);
+  if (error) {
+    console.error("notifyAdmins read:", error.message);
+    return;
+  }
+  const chatIds = (data ?? [])
+    .map((r) => r.telegram_chat_id as string | null)
+    .filter((id): id is string => !!id);
+  if (chatIds.length === 0) {
+    console.warn("notifyAdmins: no admins with linked Telegram chat_id");
+    return;
+  }
+  await Promise.all(chatIds.map((id) => sendTelegram(id, text)));
+}

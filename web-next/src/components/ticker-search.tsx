@@ -61,12 +61,24 @@ export function TickerSearch({ autoFocus = false }: { autoFocus?: boolean }) {
   // ASCII letters / digits / dot / dash only — Korean characters fail.
   const CANONICAL_TICKER_RE = /^[A-Z0-9.\-]+$/;
 
+  // Fire-and-forget search-history logging. Never blocks navigation;
+  // errors are swallowed since a logging failure shouldn't surface to
+  // the user (the actual stock page renders regardless).
+  function logSearch(query: string, ticker: string | null) {
+    void fetch("/api/search-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, ticker }),
+    }).catch(() => undefined);
+  }
+
   const submit = async (raw: string) => {
     const t = raw.trim();
     if (!t) return;
 
     // 6-digit Korean code → assume KS.
     if (/^\d{6}$/.test(t)) {
+      logSearch(t, `${t}.KS`);
       setOpen(false);
       router.push(`/stocks/${t}.KS`);
       return;
@@ -76,6 +88,7 @@ export function TickerSearch({ autoFocus = false }: { autoFocus?: boolean }) {
 
     // Already canonical (ASCII)? Navigate directly.
     if (CANONICAL_TICKER_RE.test(upper)) {
+      logSearch(t, upper);
       setOpen(false);
       router.push(`/stocks/${encodeURIComponent(upper)}`);
       return;
@@ -90,6 +103,7 @@ export function TickerSearch({ autoFocus = false }: { autoFocus?: boolean }) {
         const data = await r.json();
         const first = (data.items ?? [])[0];
         if (first?.ticker) {
+          logSearch(t, first.ticker);
           setOpen(false);
           router.push(`/stocks/${encodeURIComponent(first.ticker)}`);
           return;
@@ -101,6 +115,7 @@ export function TickerSearch({ autoFocus = false }: { autoFocus?: boolean }) {
 
     // No match found — still navigate so the detail page can show a
     // friendly "not found" message.
+    logSearch(t, null);
     setOpen(false);
     router.push(`/stocks/${encodeURIComponent(t)}`);
   };

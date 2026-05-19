@@ -8,6 +8,7 @@ import {
   Compass,
   Map,
   Menu,
+  MessageSquare,
   Search,
   Settings,
   Shield,
@@ -22,11 +23,13 @@ const NAV = [
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/glossary", label: "용어집", icon: BookOpen },
+  { href: "/feedback", label: "버그·건의", icon: MessageSquare },
   { href: "/settings", label: "설정", icon: Settings },
 ];
 
 const ADMIN_NAV = [
   { href: "/admin/access", label: "관리자 — 접근", icon: Shield },
+  { href: "/admin/feedback", label: "관리자 — 피드백", icon: MessageSquare },
 ];
 
 function navItems(isAdmin: boolean) {

@@ -24,6 +24,8 @@ _REQUIRED_TABLES = {
     "alerts",
     "fundamentals",   # added 2026-05-19 with SEC ingest
     "analyze_results",
+    "feedback",       # added 2026-05-19 with /feedback page
+    # search_history is self-trimming via DB trigger — exempt from rule below
 }
 
 # Per-ticker tables that must additionally have an engagement-set filter

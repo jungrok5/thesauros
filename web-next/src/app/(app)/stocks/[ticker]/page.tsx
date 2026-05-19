@@ -16,7 +16,7 @@
  * Anything not resolvable still renders the page, just without name.
  */
 import { redirect } from "next/navigation";
-import { TickerSearch } from "@/components/ticker-search";
+import { headers } from "next/headers";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
@@ -210,9 +210,40 @@ async function getFlowSummary(ticker: string): Promise<
   return { foreignNet: f, institutionNet: i, latestDay: data[0].day };
 }
 
+/**
+ * Decide where the back-link sends the user. We read the Referer (set
+ * by the browser on same-tab nav) and infer the meaningful origin:
+ *
+ *   /watchlist*  → "관심 종목으로"
+ *   anything else (or no Referer at all — direct hit, fresh tab) → "종목 검색"
+ *
+ * We deliberately don't try to chain history. If the user came from
+ * /watchlist → /stocks/AAPL → /stocks/MSFT (via a related link), the
+ * Referer on the MSFT page is /stocks/AAPL, not /watchlist — so the
+ * back link goes to /stocks (search), which is the right "step out"
+ * destination. The user always has the browser back button for true
+ * history walking.
+ */
+function decideBackLink(referer: string | null): { href: string; label: string } {
+  if (!referer) return { href: "/stocks", label: "종목 검색" };
+  try {
+    const url = new URL(referer);
+    const path = url.pathname;
+    if (path === "/watchlist" || path.startsWith("/watchlist/")) {
+      return { href: "/watchlist", label: "관심 종목으로" };
+    }
+  } catch {
+    /* malformed Referer header — treat as no info */
+  }
+  return { href: "/stocks", label: "종목 검색" };
+}
+
 export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: rawSegment } = await params;
   const raw = decodeURIComponent(rawSegment);
+
+  const headersList = await headers();
+  const back = decideBackLink(headersList.get("referer"));
 
   const resolved = await resolveTicker(raw);
 
@@ -251,16 +282,12 @@ export default async function StockDetailPage({ params }: PageProps) {
   return (
     <div className="space-y-6 max-w-6xl">
       <Link
-        href="/stocks"
+        href={back.href}
         className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        다른 종목 검색
+        {back.label}
       </Link>
-
-      <div className="rounded-lg border border-border bg-card p-4">
-        <TickerSearch />
-      </div>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-baseline gap-3 flex-wrap">
