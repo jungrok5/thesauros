@@ -5,6 +5,7 @@ import type {
   IChartApi,
   ISeriesApi,
   CandlestickData,
+  HistogramData,
   LineData,
   Time,
 } from "lightweight-charts";
@@ -109,6 +110,7 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
     high: number;
     low: number;
     close: number;
+    volume?: number;
   } | null>(null);
   // Hidden MAs — let users declutter the chart.
   const [hiddenMAs, setHiddenMAs] = useState<Set<string>>(new Set());
@@ -214,12 +216,16 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
           vertLines: { color: "rgba(127,127,127,0.1)" },
           horzLines: { color: "rgba(127,127,127,0.1)" },
         },
-        rightPriceScale: { borderColor: "rgba(127,127,127,0.2)" },
+        rightPriceScale: {
+          borderColor: "rgba(127,127,127,0.2)",
+          // Leave the bottom 22% of the chart for the volume histogram
+          // so it never overlaps with candles. Book룰 — 거래량은
+          // first-class 신호 (case 1~12)이므로 캔들과 같이 봐야 한다.
+          scaleMargins: { top: 0.08, bottom: 0.22 },
+        },
         timeScale: {
           borderColor: "rgba(127,127,127,0.2)",
           timeVisible: false,
-          // Show calendar dates on the bottom axis (was hidden).
-          // Weekly/monthly bars don't need intraday seconds.
         },
         crosshair: {
           mode: 0,   // Magnet mode — snaps to bars (book: 종가매매)
@@ -238,6 +244,51 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
         open: b.open, high: b.high, low: b.low, close: b.close,
       }));
       candleSeries.setData(candleData);
+
+      // Volume histogram (separate price scale, anchored to bottom 22 %).
+      // Color matches the candle direction so a glance shows "buying vs
+      // selling 거래량" — central to book's 11+1 case analysis (p364).
+      const volumeSeries = chart.addSeries(lwc.HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+        lastValueVisible: false,
+      });
+      chart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.78, bottom: 0 },   // bottom 22 % strip
+        borderColor: "rgba(127,127,127,0.2)",
+      });
+      const volumeData: HistogramData[] = data.bars.map((b) => ({
+        time: b.t as Time,
+        value: b.volume,
+        color: b.close >= b.open
+          ? "rgba(239, 68, 68, 0.55)"   // 양봉 빨강 (60% alpha)
+          : "rgba(59, 130, 246, 0.55)", // 음봉 파랑
+      }));
+      volumeSeries.setData(volumeData);
+
+      // 20-bar volume MA — book "거래량 평균 대비" anchor for cases 3/9
+      // (3배 이상 폭증 vs 평균 미만 감소).
+      const N_AVG = 20;
+      const volMA: LineData[] = [];
+      for (let i = N_AVG - 1; i < data.bars.length; i++) {
+        let sum = 0;
+        for (let j = i - N_AVG + 1; j <= i; j++) sum += data.bars[j].volume;
+        volMA.push({
+          time: data.bars[i].t as Time,
+          value: sum / N_AVG,
+        });
+      }
+      if (volMA.length > 0) {
+        const volMaSeries = chart.addSeries(lwc.LineSeries, {
+          color: "#f59e0b",                  // amber — 평균 거래량 라인
+          lineWidth: 1,
+          priceScaleId: "volume",
+          lastValueVisible: false,
+          priceLineVisible: false,
+          title: "20MA Vol",
+        });
+        volMaSeries.setData(volMA);
+      }
 
       // Moving averages — skip hidden ones for declutter.
       for (const [key, points] of Object.entries(data.mas)) {
@@ -297,9 +348,13 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
           ? param.time
           : (param.time as { timestamp?: number }).timestamp ?? 0;
         const d = new Date((ts as number) * 1000);
+        // Look up volume by matching the bar timestamp (lightweight-charts
+        // doesn't surface other series' data through this callback).
+        const matched = data.bars.find((b) => b.t === ts);
         setHoverInfo({
           date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
           open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+          volume: matched?.volume,
         });
       });
 
@@ -445,6 +500,14 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
                   <span className="text-muted-foreground">C </span>
                   {hoverInfo.close.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
+                {hoverInfo.volume != null && (
+                  <div>
+                    <span className="text-muted-foreground">V </span>
+                    {hoverInfo.volume >= 1e6
+                      ? `${(hoverInfo.volume / 1e6).toFixed(1)}M`
+                      : hoverInfo.volume.toLocaleString()}
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -471,6 +534,15 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
             </button>
           );
         })}
+        <span className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1">
+          <span style={{ width: 12, height: 6, background: "#ef4444aa" }} />/
+          <span style={{ width: 12, height: 6, background: "#3b82f6aa" }} />
+          거래량 (양/음봉)
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1">
+          <span style={{ width: 12, height: 2, background: "#f59e0b" }} />
+          20MA Vol (책: 평균 대비 3배+ = 폭증)
+        </span>
         <span className="ml-auto text-[10px] text-muted-foreground/70 leading-tight">
           💡 마우스 휠 = 확대·축소 · 드래그 = 좌우 이동 · 더블클릭 = 자동 맞춤
           <br />
