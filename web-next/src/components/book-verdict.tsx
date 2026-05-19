@@ -488,6 +488,13 @@ function collectWarnings(r: AnalysisResult): string[] {
         `${p.kind} 패턴 무효화 — ${p.invalidation_reason ?? "전저점/돌파선 재이탈"}.`,
       );
     }
+    // 거래량 단조 룰 미충족 — book treats this as "페이크 캔들" risk.
+    const fake = (p.extra as { fake_volume?: boolean } | undefined)?.fake_volume;
+    if (fake && p.completed && !p.invalidated) {
+      out.push(
+        `${p.kind} 거래량 룰 미충족 — 책 p254/p276: "페이크 캔들" 의심. confidence 자동 감소.`,
+      );
+    }
   }
 
   // Volume vs action dissonance. Skip case 12 "수렴기 거래량 감소" —

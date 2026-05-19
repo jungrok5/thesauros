@@ -137,12 +137,24 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
     # Completion: 10MA hookline candle
     completed = ma_10 is not None and last_close > ma_10 and last_close > b.price * 1.02
 
+    # Volume rule (book p256): 2차 브레이킹 거래량 = 1차의 70-200 %.
+    # Outside that range = "페이크 캔들" — confidence is halved to
+    # reflect the book's warning, and the extras flag is set so
+    # downstream surfaces can call it out.
+    fake_volume = False
+    if b.volume > 0 and a.volume > 0:
+        vol_ratio_2nd = b.volume / a.volume
+        if not (0.7 <= vol_ratio_2nd <= 2.0):
+            fake_volume = True
+
     # Confidence — base + adjustments
     conf = 0.55
     if b.price > a.price * 1.005:
         conf += 0.20  # 짝궁둥이 (오른쪽 높음)
-    if b.volume > 0 and a.volume > 0 and 0.7 <= (b.volume / a.volume) <= 2.0:
+    if not fake_volume:
         conf += 0.10
+    else:
+        conf *= 0.6  # 책: 페이크 캔들 의심 → strong haircut
     if completed:
         conf += 0.10
     conf = min(conf, 0.95)
@@ -165,8 +177,12 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
             f"쌍바닥: L1={a.price:.2f}@{a.date.date()} → L2={b.price:.2f}@{b.date.date()}"
             + (" (짝궁둥이형, 책의 최강 매수)" if b.price > a.price * 1.005 else "")
             + (" / 10MA 돌파 완성" if completed else " / 미완 (네크라인 미돌파)")
+            + (" / ⚠️ 거래량 70-200 % 범위 이탈 (페이크 의심)" if fake_volume else "")
         ),
-        extra={"low1": a.to_dict(), "low2": b.to_dict(), "neckline": neckline},
+        extra={
+            "low1": a.to_dict(), "low2": b.to_dict(), "neckline": neckline,
+            "fake_volume": fake_volume,
+        },
     )
 
 
@@ -415,9 +431,16 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
     if not (_within(a.price, b.price, tol) and _within(b.price, c.price, tol)):
         return None
 
-    # 책 권장: 거래량 우상향, 저점도 점차 상승
+    # 책 권장 (p276): 거래량 우상향 (저점마다 거래량 증가), 저점도 점차 상승
     rising_bottoms = a.price <= b.price <= c.price
-    rising_volume = a.volume < b.volume < c.volume if all([a.volume, b.volume, c.volume]) else False
+    rising_volume = (
+        a.volume < b.volume < c.volume
+        if all([a.volume, b.volume, c.volume]) else False
+    )
+    # Book treats missing volume-monotonic as page p254-pattern "페이크".
+    fake_volume = (
+        all([a.volume, b.volume, c.volume]) and not rising_volume
+    )
 
     ma_10 = _ma_value(df, 10)
     last_close = float(df["close"].iloc[-1])
@@ -428,6 +451,8 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
         conf += 0.10
     if rising_volume:
         conf += 0.10
+    elif fake_volume:
+        conf *= 0.7
     if completed:
         conf += 0.07
     conf = min(conf, 0.97)
@@ -451,8 +476,12 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
             + (" / 저점 우상향" if rising_bottoms else "")
             + (" + 거래량 우상향" if rising_volume else "")
             + (" / 10MA 돌파" if completed else " / 미완")
+            + (" / ⚠️ 거래량 단조 미충족 (페이크 의심)" if fake_volume else "")
         ),
-        extra={"bottoms": [a.to_dict(), b.to_dict(), c.to_dict()]},
+        extra={
+            "bottoms": [a.to_dict(), b.to_dict(), c.to_dict()],
+            "fake_volume": fake_volume,
+        },
     )
 
 
