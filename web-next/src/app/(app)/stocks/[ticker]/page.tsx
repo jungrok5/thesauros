@@ -210,22 +210,6 @@ async function getFlowSummary(ticker: string): Promise<
   return { foreignNet: f, institutionNet: i, latestDay: data[0].day };
 }
 
-async function getSparklineCloses(ticker: string): Promise<number[]> {
-  const sb = getServerClient();
-  const { data, error } = await sb
-    .from("bars")
-    .select("close")
-    .eq("ticker", ticker)
-    .eq("granularity", "W")
-    .order("bar_date", { ascending: false })
-    .limit(60);
-  if (error || !data) return [];
-  return data
-    .map((r) => Number(r.close))
-    .filter((n) => Number.isFinite(n))
-    .reverse();
-}
-
 export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: rawSegment } = await params;
   const raw = decodeURIComponent(rawSegment);
@@ -245,11 +229,10 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [cached, watch, flow, sparkCloses] = await Promise.all([
+  const [cached, watch, flow] = await Promise.all([
     isCanonical ? getAnalysis(ticker) : Promise.resolve<CachedAnalysis>({ result: null, stale: true }),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
-    isCanonical ? getSparklineCloses(ticker) : Promise.resolve<number[]>([]),
   ]);
   const result = cached.result;
 
@@ -355,13 +338,18 @@ export default async function StockDetailPage({ params }: PageProps) {
           <MarketHoursNotice />
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
+          <AnalysisView result={result} flow={flow} />
           <div>
-            <h2 className="mb-3 text-lg font-semibold tracking-tight">
-              차트 + 책 신호 오버레이
+            <h2 className="mb-2 text-lg font-semibold tracking-tight">
+              차트 (시각적 검증)
             </h2>
-            <BookChart ticker={ticker} timeframe="weekly" years={2} />
+            <p className="mb-3 text-xs text-muted-foreground leading-relaxed">
+              매매 결론은 위 정리표 + 한 줄 평이 끝냅니다. 이 차트는 결론의
+              근거를 시각적으로 검증하는 용도 — 빨간선 = 240MA, 녹색선 = 주봉 10MA,
+              가로 수평선 = 4등분선 / 매매 자리. 크게 보기 버튼으로 확대.
+            </p>
+            <BookChart ticker={ticker} timeframe="weekly" years={5} />
           </div>
-          <AnalysisView result={result} flow={flow} sparklineCloses={sparkCloses} />
           <div className="mt-8">
             <h2 className="mb-3 text-lg font-semibold tracking-tight">
               종목 정보

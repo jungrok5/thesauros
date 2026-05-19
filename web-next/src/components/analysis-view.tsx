@@ -2,7 +2,6 @@ import type { AnalysisResult } from "@/lib/types/analysis";
 import { ActionBadge } from "@/components/action-badge";
 import { HelpTip } from "@/components/help-tip";
 import { MultiTFMatrix } from "@/components/multi-tf-matrix";
-import { Sparkline } from "@/components/sparkline";
 import {
   InvestorFlowChip,
   type FlowSummary,
@@ -136,11 +135,9 @@ function PatternCard({
 export function AnalysisView({
   result,
   flow,
-  sparklineCloses,
 }: {
   result: AnalysisResult;
   flow?: FlowSummary | null;
-  sparklineCloses?: number[];
 }) {
   const r = result;
   const ts = new Date().toLocaleString("ko-KR");
@@ -166,9 +163,6 @@ export function AnalysisView({
               daily={r.trend.daily}
             />
             {flow && <InvestorFlowChip flow={flow} />}
-            {sparklineCloses && sparklineCloses.length >= 2 && (
-              <Sparkline closes={sparklineCloses} width={140} height={28} />
-            )}
           </div>
         </div>
         <ActionBadge action={r.action} score={r.book_score} size="lg" />
