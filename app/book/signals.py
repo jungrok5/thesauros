@@ -364,7 +364,10 @@ def detect_signals_at(df: pd.DataFrame, i: int) -> SignalSet:
         body_avg = (win["close"] - win["open"]).abs().iloc[-21:-1].mean()
         vol_avg = win["volume"].iloc[-21:-1].mean() if "volume" in win.columns else 0
         if body_avg > 0:
-            tags = classify_candle(cp, body_avg, vol_avg)
+            prev_close = (
+                float(win["close"].iloc[-2]) if len(win) >= 2 else None
+            )
+            tags = classify_candle(cp, body_avg, vol_avg, prev_close=prev_close)
             if "장대양봉" in tags and quarter_safety(cp) is True:
                 ss.signals.append(Signal(
                     kind="ENTER", source="장대양봉 + 75% 안전지대",

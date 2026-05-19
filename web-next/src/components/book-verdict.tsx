@@ -479,6 +479,21 @@ function collectWarnings(r: AnalysisResult): string[] {
   const out: string[] = [];
   const bullishAction = r.action === "BUY" || r.action === "STRONG_BUY";
 
+  // Multi-bar candle context tags (Phase 2 P2 — book p214/247-250).
+  const lcTags = r.last_candle?.tags ?? [];
+  if (lcTags.includes("구라캔들")) {
+    out.push("구라캔들 — 큰 봉인데 거래량 부족 (책 p214): 가짜 신호 의심.");
+  }
+  if (lcTags.includes("양팔봉")) {
+    out.push("양팔봉 — 위/아래 꼬리 모두 큼 (책 p247): 방향 미정, 다음 봉 관찰.");
+  }
+  if (lcTags.includes("은둔형장대양봉")) {
+    out.push("은둔형 장대양봉 — 3봉 누적 +5 %+ (책 p249): 분할 매집 진행 중.");
+  }
+  if (lcTags.includes("주고받고")) {
+    out.push("주고받고 캔들 — 장대양봉 후 안전지대 안 작은 음봉 (책 p250): 정상 소화.");
+  }
+
   // Invalidated patterns surface as warnings on every verdict color
   // (including BUY/STRONG_BUY where they'd otherwise quietly inflate
   // the score) so users see the contradiction.

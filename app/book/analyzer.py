@@ -514,6 +514,50 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     pos_52 = pos_52w_pre
     rally_pct = rally_pre
 
+    # Multi-bar candle context tags (book p249-250) — checked on the
+    # last 1-3 bars and appended to last_candle["tags"]. These don't
+    # change the action gate but enrich the BookVerdict narrative.
+    try:
+        if last_candle is not None and len(df) >= 3:
+            tags_extra: List[str] = []
+            # 주고받고: prior bar 장대양봉, current small bearish bar
+            # whose close sits in the prior 75 % safe zone.
+            prev = df.iloc[-2]
+            curr = df.iloc[-1]
+            prev_body = abs(float(prev["close"]) - float(prev["open"]))
+            curr_body = abs(float(curr["close"]) - float(curr["open"]))
+            if (
+                float(prev["close"]) > float(prev["open"])     # prev bull
+                and prev_body > 0
+                and float(curr["close"]) < float(curr["open"]) # curr bear
+                and curr_body / max(prev_body, 1e-9) < 0.4     # small body
+                and float(curr["close"]) >= float(prev["open"])
+                  + 0.75 * (float(prev["close"]) - float(prev["open"]))
+            ):
+                tags_extra.append("주고받고")
+            # 은둔형 장대양봉: 3-bar cumulative gain ≥ 5 %, each bar
+            # small bullish body.
+            if len(df) >= 3:
+                three = df.tail(3)
+                bars_bullish = all(
+                    float(r["close"]) > float(r["open"]) for _, r in three.iterrows()
+                )
+                cum_gain = (
+                    float(three["close"].iloc[-1]) / float(three["open"].iloc[0]) - 1
+                    if float(three["open"].iloc[0]) > 0 else 0
+                )
+                bodies_small = all(
+                    abs(float(r["close"]) - float(r["open"])) / max(float(r["open"]), 1e-9) < 0.03
+                    for _, r in three.iterrows()
+                )
+                if bars_bullish and bodies_small and cum_gain >= 0.05:
+                    tags_extra.append("은둔형장대양봉")
+            for t in tags_extra:
+                if t not in (last_candle.get("tags") or []):
+                    last_candle.setdefault("tags", []).append(t)
+    except Exception:
+        pass
+
     # 4등분선 안전지대 판정 (book p218-223). Find the most recent
     # 장대양봉 catalyst pattern, anchor the quarter zones on its body,
     # then report where current_price sits.

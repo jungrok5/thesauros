@@ -120,10 +120,12 @@ def quarter_zone(reference_bar_low: float, reference_bar_close: float,
     return "broken"
 
 
-def classify_candle(c: CandleParts, body_avg: float, vol_avg: float) -> List[str]:
+def classify_candle(c: CandleParts, body_avg: float, vol_avg: float,
+                    prev_close: Optional[float] = None) -> List[str]:
     """Classify a candle into one or more book categories.
 
     body_avg, vol_avg = recent rolling averages (e.g., 20-bar) used for "large" detection.
+    prev_close = previous bar's close, used for 갭상승/갭하락 detection (book p230-233).
 
     Returns:
         List of classification tags (a candle may have multiple, e.g.
@@ -170,9 +172,40 @@ def classify_candle(c: CandleParts, body_avg: float, vol_avg: float) -> List[str
     if body_avg > 0 and c.body >= body_avg * 2.0:
         tags.append("장대양봉" if c.is_bullish else "장대음봉")
 
-    # 구라캔들: 양봉이지만 위꼬리 거의 없음 + 갭상승도 없음 (단순화 — 갭은 호출자가 검사)
+    # 구라캔들 (book p214-215): 큰 봉인데 거래량 부족 = 가짜 신호.
+    # Book example was 장대음봉, but the principle is symmetric — any
+    # big-bodied candle that prints below average volume is suspect.
+    if (
+        c.body_pct >= 0.6
+        and vol_avg > 0
+        and c.volume < vol_avg * 0.7
+    ):
+        tags.append("구라캔들")
+
+    # Legacy heuristic kept for compat — strict "no upper wick + 장대양봉":
     if c.is_bullish and "장대양봉" in tags and c.upper_pct < 0.05:
         tags.append("구라캔들의심")
+
+    # 양팔봉 (book p247-248): 위·아래 꼬리 모두 큼 + 작은 몸통.
+    # Direction undecided — wait for next bar.
+    if (
+        c.body_pct < 0.3
+        and c.upper_pct >= 0.25
+        and c.lower_pct >= 0.25
+    ):
+        tags.append("양팔봉")
+
+    # 주고받고 (book p250): handled at higher level (needs prior bar);
+    # 은둔형 장대양봉 (p249): 3-bar cumulative gain — also needs prior bars.
+    # Both surfaced as analyzer-level helpers below.
+
+    # 갭 (book p230-233): 시가 위치 신호.
+    if prev_close is not None and prev_close > 0:
+        gap = (c.open - prev_close) / prev_close
+        if gap >= 0.01:
+            tags.append("갭상승")
+        elif gap <= -0.01:
+            tags.append("갭하락")
 
     # Volume spike
     if vol_avg > 0 and c.volume >= vol_avg * 2.0:
@@ -232,7 +265,10 @@ def analyze_candles(df: pd.DataFrame, window: int = 20) -> List[CandleAnalysis]:
         parts = CandleParts.from_row(row)
         ba = float(body_avg.iloc[i]) if not np.isnan(body_avg.iloc[i]) else 0.0
         va = float(vol_avg.iloc[i]) if not np.isnan(vol_avg.iloc[i]) else 0.0
-        tags = classify_candle(parts, ba, va)
+        prev_close = (
+            float(work["close"].iloc[i - 1]) if i > 0 else None
+        )
+        tags = classify_candle(parts, ba, va, prev_close=prev_close)
         safe = quarter_safety(parts)
         out.append(CandleAnalysis(
             date=row["date"],

@@ -120,3 +120,44 @@ def test_quarter_zone_na_for_non_bullish_reference():
     from app.book.candles import quarter_zone
     assert quarter_zone(200, 100, 150) == "n/a"
     assert quarter_zone(100, 100, 100) == "n/a"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 구라캔들 / 양팔봉 / 갭 (Phase 2 P2)
+# ─────────────────────────────────────────────────────────────────────
+
+def test_gura_candle_big_body_low_volume():
+    """Big-bodied candle with vol < 0.7 × avg → 구라캔들 tag (book p214).
+    Volume can't be faked, so a strong move on weak volume is suspect."""
+    c = _c(open_v=100, close=88, high=100.3, low=87.8)   # body 92 % bearish
+    tags = classify_candle(c, body_avg=2, vol_avg=10000)
+    # candle.volume = 1000 (from _c helper) < 0.7 × 10000 = 7000 → 구라캔들
+    assert "구라캔들" in tags
+
+
+def test_yangpalbong_balanced_wicks():
+    """Long upper AND lower wicks with small body → 양팔봉."""
+    c = _c(open_v=100, close=100.5, high=104, low=96)
+    # body 0.5, range 8, upper 3.5/8 = 44 %, lower 4/8 = 50 %, body 6 %
+    tags = classify_candle(c, body_avg=2, vol_avg=1000)
+    assert "양팔봉" in tags
+
+
+def test_gap_up_detection():
+    """O > 1.01 × prev_close → 갭상승."""
+    c = _c(open_v=110, close=112, high=113, low=109.5)
+    tags = classify_candle(c, body_avg=2, vol_avg=1000, prev_close=100.0)
+    assert "갭상승" in tags
+
+
+def test_gap_down_detection():
+    c = _c(open_v=95, close=93, high=95.5, low=92)
+    tags = classify_candle(c, body_avg=2, vol_avg=1000, prev_close=100.0)
+    assert "갭하락" in tags
+
+
+def test_gap_absent_when_no_prev_close():
+    """First bar has no prior close → no gap tag should fire."""
+    c = _c(open_v=100, close=102, high=103, low=99)
+    tags = classify_candle(c, body_avg=2, vol_avg=1000, prev_close=None)
+    assert not any(t in ("갭상승", "갭하락") for t in tags)
