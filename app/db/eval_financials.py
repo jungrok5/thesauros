@@ -211,6 +211,181 @@ def build_summary(metrics: Dict[str, Optional[float]],
     return " · ".join(parts)
 
 
+# ---------- Market cap (for PER/PBR) -------------------------------------
+
+# Lazy-populated map {KR_six_digit_code: market_cap_in_krw}. Filled once
+# per eval run via pykrx's bulk endpoint so we don't hit KRX 2700 times.
+_KR_MARKET_CAP_CACHE: Optional[Dict[str, float]] = None
+
+
+def _load_kr_market_caps() -> Dict[str, float]:
+    """Fetch all KOSPI+KOSDAQ market caps. Tries pykrx (bulk) first,
+    then falls back to per-ticker Naver scrape for any code pykrx
+    didn't return. KRX's data API occasionally rate-limits / blocks
+    non-KR IPs; the fallback keeps the eval going on those days.
+    """
+    from datetime import date as _date, timedelta as _td
+    out: Dict[str, float] = {}
+
+    try:
+        from pykrx import stock
+        today = _date.today()
+        for back in range(8):
+            day = (today - _td(days=back)).strftime("%Y%m%d")
+            try:
+                df = stock.get_market_cap_by_ticker(day)
+            except Exception as e:
+                log.debug("pykrx %s failed: %s", day, e)
+                continue
+            if df is None or df.empty:
+                continue
+            col = "시가총액" if "시가총액" in df.columns else None
+            if not col:
+                continue
+            for code, mc in df[col].items():
+                try:
+                    out[str(code).zfill(6)] = float(mc)
+                except (TypeError, ValueError):
+                    continue
+            if out:
+                log.info(
+                    "pykrx market cap loaded for %d tickers (%s)",
+                    len(out), day,
+                )
+                break
+    except Exception as e:
+        log.warning("pykrx import/run failed: %s", e)
+
+    if not out:
+        log.info(
+            "pykrx returned nothing — KR PER/PBR will be filled via "
+            "Naver fallback on demand (slower)"
+        )
+    return out
+
+
+def _naver_market_cap(stock_code: str) -> Optional[float]:
+    """Per-ticker Naver fallback. Hits m.stock.naver.com's integration
+    JSON which exposes 시가총액 directly. Used only when pykrx didn't
+    cover a code (network issue, new listing, etc.).
+    """
+    import requests
+    url = f"https://m.stock.naver.com/api/stock/{stock_code}/integration"
+    try:
+        r = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://m.stock.naver.com/"},
+            timeout=8,
+        )
+    except requests.RequestException as e:
+        log.debug("naver market_cap fetch %s: %s", stock_code, e)
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        payload = r.json()
+    except ValueError:
+        return None
+    # Schema: payload.totalInfos = [{code, key, value}, ...] where `key`
+    # is the Korean label visible on m.stock.naver.com (e.g. 시총, 전일,
+    # 시가, 고가). The string value comes with Korean multipliers like
+    # "1,610조 6,498억". We parse it back to a numeric KRW float.
+    info = (payload or {}).get("totalInfos") or []
+    raw: Optional[str] = None
+    for it in info:
+        key = (it.get("key") or "").strip()
+        if key in ("시총", "시가총액", "marketValue"):
+            raw = it.get("value")
+            break
+    if not raw:
+        return None
+    return _parse_korean_currency(str(raw))
+
+
+def _parse_korean_currency(s: str) -> Optional[float]:
+    """\"1조 2,345억원\" → 1.2345e12. Handles 조/억/만 multipliers.
+    Returns None if the string doesn't match the expected shape.
+    """
+    import re
+    s = s.replace(",", "").replace(" ", "").replace("원", "")
+    total = 0.0
+    matched = False
+    for unit, mult in (("조", 1e12), ("억", 1e8), ("만", 1e4)):
+        m = re.search(rf"([\d.]+){unit}", s)
+        if m:
+            try:
+                total += float(m.group(1)) * mult
+                matched = True
+            except ValueError:
+                pass
+    if matched:
+        return total
+    # Plain number fallback.
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _latest_market_cap(ticker: str) -> Optional[float]:
+    """Latest market cap for `ticker`. KR: cached pykrx dict → Naver
+    fallback on miss. US: close × shares-outstanding from bars +
+    fundamentals. Returns None when no source succeeds — caller skips
+    PER/PBR for that ticker.
+    """
+    global _KR_MARKET_CAP_CACHE
+    if ticker.endswith(".KS") or ticker.endswith(".KQ"):
+        if _KR_MARKET_CAP_CACHE is None:
+            _KR_MARKET_CAP_CACHE = _load_kr_market_caps()
+        code = ticker.split(".")[0]
+        mc = _KR_MARKET_CAP_CACHE.get(code)
+        if mc is not None:
+            return mc
+        # pykrx didn't cover this code — fall back to Naver per-ticker.
+        # Cache the result back into the dict so we don't refetch.
+        mc = _naver_market_cap(code)
+        if mc is not None:
+            _KR_MARKET_CAP_CACHE[code] = mc
+        return mc
+    # US path — close × shares-outstanding. Use the most recent W bar
+    # for price; shares from the most recent fy in fundamentals.
+    try:
+        from app.db import get_conn
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT close FROM bars WHERE ticker = %s "
+                    "AND granularity = 'W' ORDER BY bar_date DESC LIMIT 1",
+                    (ticker,),
+                )
+                row = cur.fetchone()
+                if not row or row[0] is None:
+                    return None
+                close = float(row[0])
+                cur.execute(
+                    """
+                    SELECT value FROM fundamentals
+                     WHERE ticker = %s
+                       AND concept IN (
+                         'CommonStockSharesOutstanding',
+                         'WeightedAverageNumberOfDilutedSharesOutstanding'
+                       )
+                     ORDER BY fy DESC,
+                       (concept = 'CommonStockSharesOutstanding') DESC
+                     LIMIT 1
+                    """,
+                    (ticker,),
+                )
+                row = cur.fetchone()
+                if not row or row[0] is None:
+                    return None
+                shares = float(row[0])
+    except Exception as e:
+        log.debug("_latest_market_cap US lookup %s: %s", ticker, e)
+        return None
+    return close * shares
+
+
 # ---------- Fundamentals → metrics ----------------------------------------
 
 REVENUE_ALIASES = (
@@ -297,6 +472,13 @@ def _fundamentals_for(ticker: str) -> Optional[Tuple[Dict[str, Optional[float]],
         rev_growth = None
         ni_growth = None
 
+    # Valuation: PER/PBR = market_cap / earnings | equity.
+    # KR — pykrx pre-loaded into _KR_MARKET_CAP_CACHE at run start.
+    # US — close × shares-outstanding from bars + fundamentals.
+    market_cap = _latest_market_cap(ticker)
+    per = (market_cap / net_income) if (market_cap and net_income and net_income > 0) else None
+    pbr = (market_cap / equity) if (market_cap and equity and equity > 0) else None
+
     metrics: Dict[str, Optional[float]] = {
         "revenue": revenue,
         "net_income": net_income,
@@ -312,10 +494,9 @@ def _fundamentals_for(ticker: str) -> Optional[Tuple[Dict[str, Optional[float]],
         "net_income_growth_yoy": ni_growth,
         "current_ratio": None,           # need cur_assets / cur_liab (later)
         "f_score": None,
-        # Valuation (PER/PBR) requires market_cap → skipped for now
-        # (book #8: KR market_cap not yet loaded for historical PIT)
-        "per": None,
-        "pbr": None,
+        "per": per,
+        "pbr": pbr,
+        "market_cap": market_cap,
     }
     return metrics, by_year, years
 

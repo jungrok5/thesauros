@@ -14,6 +14,11 @@ import { getServerClient, type DisclosureRow,
 import { HelpTip } from "@/components/help-tip";
 import { NewsTabClient } from "@/components/news-tab-client";
 import { StockTabs } from "./stock-tabs";
+import {
+  interpretFinancials,
+  interpretFactors,
+  type Interpretation,
+} from "@/lib/fundamentals-interpret";
 
 interface Props {
   ticker: string;
@@ -75,6 +80,67 @@ function FreshnessNote({
 }
 
 const STALE_THRESHOLD_DAYS = 14;
+
+const INTERP_TONE_CLASSES: Record<
+  Interpretation["tone"],
+  { border: string; bg: string; text: string }
+> = {
+  good: {
+    border: "border-emerald-500/40",
+    bg: "bg-emerald-500/5",
+    text: "text-emerald-700 dark:text-emerald-300",
+  },
+  neutral: {
+    border: "border-amber-500/40",
+    bg: "bg-amber-500/5",
+    text: "text-amber-700 dark:text-amber-300",
+  },
+  warn: {
+    border: "border-orange-500/40",
+    bg: "bg-orange-500/5",
+    text: "text-orange-700 dark:text-orange-300",
+  },
+  bad: {
+    border: "border-rose-500/40",
+    bg: "bg-rose-500/5",
+    text: "text-rose-700 dark:text-rose-300",
+  },
+};
+
+function InterpretationCard({
+  interp,
+  title,
+}: {
+  interp: Interpretation;
+  title: string;
+}) {
+  const cls = INTERP_TONE_CLASSES[interp.tone];
+  return (
+    <section className={`rounded-xl border-2 ${cls.border} ${cls.bg} p-4 space-y-3`}>
+      <header className="flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          {title}
+        </div>
+        <span
+          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls.border} ${cls.text} bg-background/40`}
+        >
+          {interp.label}
+        </span>
+      </header>
+      <p className="text-sm leading-relaxed">{interp.oneLiner}</p>
+      {interp.takeaways.length > 0 && (
+        <ul className="space-y-1 text-xs leading-relaxed">
+          {interp.takeaways.map((t, i) => (
+            <li key={i} className="flex gap-2">
+              <span className={cls.text}>·</span>
+              <span>{t}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function computeStale(updatedAt: string | undefined, nowMs: number): boolean {
   if (!updatedAt) return false;
@@ -165,14 +231,21 @@ function FinancialsTab({ fin, isStale }: { fin: FinancialsEvalRow | null; isStal
   ];
 
   const evals = fin.rules_eval ?? {};
+  const interp = interpretFinancials(fin);
 
   return (
     <div className="space-y-4">
       <FreshnessNote updatedAt={fin.updated_at} isStale={isStale} />
+      <InterpretationCard interp={interp} title="📋 재무제표 한 줄 평 + 도출" />
       {fin.summary_text && (
-        <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
-          {fin.summary_text}
-        </div>
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-2 cursor-pointer text-xs text-muted-foreground hover:bg-muted/30">
+            원본 요약 (cron 생성 한 줄)
+          </summary>
+          <div className="px-4 pb-3 text-xs text-muted-foreground leading-relaxed">
+            {fin.summary_text}
+          </div>
+        </details>
       )}
 
       <div className="rounded-lg border border-border overflow-x-auto">
@@ -234,13 +307,20 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
       </div>
     );
   }
+  const interp = interpretFactors(fac);
   return (
     <div className="space-y-4">
       <FreshnessNote updatedAt={fac.updated_at} isStale={isStale} />
+      <InterpretationCard interp={interp} title="🎯 팩터 한 줄 평 + 도출" />
       {fac.summary_text && (
-        <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
-          {fac.summary_text}
-        </div>
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-2 cursor-pointer text-xs text-muted-foreground hover:bg-muted/30">
+            원본 요약 (cron 생성 한 줄)
+          </summary>
+          <div className="px-4 pb-3 text-xs text-muted-foreground leading-relaxed">
+            {fac.summary_text}
+          </div>
+        </details>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
