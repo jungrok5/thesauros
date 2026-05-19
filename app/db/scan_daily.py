@@ -50,6 +50,13 @@ SIGNAL_TYPE_MAP = {
     "SELL":          ("action_sell",         0.70),
     "SELL_OR_SHORT": ("action_sell_short",   0.80),
     "AVOID":         ("action_avoid",        0.70),
+    # HOLD is normally noise. The exception is when the analyzer's
+    # stretch gate downgraded a BUY/STRONG_BUY → HOLD — those rows
+    # carry the "추세 유효 · 자리 지남" warning and should surface as
+    # a 관망 chip on watchlist / recommendations so users see why the
+    # ticker stopped being a buy candidate. _action_signal() guards
+    # emission with the stretch_reason condition.
+    "HOLD":          ("action_hold",         0.55),
 }
 
 # Korean pattern/signal name → ASCII slug (canonical, stable across UI/queries).
@@ -112,7 +119,15 @@ def _slug(name: str, fallback: str) -> str:
 
 def _action_signal(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     action = result.get("action")
-    if not action or action == "HOLD":
+    if not action:
+        return None
+    # HOLD without a stretch_reason is no-news (no chip) — same as
+    # before. HOLD WITH stretch_reason means the analyzer downgraded
+    # a BUY/STRONG_BUY because the chart entered late-trend stretch
+    # territory; surfacing a 관망 chip with the reason lets the
+    # watchlist warn the user even though no directional bet remains.
+    stretch_reason = result.get("stretch_reason")
+    if action == "HOLD" and not stretch_reason:
         return None
     info = SIGNAL_TYPE_MAP.get(action)
     if not info:
@@ -120,15 +135,19 @@ def _action_signal(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     stype, base_strength = info
     book_score = float(result.get("book_score") or 0)
     strength = min(1.0, max(0.0, abs(book_score) * 0.4 + base_strength * 0.6))
+    reason = f"{action} (book_score={book_score:+.2f})"
+    if stretch_reason:
+        reason = f"{action} · {stretch_reason}"
     return {
         "signal_type": stype,
         "timeframe": "daily",
         "strength": round(strength, 3),
-        "reason": f"{action} (book_score={book_score:+.2f})",
+        "reason": reason,
         "params": {
             "book_score": book_score,
             "trend_signal": result.get("trend", {}).get("book_signal"),
             "last_close": result.get("last_close"),
+            "stretch_reason": stretch_reason,
         },
     }
 

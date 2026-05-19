@@ -76,6 +76,46 @@ def test_extract_signals_volume_case_with_number():
     assert "volume_case_9" in types
 
 
+def test_action_hold_without_stretch_emits_no_action_row():
+    """Plain HOLD (mid-range neutral chart) must NOT emit any action_*
+    row — otherwise every quiet ticker would pollute watchlist with
+    a 관망 chip. This preserves the original cron behaviour for HOLD."""
+    result = {
+        "action": "HOLD", "book_score": 0.1, "last_close": 100,
+        "trend": {"book_signal": "HOLD"},
+        "patterns": [], "reversals": [],
+        "volume_case": None, "reverse_accumulation": None,
+        "stretch_reason": None,
+    }
+    signals = extract_signals(result)
+    assert not any(
+        s["signal_type"].startswith("action_") for s in signals
+    ), f"plain HOLD should emit no action_*, got {signals}"
+
+
+def test_action_hold_with_stretch_emits_action_hold_row():
+    """HOLD downgraded by the analyzer's late-trend stretch gate must
+    emit `action_hold` so the watchlist chip reflects the new state
+    instead of leaving the stale `action_buy` row in place (the RKLB /
+    GOOGL bug 2026-05-19). The stretch_reason rides along in `reason`
+    + `params` for downstream surfacing."""
+    result = {
+        "action": "HOLD", "book_score": 0.60, "last_close": 124.77,
+        "trend": {"book_signal": "BUY"},
+        "patterns": [], "reversals": [],
+        "volume_case": None, "reverse_accumulation": None,
+        "stretch_reason": "8주 +115% (책 +50% 룰 위반) · 240MA 대비 +256%",
+    }
+    signals = extract_signals(result)
+    action_rows = [s for s in signals if s["signal_type"].startswith("action_")]
+    assert len(action_rows) == 1, f"expected one action_* row, got {action_rows}"
+    s = action_rows[0]
+    assert s["signal_type"] == "action_hold"
+    assert "8주 +115%" in s["reason"]
+    assert "240MA 대비 +256%" in s["reason"]
+    assert s["params"].get("stretch_reason"), "stretch_reason must flow into params"
+
+
 def _main():
     checks = [
         test_slug_korean_mapping,
