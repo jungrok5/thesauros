@@ -16,11 +16,13 @@ data it needs:
   investor_flow   14 days  (site shows last 5; 14 buffers any drill-down)
   disclosures     1 year   (site lists last 30; 1y for compliance dashboards)
   scan_results    inactive ≥ 30 days  (active signals stay; cron toggles flags)
-  theme_daily     180 days (6-month heatmap is the max user-facing window)
 
-`macro_series`, `themes`, `tickers`, `analyze_results`, `financials_eval`,
-`factors_eval`, `theme_members` are either bounded by universe size or
-already overwritten in place; no retention needed.
+`macro_series`, `tickers`, `analyze_results`, `financials_eval`,
+`factors_eval` are either bounded by universe size or already
+overwritten in place; no retention needed.
+
+Note (2026-05-19): theme_daily / themes / theme_members were dropped
+along with the /themes page in the search-only pivot.
 
 Run standalone:
     python -m app.db.retention            # prune all
@@ -100,11 +102,8 @@ POLICIES: list[Policy] = [
         "AND detected_at < CURRENT_DATE - INTERVAL '30 days'",
         "inactive ≥ 30 days",
     ),
-    (
-        "theme_daily",
-        "DELETE FROM theme_daily WHERE day < CURRENT_DATE - INTERVAL '180 days'",
-        "180 days",
-    ),
+    # theme_daily retention removed 2026-05-19 — tables dropped along
+    # with /themes page in the search-only pivot.
     # Alerts pile up at ~1-3 rows per user per signal-bearing ticker per
     # day. 90 days of history is plenty for "did I get notified about
     # this?" — older rows are dead weight.
@@ -214,10 +213,6 @@ def prune_disclosures() -> int:
 
 def prune_scan_results() -> int:
     return prune_one(*POLICIES[3][:2])
-
-
-def prune_theme_daily() -> int:
-    return prune_one(*POLICIES[4][:2])
 
 
 def main(argv: list[str] | None = None) -> int:

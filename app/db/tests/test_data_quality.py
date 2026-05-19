@@ -100,22 +100,6 @@ def test_macro_series_freshness():
     assert age <= 14, f"macro_series stale: {latest} ({age}d)"
 
 
-def test_themes_freshness():
-    latest = _scalar("SELECT MAX(updated_at)::date FROM themes")
-    assert latest is not None
-    age = (_today() - latest).days
-    assert age <= TRADING_DAYS_GRACE, (
-        f"themes stale: {latest} — ingest_themes cron not running?"
-    )
-
-
-def test_theme_daily_freshness():
-    latest = _scalar("SELECT MAX(day) FROM theme_daily")
-    assert latest is not None
-    age = (_today() - latest).days
-    assert age <= TRADING_DAYS_GRACE, f"theme_daily stale: {latest} ({age}d)"
-
-
 def test_investor_flow_freshness():
     latest = _scalar("SELECT MAX(day) FROM investor_flow")
     assert latest is not None
@@ -195,11 +179,6 @@ def test_financials_eval_ticker_coverage():
     )
 
 
-def test_themes_count():
-    n = _scalar("SELECT COUNT(*) FROM themes")
-    assert n >= 200, f"themes count = {n}, expected ≥ 200"
-
-
 # ─────────────────────────────────────────────────────────────────────
 # COMPLETENESS — null-rate / value sanity
 # ─────────────────────────────────────────────────────────────────────
@@ -249,16 +228,6 @@ def test_db_size_under_free_tier():
         f"DB size = {mb:.1f} MB ≥ 500 MB Free-tier ceiling. "
         "Either retention stopped running, or a new table is unbounded. "
         "Run `python -m app.db.retention --dry-run` to inspect."
-    )
-
-
-def test_theme_members_populated():
-    """Naver themes ingest in full mode populates theme_members. Without
-    it, the /themes/[id] pages have no member tickers to show."""
-    n = _scalar("SELECT COUNT(*) FROM theme_members")
-    assert n >= 1000, (
-        f"theme_members count = {n}, expected ≥ 1000 — "
-        "is ingest_themes (full mode) running on Fridays?"
     )
 
 

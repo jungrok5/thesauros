@@ -99,18 +99,9 @@ jobs:
         run: |
           python -m app.db.publish_macro
 
-      - name: Ingest themes (Naver)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          # --themes-only on weekdays (fast). Full membership refresh weekly.
-          if [ "$(date -u +%u)" = "5" ]; then
-            python -m app.db.ingest_themes
-          else
-            python -m app.db.ingest_themes --themes-only
-          fi
+      # Themes ingest removed 2026-05-19: /themes page deleted as part of
+      # the search-only pivot. Universe-wide auto-classification produced
+      # too many false positives; users now search for individual tickers.
 
       - name: Ingest investor flow (Naver Finance)
         env:
