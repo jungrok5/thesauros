@@ -113,6 +113,18 @@ export type AnalysisResult = {
     q50?: number | null;
     q75?: number | null;
   } | null;
+  /** RSI/MACD (책: second-class corroboration). null when < 35 bars. */
+  indicators?: {
+    rsi?: number | null;
+    rsi_zone?: "oversold" | "weak" | "neutral" | "strong" | "overbought" | "n/a";
+    rsi_interpretation?: string;
+    macd?: number | null;
+    macd_signal?: number | null;
+    macd_hist?: number | null;
+    macd_state?: "golden" | "dead" | "pending_golden" | "pending_dead" | "strong" | "weak" | "n/a";
+    macd_divergence?: "bullish" | "bearish" | "none" | "n/a";
+    macd_interpretation?: string;
+  } | null;
   reverse_accumulation: {
     detected: boolean;
     occurrences: number;

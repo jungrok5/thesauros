@@ -21,6 +21,7 @@ from app.book.candles import analyze_candles, latest_candle_summary
 from app.book.patterns import detect_all
 from app.book.reversals import detect_all_reversals
 from app.book.volume import classify_volume_case, detect_reverse_accumulation
+from app.book.indicators import compute_indicators
 
 
 def _signal_score(trend_signal: str, patterns: List[Dict], reversals: List[Dict],
@@ -592,6 +593,18 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     except Exception:
         quarter_zone_state = None
 
+    # RSI / MACD (책 정신상 second-class corroboration — 가격/캔들/거래량
+    # 다음 우선순위). weekly bars 위에서 계산, trend label과 함께
+    # narrative emit. 110주 미만이면 indicators_snapshot = None.
+    indicators_dict: Optional[Dict[str, Any]] = None
+    try:
+        weekly_label = multi.weekly.label if multi.weekly else None
+        snap = compute_indicators(df, trend_label=weekly_label)
+        if snap is not None:
+            indicators_dict = snap.to_dict()
+    except Exception:
+        indicators_dict = None
+
     return {
         "ticker": ticker,
         "as_of": str(df["date"].iloc[-1].date()),
@@ -612,6 +625,7 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "stretch_reason": stretch_reason,
         "quarter_zone": quarter_zone_state,
         "quarter_anchor": quarter_anchor,
+        "indicators": indicators_dict,
     }
 
 

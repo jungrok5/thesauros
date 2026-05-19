@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  BookOpen,
   Compass,
   Menu,
   Search,
@@ -18,6 +19,7 @@ const NAV = [
   { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
+  { href: "/glossary", label: "용어집", icon: BookOpen },
   { href: "/settings", label: "설정", icon: Settings },
 ];
 
