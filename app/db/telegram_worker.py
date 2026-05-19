@@ -183,13 +183,19 @@ def _watchlist_active(user_id: str) -> List[Dict[str, Any]]:
 
 
 def _user_prefs(user_id: str) -> Dict[str, bool]:
-    """Returns alert_preferences row as dict; missing row = all-on defaults."""
+    """Returns alert_preferences row as dict; missing row = all-on defaults.
+
+    `enable_daily_top5` column still exists in the table (kept for
+    backward compat) but is no longer queried — the /recommendations
+    page that consumed the digest was removed in the search-only
+    pivot (2026-05-19) and telegram_worker never wired a sender for it.
+    """
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT enable_enter, enable_pyramid, enable_warn, "
-                "enable_exit, enable_ma240_break, enable_quarter_25_break, "
-                "enable_daily_top5 FROM alert_preferences WHERE user_id = %s",
+                "enable_exit, enable_ma240_break, enable_quarter_25_break "
+                "FROM alert_preferences WHERE user_id = %s",
                 (user_id,),
             )
             r = cur.fetchone()
@@ -197,7 +203,7 @@ def _user_prefs(user_id: str) -> Dict[str, bool]:
                 return {k: True for k in (
                     "enable_enter", "enable_pyramid", "enable_warn",
                     "enable_exit", "enable_ma240_break",
-                    "enable_quarter_25_break", "enable_daily_top5",
+                    "enable_quarter_25_break",
                 )}
             keys = [d[0] for d in cur.description]
             return {k: bool(v) for k, v in zip(keys, r)}
@@ -409,8 +415,8 @@ def _ticker_name(ticker: str) -> Optional[str]:
 
 def format_message(ticker: str, name: Optional[str], alert_type: str,
                    sig: Dict[str, Any]) -> str:
-    """Telegram alert message — mirrors the recommendations page's
-    information architecture: Korean signal label, multi-TF stack,
+    """Telegram alert message — same information architecture as the
+    stock-detail BookVerdict: Korean signal label, multi-TF stack,
     pattern direction made explicit, and 외인+기관 동행 as a
     corroboration line when available.
 

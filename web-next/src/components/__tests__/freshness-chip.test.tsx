@@ -1,9 +1,8 @@
 /**
  * Verify the chip's label/style branches for each freshness zone.
- * The page-level surfaces (recommendations, themes, closing-trade) all
- * rely on this chip to communicate stale-vs-fresh — if a new zone
- * sneaks in or the thresholds change, the user-visible message must
- * still be coherent.
+ * The watchlist + stock-detail surfaces rely on this chip to
+ * communicate stale-vs-fresh — if a new zone sneaks in or the
+ * thresholds change, the user-visible message must still be coherent.
  */
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";

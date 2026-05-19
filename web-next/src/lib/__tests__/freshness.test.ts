@@ -124,7 +124,7 @@ describe("breakoutLevel", () => {
   });
 });
 
-describe("pickFreshest — actual recommendations bug scenario", () => {
+describe("pickFreshest — historical chase-zone regression (YW pre-pivot)", () => {
   it("YW: 쌍바닥 with neckline 4185, last 4695 → bucket 1 (+12% 추격), NOT bucket 0", () => {
     const f = pickFreshest([yw_쌍바닥, yw_삼중바닥_no_neckline], 4695);
     expect(f).not.toBeNull();

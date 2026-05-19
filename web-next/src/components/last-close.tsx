@@ -1,10 +1,11 @@
 /**
- * Last-close quote card. Source is bars_daily (the cron-fed EOD bar),
- * NOT a live intraday tick — the book is explicit (p238-241) that
- * intraday prices aren't decision-grade, so the site stays close-only.
+ * Last-close quote card. Source is the latest weekly bar from `bars`
+ * (granularity='W') — NOT a live intraday tick. The book is explicit
+ * (p238-241) that intraday prices aren't decision-grade, so the site
+ * stays close-only.
  *
- * The component used to be `LiveQuote`, which mislabelled the source
- * and risked someone wiring up a true real-time tick later.
+ * Daily bars (`bars_daily`) were dropped in migration 021 (weekly
+ * pivot); the /api/quote route now reads from `bars` directly.
  */
 "use client";
 

@@ -26,8 +26,11 @@ const FIELDS: Array<{ key: string; label: string; help: string }> = [
     help: "관심/보유 종목의 240MA 라인 통과 시" },
   { key: "enable_quarter_25_break",  label: "4등분선 절대자리 (25%) 깨짐",
     help: "직전 장대양봉 몸통 25% 아래로 종가 — 책 시그니처 매도 시그널" },
-  { key: "enable_daily_top5",        label: "⭐ 주간 추천 Top 5",
-    help: "매주 금요일 17시 종합 점수 (강도 × 신선도) 상위 5종목 (관심 종목 외 신선 진입 후보)" },
+  // Removed 2026-05-19: enable_daily_top5 ("주간 추천 Top 5") — the
+  // /recommendations page that consumed this digest is gone in the
+  // search-only pivot. Telegram_worker no longer sends the digest;
+  // alert_preferences.enable_daily_top5 column remains for compat
+  // but is ignored.
 ];
 
 async function fetchPrefs(email: string, name: string | null) {

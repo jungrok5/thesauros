@@ -2,11 +2,10 @@
  * Pin the Korean label + direction mapping so the page never regresses
  * to dumping `pattern_double_bottom` raw into the action column.
  *
- * Why this matters: a returning user clicked into recommendations and
- * couldn't tell whether each row was a buy or sell because the raw
- * snake_case signal_type was rendered. Direction inference is the
- * single most important UX detail of the page — any new signal added
- * MUST map here, and any rename MUST keep direction stable.
+ * Why this matters: the chip on watchlist + the verdict header on
+ * stock-detail both go through labelFor(); a missing mapping silently
+ * surfaces "pattern_double_bottom" raw. Any new signal added MUST map
+ * here, and any rename MUST keep direction stable.
  */
 import { describe, it, expect } from "vitest";
 import {

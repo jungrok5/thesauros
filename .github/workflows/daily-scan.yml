@@ -66,10 +66,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}
-          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           # Search-only pivot (2026-05-19): scan ONLY tickers users have
           # on their watchlists. Out-of-watchlist tickers are analysed

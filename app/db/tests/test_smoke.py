@@ -17,10 +17,17 @@ from app.db import get_conn   # noqa: E402
 
 
 EXPECTED_TABLES = {
-    "users", "tickers", "watchlist", "trade_log", "scan_results",
+    "users", "tickers", "watchlist", "scan_results",
     "disclosures", "financials_eval", "factors_eval",
     "alerts", "alert_preferences", "macro_state", "bars",
     "health_ping", "_migrations",
+    # New post-pivot tables (Phase 3, search-only UX)
+    "company_profile",
+    # Dropped tables (intentionally absent — guard against accidental
+    # resurrection by a stale migration replay):
+    #   trade_log    (migration 024)
+    #   bars_daily   (migration 025)
+    #   themes / theme_daily / theme_members (migration 022)
 }
 
 

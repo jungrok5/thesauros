@@ -6,10 +6,10 @@
  * current price always yields 0% runup. The TRUE breakout level lives
  * in `pattern.extra` (neckline / rim / ma_240 / ma_value).
  *
- * Used by the recommendations page and the stock-detail BookVerdict.
+ * Used by the watchlist page and the stock-detail BookVerdict.
  * Extracted into a pure module so vitest can pin the buckets — earlier
- * regressions (using `entry` fallback) made YW + 슈프리마 + 삼지전자
- * appear as #1 on the fresh-sorted recommendations page.
+ * regressions (using `entry` fallback) put stale-breakout tickers near
+ * the top of the watchlist freshness chip.
  */
 
 export interface FreshnessPatternInput {

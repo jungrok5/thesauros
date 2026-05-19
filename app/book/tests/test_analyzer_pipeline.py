@@ -1,7 +1,7 @@
 """End-to-end analyzer tests — synthetic charts in, structured result out.
 
 These exercise analyze_ticker() over a variety of regimes and pin the
-contract for everything downstream (recommendations, telegram alerts,
+contract for everything downstream (telegram alerts, watchlist row,
 stock detail page) reads.
 """
 from __future__ import annotations

@@ -1,14 +1,14 @@
 /**
- * GET /api/quote/[ticker] — last-close quote from Supabase bars_daily.
+ * GET /api/quote/[ticker] — last-close quote.
  *
- * Previously proxied to FastAPI which called KIS for KR live prices.
- * Now we just return the latest two bars from bars_daily and compute
- * change/change_pct. Not real-time — but the site is book-faithful and
- * the book is a 종가매매 (close-price trading) framework.
+ * Reads the latest two WEEKLY bars from Supabase `bars` (granularity='W',
+ * the post-pivot canonical source). Computes change / change_pct.
  *
- * Live KIS prices can be re-introduced as a separate Node-side
- * integration if/when needed; doing it here without backend would need
- * KIS token caching in Supabase.
+ * Not real-time — the book is a 종가매매 (close-price trading) framework
+ * and weekly bars are the operating cadence. Daily bars (`bars_daily`)
+ * were dropped in the weekly pivot (migration 021), so any caller still
+ * trying that table returns nothing — this route now points at the
+ * source the cron actually writes.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
@@ -34,14 +34,15 @@ export async function GET(
 
   const sb = getServerClient();
   const { data, error } = await sb
-    .from("bars_daily")
+    .from("bars")
     .select("bar_date, open, high, low, close, volume")
     .eq("ticker", ticker)
+    .eq("granularity", "W")
     .order("bar_date", { ascending: false })
     .limit(2);
 
   if (error) {
-    console.error("bars_daily read:", error.message);
+    console.error("bars (W) read:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
   if (!data || data.length === 0) {
@@ -70,7 +71,7 @@ export async function GET(
     high: num(latest.high),
     low: num(latest.low),
     volume: int(latest.volume),
-    source: "bars_daily (last close)",
+    source: "bars (W, last close)",
   });
 }
 

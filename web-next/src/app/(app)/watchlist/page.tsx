@@ -50,10 +50,9 @@ async function fetchWatchlist(email: string, name: string | null) {
   const rows = (data ?? []) as unknown as RawWatchlistRow[];
 
   // Bulk-fetch latest active scan signal + analyze_results for each ticker
-  // so the row can display the same freshness chip + Korean signal label
-  // the recommendations / themes / closing-trade pages use. Without this,
-  // a user's holding shows entry/stop/target but no answer to "is the
-  // book still saying BUY this week, or has it shifted to SELL?".
+  // so the row can display the freshness chip + Korean signal label that
+  // tells the user "is the book still saying BUY this week, or has it
+  // shifted to SELL?". Same shape as the stock-detail page's verdict.
   const tickers = rows.map((r) => r.ticker);
   const signalByTicker = new Map<string, { type: string; strength: number }>();
   const analyzeByTicker = new Map<

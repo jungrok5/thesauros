@@ -1,8 +1,8 @@
 /**
  * Freshness chip — visualises how far price has moved past the bullish
  * pattern's breakout level. Used wherever a "is this signal still an
- * entry zone or already gone?" question matters: recommendations page,
- * themes page rows, watchlist holdings, etc. Driven by the shared
+ * entry zone or already gone?" question matters: watchlist holdings,
+ * stock-detail page, alert messages. Driven by the shared
  * `freshness()` / `bucketScore()` lib so all surfaces stay consistent.
  */
 

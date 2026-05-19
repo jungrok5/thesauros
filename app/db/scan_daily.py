@@ -53,7 +53,7 @@ SIGNAL_TYPE_MAP = {
     # HOLD is normally noise. The exception is when the analyzer's
     # stretch gate downgraded a BUY/STRONG_BUY → HOLD — those rows
     # carry the "추세 유효 · 자리 지남" warning and should surface as
-    # a 관망 chip on watchlist / recommendations so users see why the
+    # a 관망 chip on the watchlist row + stock-detail so users see why
     # ticker stopped being a buy candidate. _action_signal() guards
     # emission with the stretch_reason condition.
     "HOLD":          ("action_hold",         0.55),

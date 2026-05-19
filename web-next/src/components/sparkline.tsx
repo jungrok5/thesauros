@@ -1,11 +1,9 @@
 /**
- * Tiny inline SVG sparkline of recent closing prices, so the recommendations
- * row gives "what does the chart look like?" at a glance — instead of forcing
- * the user to click into every ticker to see whether the trend is steep,
- * choppy, or flat.
+ * Tiny inline SVG sparkline of recent closing prices. Used on the
+ * stock-detail page and watchlist rows to give "what does the chart
+ * look like?" at a glance.
  *
- * The component is intentionally lightweight (no charting lib) so 50 rows
- * render without measurable cost.
+ * The component is intentionally lightweight (no charting lib).
  */
 
 interface Props {
