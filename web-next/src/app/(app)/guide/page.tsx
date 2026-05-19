@@ -39,115 +39,80 @@ const CHEAT: CheatRow[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────
-// 2. 🎯 위험도 3 tier (안정형 / 균형형 / 공격형)
+// 2. 🎯 위험도 3 tier (안정형 / 균형형 / 공격형) — 종목 + 계좌 통합
 // ─────────────────────────────────────────────────────────────────────
 //
-// 이전 "자산 × 계좌 매트릭스" (7행 × 5열) 섹션은 2026-05-20 제거 —
-// 사용자가 "두 군데에 같은 정보, 헷갈린다" 지적. 아래 TIER_ACCOUNT_MAP
-// (위험도 × 계좌별 + 구체 종목명) 이 같은 정보를 actionable 한 형태로
-// 이미 담고 있어 중복. 한 군데로 통합.
-// ─────────────────────────────────────────────────────────────────────
+// 사용자 피드백 (2026-05-20): 이전엔 정보가 3 군데 분산.
+//   (a) 자산 × 계좌 매트릭스 (7×5 추상 표)  ← 5/19 제거
+//   (b) 위험자산 / 안전자산 추천 (2 표)
+//   (c) 위험도 × 계좌별 매핑 (1 표)
+// 같은 위험도 정보가 (b) + (c) 에 또 등장 → 사용자가 두 번 찾아봄.
+// 한 카드 안에 (위험자산 + 안전자산 + 계좌별 세부) 다 넣어 한 번에 끝.
 //
-// 사용자 톤 명확화: 직접투자자 시점에서 S&P500 = 안정형 (시장 평균).
+// 톤 명확화: 직접투자자 시점에서 S&P500 = 안정형 (시장 평균).
 // 더 보수는 채권/배당 ETF, 더 공격은 나스닥/섹터 ETF.
-interface TierRow {
+interface TierCombo {
   type: "안정형" | "균형형" | "공격형";
   emoji: string;
   label: string;
   tone: "safe" | "balanced" | "aggressive";
-  product: string;
-  why: string;
+  riskProduct: string;
+  riskWhy: string;
+  safeProduct: string;
+  safeWhy: string;
+  inPension: string;     // 연금저축 / IRP / DC 에서 무엇
+  inIsa: string;         // ISA 에서 무엇
+  inGeneral: string;     // 일반계좌 보너스 (미국 직접)
 }
 
-// 위험자산 — 연금/IRP/ISA 위험자산 슬롯 + 직접투자 핵심
-const RISK_TIERS: TierRow[] = [
+const TIERS: TierCombo[] = [
   {
     type: "안정형",
     emoji: "🟢",
-    label: "시장 평균 (지수+배당)",
+    label: "시장 평균 (지수 + 배당)",
     tone: "safe",
-    product: "TIGER 미국S&P500 + KODEX 미국배당다우존스",
-    why: "미국 대형주 500 지수 + 배당 보조. 직접 투자자의 \"기본\" — 정배열 + 240MA 위 자동 만족.",
+    riskProduct: "TIGER 미국S&P500 + KODEX 미국배당다우존스",
+    riskWhy: "미국 대형주 500 + 배당 보조. 정배열 + 240MA 위 자동 충족.",
+    safeProduct: "KCD금리액티브 / KODEX 종합채권액티브",
+    safeWhy: "변동성 거의 없음. IRP 안전자산 30% 의무 채우는 기본.",
+    inPension: "TIGER 미국S&P500 + KODEX 미국배당 ⭐ (매매차익·배당 비과세)",
+    inIsa: "동일 + 한국 배당주 (KT&G, KB금융 등, 200만 비과세)",
+    inGeneral: "VOO (S&P500 직접) + SCHD (운용보수 0.03~0.06%)",
   },
   {
     type: "균형형",
     emoji: "🟡",
-    label: "성장 지수 (시장+α)",
+    label: "성장 지수 (시장 + α)",
     tone: "balanced",
-    product: "TIGER 미국나스닥100 + TIGER K-반도체",
-    why: "기술주 비중 ↑, 변동성 시장보다 큼. 한국 주력 산업(반도체)도 일부.",
+    riskProduct: "TIGER 미국나스닥100 + TIGER K-반도체",
+    riskWhy: "기술주 비중 ↑, 변동성 시장보다 큼. 한국 주력 산업도 일부.",
+    safeProduct: "ACE 미국30년국채액티브",
+    safeWhy: "장기 미국채. 금리 인하 사이클에 채권 가격 ↑ → 자본이득.",
+    inPension: "TIGER 미국나스닥100 + TIGER K-반도체 ⭐",
+    inIsa: "동일 + 한국 성장주 (이 사이트 분석 종목, 200만 비과세) ⭐⭐",
+    inGeneral: "QQQ (나스닥100 직접) + 미국 개별주 (애플·MS·구글)",
   },
   {
     type: "공격형",
     emoji: "🔴",
-    label: "빅테크/섹터 집중",
+    label: "빅테크 / 섹터 집중",
     tone: "aggressive",
-    product: "TIGER 미국테크TOP10 INDXX + TIGER 미국필라델피아반도체나스닥",
-    why: "빅테크 10종목 / 반도체 SOX 집중. 강세 사이클 큰 수익, 약세 -40~50% 가능.",
+    riskProduct: "TIGER 미국테크TOP10 INDXX + TIGER 미국필라델피아반도체",
+    riskWhy: "빅테크 10종목 / 반도체 SOX 집중. 강세 사이클 큰 수익, 약세 -40~50% 가능.",
+    safeProduct: "1Q 미국나스닥100미국채혼합50액티브",
+    safeWhy:
+      "나스닥100 50% + 미국채 50%. 안전자산 카테고리지만 실제 주식 노출 → IRP 위험자산 70% 한도를 사실상 85%로 우회.",
+    inPension: "TIGER 미국테크TOP10 INDXX + 미국필라델피아반도체나스닥 ⭐",
+    inIsa: "동일 + 한국 반도체 개별주 (SK하이닉스 등)",
+    inGeneral: "SOXX (SOX 직접) + 미국 개별주 (엔비디아·테슬라·AMD) ⭐⭐",
   },
 ];
 
-// 안전자산 30% (IRP / DC 의무) — \"이 슬롯에 무엇을 채울 것인가\"
-const SAFE_TIERS: TierRow[] = [
-  {
-    type: "안정형",
-    emoji: "🟢",
-    label: "단기채 / 종합채권",
-    tone: "safe",
-    product: "KCD금리액티브 또는 KODEX 종합채권액티브",
-    why: "변동성 거의 없음. 안전자산 30% 의무 채우는 기본.",
-  },
-  {
-    type: "균형형",
-    emoji: "🟡",
-    label: "듀레이션 활용",
-    tone: "balanced",
-    product: "ACE 미국30년국채액티브",
-    why: "장기 미국채. 금리 인하 사이클에 채권 가격 ↑ → 자본이득 추구.",
-  },
-  {
-    type: "공격형",
-    emoji: "🔴",
-    label: "혼합형 (실제 주식 +15%p 우회)",
-    tone: "aggressive",
-    product: "1Q 미국나스닥100미국채혼합50액티브",
-    why: "나스닥100 50% + 미국채 50%. 안전자산 카테고리지만 실제 주식 노출 → IRP/DC 위험자산 70% 한도를 사실상 85%로 우회.",
-  },
-];
-
-const TIER_TONE: Record<TierRow["tone"], { border: string; text: string; bg: string }> = {
-  safe:       { border: "border-emerald-500/40", text: "text-emerald-700 dark:text-emerald-300", bg: "bg-emerald-500/5" },
-  balanced:   { border: "border-amber-500/40",   text: "text-amber-700 dark:text-amber-300",     bg: "bg-amber-500/5" },
-  aggressive: { border: "border-rose-500/40",    text: "text-rose-700 dark:text-rose-300",       bg: "bg-rose-500/5" },
+const TIER_TONE: Record<TierCombo["tone"], { border: string; text: string; bg: string; subBg: string }> = {
+  safe:       { border: "border-emerald-500/40", text: "text-emerald-700 dark:text-emerald-300", bg: "bg-emerald-500/5",  subBg: "bg-emerald-500/10" },
+  balanced:   { border: "border-amber-500/40",   text: "text-amber-700 dark:text-amber-300",     bg: "bg-amber-500/5",     subBg: "bg-amber-500/10" },
+  aggressive: { border: "border-rose-500/40",    text: "text-rose-700 dark:text-rose-300",       bg: "bg-rose-500/5",      subBg: "bg-rose-500/10" },
 };
-
-// 계좌별 매핑 — 3 tier 위험자산 종목을 어디서 사야 가장 유리한가
-interface TierAccountRow {
-  type: string;
-  pension: string;       // 연금/IRP/DC
-  isa: string;
-  general: string;
-}
-const TIER_ACCOUNT_MAP: TierAccountRow[] = [
-  {
-    type: "🟢 안정형",
-    pension: "TIGER 미국S&P500 + KODEX 미국배당 ⭐\n매매차익·배당 비과세",
-    isa: "동일 + 한국 배당주 (KT&G, KB금융 등)\n200만 비과세",
-    general: "VOO (S&P500 직접) · SCHD ⭐\n운용보수 0.03~0.06%",
-  },
-  {
-    type: "🟡 균형형",
-    pension: "TIGER 미국나스닥100 + TIGER K-반도체 ⭐",
-    isa: "동일 + 한국 성장주 (이 사이트 분석 종목) ⭐⭐\n200만 비과세",
-    general: "QQQ (나스닥100 직접) + 미국 개별주 ⭐\n(애플·MS·구글)",
-  },
-  {
-    type: "🔴 공격형",
-    pension: "TIGER 미국테크TOP10 INDXX + 미국필라델피아반도체나스닥 ⭐",
-    isa: "동일 + 한국 반도체 개별주 (SK하이닉스 등)",
-    general: "SOXX (SOX 직접) + 미국 개별주 ⭐⭐\n(엔비디아·테슬라·AMD)",
-  },
-];
 
 // ─────────────────────────────────────────────────────────────────────
 // 4. 5단계 카드
@@ -455,35 +420,65 @@ function StepCard({ s }: { s: Step }) {
   );
 }
 
-function TierTable({ title, rows }: { title: string; rows: TierRow[] }) {
+/**
+ * One card per risk tier — bundles 위험자산 + 안전자산 + 계좌별 추천
+ * so the reader picks one card and has everything. Replaced the
+ * previous side-by-side TierTable + separate TIER_ACCOUNT_MAP table
+ * (user feedback 2026-05-20: \"두 군데 헷갈려, 핵심만\").
+ */
+function TierComboCard({ tier }: { tier: TierCombo }) {
+  const c = TIER_TONE[tier.tone];
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <header className="px-3 py-2 border-b border-border bg-muted/30">
-        <h3 className="text-xs font-semibold tracking-wide">{title}</h3>
+    <article
+      className={`rounded-xl border-2 ${c.border} ${c.bg} overflow-hidden`}
+    >
+      <header className={`px-4 py-3 ${c.subBg} border-b ${c.border}`}>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-xl">{tier.emoji}</span>
+          <h3 className={`text-base font-semibold ${c.text}`}>{tier.type}</h3>
+          <span className={`text-xs ${c.text} opacity-80`}>· {tier.label}</span>
+        </div>
       </header>
-      <table className="w-full text-xs">
-        <tbody>
-          {rows.map((r) => {
-            const tone = TIER_TONE[r.tone];
-            return (
-              <tr key={r.type} className={`border-b border-border last:border-b-0 ${tone.bg}`}>
-                <td className="px-3 py-2 align-top w-24 md:w-28">
-                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border-2 ${tone.border} text-xs font-medium ${tone.text}`}>
-                    <span>{r.emoji}</span>
-                    <span>{r.type}</span>
-                  </div>
-                  <div className={`mt-1 text-[10px] ${tone.text} opacity-80`}>{r.label}</div>
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <div className="text-sm font-medium">{r.product}</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground leading-relaxed">{r.why}</div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+
+      <div className="px-4 py-3 space-y-3">
+        {/* 위험자산 + 안전자산 — 종목명 + 한 줄 설명 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              📈 위험자산 (본 운용)
+            </div>
+            <div className="mt-1 text-sm font-medium">{tier.riskProduct}</div>
+            <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+              {tier.riskWhy}
+            </p>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              🛡️ 안전자산 30% (IRP 의무)
+            </div>
+            <div className="mt-1 text-sm font-medium">{tier.safeProduct}</div>
+            <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+              {tier.safeWhy}
+            </p>
+          </div>
+        </div>
+
+        {/* 계좌별 — 어디서 사야 가장 유리한가 */}
+        <div className={`rounded-md border ${c.border} ${c.subBg} p-3 space-y-2`}>
+          <div className={`text-[10px] uppercase tracking-widest ${c.text}`}>
+            📍 어디서 사야 유리한가
+          </div>
+          <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+            <dt className="text-muted-foreground">연금/IRP</dt>
+            <dd className="leading-relaxed">{tier.inPension}</dd>
+            <dt className="text-muted-foreground">ISA</dt>
+            <dd className="leading-relaxed">{tier.inIsa}</dd>
+            <dt className="text-muted-foreground">일반계좌</dt>
+            <dd className="leading-relaxed">{tier.inGeneral}</dd>
+          </dl>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -546,85 +541,31 @@ export default function GuidePage() {
         </div>
       </section>
 
-      {/* 🎯 위험도 3-tier 종목 추천 — 이전엔 위에 "자산 × 계좌
-          매트릭스" (7행 × 5열) 가 추가로 있었지만, 같은 정보가 아래
-          "위험도 × 계좌별 매핑" 에 더 actionable 형태 (구체 종목명
-          포함) 로 있어 중복이라 제거 (2026-05-20). */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+      {/* 🎯 위험도 종합 카드 — 위험자산 + 안전자산 + 계좌별 추천을
+          한 카드 안에. 이전엔 (a) 위험자산/안전자산 표 + (b) 위험도×
+          계좌 표가 따로 있어서 같은 위험도가 두 번 등장 → 사용자 혼란
+          ("두 군데 헷갈려, 핵심만"). 한 카드 = 한 위험도 = 모든 정보. */}
+      <section className="space-y-3">
         <header>
-          <h2 className="text-base font-semibold tracking-tight">🎯 위험도별 종목 추천 (안정형 · 균형형 · 공격형)</h2>
+          <h2 className="text-base font-semibold tracking-tight">
+            🎯 위험도별 — 무엇을, 어디서
+          </h2>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            본인 위험 성향에 맞는 한 줄 선택. 5단계 카드 각각에서 &quot;위 안정형/균형형/공격형 중 선택&quot;으로 참조.
-            직접 투자자 시점에서 S&amp;P500 = 안정형 (시장 평균), 나스닥100 = 균형형, 빅테크/반도체 집중 = 공격형.
+            본인 위험 성향에 맞는 카드 하나 선택. 종목 + 어느 계좌에서 사야 가장
+            유리한지 한 카드에 다 — 직접 투자자 시점에서 S&amp;P500 = 안정형, 나스닥100 = 균형형,
+            빅테크/반도체 집중 = 공격형.
           </p>
         </header>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TierTable title="📈 위험자산 (연금/IRP/ISA · 본 운용 영역)" rows={RISK_TIERS} />
-          <TierTable title="🛡️ 안전자산 30% (IRP/DC 의무 슬롯)" rows={SAFE_TIERS} />
+        <div className="grid grid-cols-1 gap-3">
+          {TIERS.map((t) => (
+            <TierComboCard key={t.type} tier={t} />
+          ))}
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          ⚡ <strong>꿀팁</strong>: 안전자산 30%에서 <strong>공격형 (1Q 미국나스닥100미국채혼합50액티브)</strong>를 선택하면 안전자산 카테고리이지만
-          실제 주식 50% 포함 → IRP/DC 위험자산 70% 한도를 사실상 85%로 우회. 공격형 셋업의 필수 도구.
+          💡 핵심 룰: <strong className="text-foreground">국내 상장 미국 ETF는 연금/IRP에서 매매차익·배당 비과세</strong> —
+          일반계좌 22% 양도세 대비 압도적 유리. 미국 직접 ETF/주식은 일반계좌만.
+          ISA는 한국 개별주 200만원 비과세 활용처.
         </p>
-      </section>
-
-      {/* 위험도 × 계좌별 매핑 — 같은 위험도라도 계좌에 따라 유리한 종목이 다르다 */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
-        <header className="px-4 py-2.5 border-b border-border bg-muted/30">
-          <h2 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-            🧭 위험도 × 계좌별 매핑 — 같은 위험도, 다른 계좌 → 다른 최적 종목
-          </h2>
-          <p className="text-[10px] text-muted-foreground/80 mt-1">
-            ⭐ = 절세 우위 · ⭐⭐ = 강력 추천 · 같은 위험도라도 계좌가 다르면 매매차익 비과세 / 양도세 / 배당세 효과 다름.
-          </p>
-        </header>
-        {/* Desktop: 4열 매트릭스 — md+ */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[110px]">위험도</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">연금/IRP/DC</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">ISA (중개형)</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">일반계좌</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TIER_ACCOUNT_MAP.map((row, i) => (
-                <tr key={row.type} className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}>
-                  <td className={`px-3 py-2 align-top font-medium whitespace-nowrap ${i % 2 === 1 ? "bg-muted/10" : "bg-card"}`}>
-                    {row.type}
-                  </td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.pension}</td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.isa}</td>
-                  <td className="px-3 py-2 align-top whitespace-pre-line">{row.general}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile: 위험도별 카드 */}
-        <ul className="md:hidden divide-y divide-border">
-          {TIER_ACCOUNT_MAP.map((row) => (
-            <li key={row.type} className="px-3 py-3 space-y-2">
-              <div className="text-xs font-semibold">{row.type}</div>
-              <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
-                <dt className="text-muted-foreground">연금/IRP/DC</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.pension}</dd>
-                <dt className="text-muted-foreground">ISA</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.isa}</dd>
-                <dt className="text-muted-foreground">일반계좌</dt>
-                <dd className="whitespace-pre-line leading-relaxed">{row.general}</dd>
-              </dl>
-            </li>
-          ))}
-        </ul>
-
-        <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
-          💡 핵심: <strong className="text-foreground">국내 상장 미국 ETF는 연금/IRP에서 매매차익 0%</strong>, ISA에서는 한국 개별주 200만 비과세 활용,
-          일반계좌만 미국 직접 ETF/주식 가능 (양도세 22% · 연 250만 공제).
-        </footer>
       </section>
 
       {/* 5 steps */}
