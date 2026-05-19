@@ -47,6 +47,14 @@ class Pattern:
     target: Optional[float] = None
     reason: str = ""
     extra: Dict = field(default_factory=dict)
+    # Set TRUE when price has moved past the book's invalidation level
+    # after the pattern completed (e.g. 쌍바닥 close < 전저점, 쌍봉
+    # close > 전고점, 모든 패턴 close < / > weekly 10MA). Invalidated
+    # patterns are excluded from the analyzer score and surfaced
+    # separately in BookVerdict so the user knows the setup failed.
+    # Populated by `mark_invalidated_patterns()` post-detection.
+    invalidated: bool = False
+    invalidation_reason: str = ""
 
     def to_dict(self) -> Dict:
         return {
@@ -63,6 +71,8 @@ class Pattern:
             "target": (round(self.target, 4) if self.target else None),
             "reason": self.reason,
             "extra": self.extra,
+            "invalidated": bool(self.invalidated),
+            "invalidation_reason": self.invalidation_reason,
         }
 
 

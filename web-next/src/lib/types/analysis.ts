@@ -19,6 +19,14 @@ export type Pattern = {
   reason: string;
   timeframe?: "daily" | "weekly" | "monthly";
   extra?: Record<string, unknown>;
+  /** Stamped true by the analyzer when price has moved past the book's
+   *  invalidation level (쌍바닥 close < neckline, 쌍봉 close > N자
+   *  탈출 수준, etc). Invalidated patterns no longer contribute to
+   *  scoring or entry_plan, and BookVerdict surfaces them as
+   *  "패턴 배신" warnings rather than buy signals. See
+   *  app/book/analyzer.py:_mark_invalidated_patterns. */
+  invalidated?: boolean;
+  invalidation_reason?: string;
 };
 
 export type TrendSnapshot = {

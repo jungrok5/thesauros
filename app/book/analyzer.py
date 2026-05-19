@@ -33,8 +33,13 @@ def _signal_score(trend_signal: str, patterns: List[Dict], reversals: List[Dict]
     base = {"BUY": 0.6, "HOLD": 0.0, "SELL": -0.6, "AVOID": -0.85}[trend_signal]
 
     # Patterns: completed bullish adds to score, completed bearish subtracts.
+    # Invalidated patterns are EXCLUDED — book룰: 쌍바닥의 전저점이 깨지면
+    # 첫 매수세 + 실망 매물로 패턴 자체가 무효 (p254-255). Once a pattern
+    # fails its precondition it stops being a signal.
     for p in patterns:
         if not p["completed"]:
+            continue
+        if p.get("invalidated"):
             continue
         delta = p["confidence"] * 0.30
         base += delta if p["direction"] == "bullish" else -delta
@@ -55,6 +60,81 @@ def _signal_score(trend_signal: str, patterns: List[Dict], reversals: List[Dict]
     return max(-1.0, min(1.0, base))
 
 
+def _mark_invalidated_patterns(patterns: List[Dict], last_close: float) -> None:
+    """Walk completed patterns and stamp `invalidated=True` when price
+    has moved past the book's invalidation level.
+
+    Book룰 (p254-273):
+      - 쌍바닥 / 삼중바닥 / Cup w. Handle: close < 마지막 바닥 = 무효
+        (책: "전저점 지키기" 전제 조건 위반)
+      - All bullish patterns w/ neckline/rim/ma_value in extras:
+        close below that level = breakout failed → invalidated
+      - 쌍봉 / H&S / 삼고점: close > 마지막 peak (or neckline from above)
+        = "N자 탈출" → 무효
+    Mutates each pattern dict in place. Idempotent.
+    """
+    for p in patterns:
+        if not p.get("completed"):
+            continue
+        if p.get("invalidated"):
+            continue
+        direction = p.get("direction")
+        kind = p.get("kind") or ""
+        extra = p.get("extra") or {}
+
+        # Bullish: close below a defining floor invalidates.
+        if direction == "bullish":
+            # 1) Pattern-bottom: 쌍바닥/삼중바닥 etc.
+            bottoms = extra.get("bottoms")
+            if isinstance(bottoms, list) and bottoms:
+                try:
+                    last_bottom = min(
+                        float(b["price"]) for b in bottoms
+                        if isinstance(b, dict) and "price" in b
+                    )
+                    if last_close < last_bottom * 0.99:
+                        p["invalidated"] = True
+                        p["invalidation_reason"] = (
+                            f"close {last_close:.4g} < 마지막 바닥 "
+                            f"{last_bottom:.4g} (전저점 깨짐, 책 p254 무효)"
+                        )
+                        continue
+                except Exception:
+                    pass
+            # 2) Breakout-level: neckline / rim / ma_240 / ma_value
+            for key in ("neckline", "rim", "ma_240", "ma_value"):
+                lvl = extra.get(key)
+                if isinstance(lvl, (int, float)) and lvl > 0:
+                    if last_close < float(lvl) * 0.97:
+                        p["invalidated"] = True
+                        p["invalidation_reason"] = (
+                            f"close {last_close:.4g} < {key} "
+                            f"{float(lvl):.4g} (돌파선 재이탈)"
+                        )
+                        break
+            if p.get("invalidated"):
+                continue
+
+        # Bearish: close above the defining ceiling invalidates ("N자 탈출").
+        if direction == "bearish":
+            peaks = extra.get("peaks") or extra.get("tops")
+            if isinstance(peaks, list) and peaks:
+                try:
+                    last_peak = max(
+                        float(b["price"]) for b in peaks
+                        if isinstance(b, dict) and "price" in b
+                    )
+                    if last_close > last_peak * 1.01:
+                        p["invalidated"] = True
+                        p["invalidation_reason"] = (
+                            f"close {last_close:.4g} > 마지막 봉우리 "
+                            f"{last_peak:.4g} (N자 탈출, 책 p260)"
+                        )
+                        continue
+                except Exception:
+                    pass
+
+
 def _action_from_score(trend_signal: str, score: float, patterns: List[Dict]
                        ) -> str:
     """Final action recommendation per book's hierarchy.
@@ -68,11 +148,15 @@ def _action_from_score(trend_signal: str, score: float, patterns: List[Dict]
     if trend_signal == "SELL":
         return "SELL_OR_SHORT"
     has_completed_bullish = any(
-        p["completed"] and p["direction"] == "bullish" and p["confidence"] >= 0.75
+        p["completed"] and p["direction"] == "bullish"
+        and p["confidence"] >= 0.75
+        and not p.get("invalidated")
         for p in patterns
     )
     has_completed_bearish = any(
-        p["completed"] and p["direction"] == "bearish" and p["confidence"] >= 0.75
+        p["completed"] and p["direction"] == "bearish"
+        and p["confidence"] >= 0.75
+        and not p.get("invalidated")
         for p in patterns
     )
     if trend_signal == "BUY":
@@ -160,6 +244,14 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
                                      -p["confidence"]))
 
     vc_dict = volume_case.to_dict() if volume_case else None
+
+    # Stamp invalidation on completed patterns whose precondition the
+    # current price has broken (LG우 case: 쌍바닥 neckline 81,000 but
+    # close 72,200 → pattern was actively kept "completed" in the score
+    # despite having clearly failed). _signal_score now ignores
+    # invalidated patterns.
+    _mark_invalidated_patterns(all_patterns, float(df["close"].iloc[-1]))
+
     score = _signal_score(
         multi.book_signal, all_patterns, reversals_daily, vc_dict
     )
@@ -233,6 +325,34 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
             stretch_reason = " · ".join(reasons)
             action = "HOLD"
 
+    # 장대음봉 (저승사자) gate — Book Ch.2 p262, 264.
+    # A big bearish bar (already tagged by classify_candle when body ≥
+    # 2× body_avg_20) is the book's explicit sell signal. It signals
+    # forced distribution: a market that just refused to follow through
+    # on bullish moves. The exact "저승사자" sub-case the book teaches
+    # is "장대음봉 + 10MA 하향 이탈 = 청산" — when the same bar takes
+    # close below the weekly 10MA, downgrade aggressively to SELL_OR_SHORT.
+    # Otherwise (장대음봉 but still above 10MA), downgrade to HOLD so
+    # we don't actively recommend buying into a market that just dumped.
+    if last_candle is not None:
+        tags = last_candle.get("tags") or []
+        if "장대음봉" in tags:
+            ma10w = (
+                float(multi.weekly.ma_10)
+                if multi.weekly and multi.weekly.ma_10
+                else None
+            )
+            if action in ("BUY", "STRONG_BUY"):
+                reason = "마지막 봉 장대음봉 — 책 룰: 매도 압력"
+                if ma10w and last_close < ma10w:
+                    action = "SELL_OR_SHORT"
+                    reason = "저승사자 캔들 (장대음봉 + 주봉 10MA 하향 이탈)"
+                else:
+                    action = "HOLD"
+                stretch_reason = (
+                    f"{stretch_reason} · {reason}" if stretch_reason else reason
+                )
+
     # Build entry/stop/target from top completed bullish pattern (if any).
     # Skip stale patterns (detected_at more than ~2 months ago) so we
     # don't surface trade plans from a breakout that already played out.
@@ -246,6 +366,10 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         last_close = float(df["close"].iloc[-1])
         for p in all_patterns:
             if not (p["completed"] and p["direction"] == "bullish"):
+                continue
+            if p.get("invalidated"):
+                # Pattern's precondition failed (price dropped below its
+                # bottom / neckline). Don't surface its entry plan.
                 continue
             # Sanity: bullish plan must have entry < target and stop < entry.
             entry_v = p.get("entry")

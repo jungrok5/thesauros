@@ -161,6 +161,100 @@ def test_entry_plan_stop_distance_15_pct_gate():
         )
 
 
+def test_invalidated_double_bottom_does_not_contribute_to_buy():
+    """LG우 case 2: 쌍바닥 neckline 81,000 was reported `completed=True`
+    even though current close 72,200 was clearly below it. The
+    invalidation pass must stamp invalidated=True, the score must
+    exclude it, and STRONG_BUY must not derive from it alone."""
+    from app.book.analyzer import (
+        _mark_invalidated_patterns, _signal_score, _action_from_score,
+    )
+    # Synthetic pattern dict mimicking LG우's 쌍바닥
+    pat = {
+        "kind": "쌍바닥",
+        "direction": "bullish",
+        "confidence": 0.85,
+        "completed": True,
+        "detected_at": "2026-04-03",
+        "entry": 72200,
+        "stop": 65000,
+        "target": 100600,
+        "reason": "",
+        "extra": {
+            "low1": {"date": "2026-01-16", "price": 63100},
+            "low2": {"date": "2026-04-03", "price": 63500},
+            "neckline": 81000,
+        },
+        "invalidated": False,
+        "invalidation_reason": "",
+    }
+    patterns = [pat]
+    _mark_invalidated_patterns(patterns, last_close=72200.0)
+    assert pat["invalidated"], "쌍바닥 close below neckline must invalidate"
+    assert "neckline" in pat["invalidation_reason"]
+
+    # Score / action must NOT inherit the bullish bias from an invalidated pattern.
+    base_score = _signal_score("BUY", patterns, [], None)
+    # Base = 0.6 (BUY trend) + 0 (invalidated, ignored) = 0.6, NOT
+    # 0.6 + 0.85 × 0.3 = 0.855
+    assert abs(base_score - 0.6) < 0.01, (
+        f"invalidated pattern should not contribute, score={base_score}"
+    )
+    # Action: trend=BUY + no valid completed bullish pattern → BUY, not STRONG_BUY.
+    action = _action_from_score("BUY", base_score, patterns)
+    assert action == "BUY", (
+        f"invalidated pattern should not promote to STRONG_BUY, got {action}"
+    )
+
+
+def test_long_bearish_candle_downgrades_buy():
+    """LG우 2026-05-22 regression: last weekly bar O 82,100 → C 72,200
+    (-12 %, body 93 % of range) was tagged 장대음봉 by classify_candle,
+    yet analyzer still emitted STRONG_BUY because no gate consumed the
+    tag. Book p262: 장대음봉 = 저승사자 signal — sell, never buy.
+
+    With the new gate:
+      - 장대음봉 + close < weekly 10MA → SELL_OR_SHORT (책의 저승사자)
+      - 장대음봉 + close ≥ weekly 10MA → HOLD (still a warning)
+
+    Fixture: long uptrend so BUY/STRONG_BUY would naturally be the
+    pre-gate verdict, and a final 장대음봉 whose close stays just
+    above 10MA so we can confirm HOLD branch (not the SELL one).
+    """
+    closes = list(np.linspace(50, 100, 250))
+    # Final bar: open well above prior close, close at recent high so
+    # close stays above 10MA, but body big → 장대음봉 fires.
+    closes.append(100.0)
+    rows = []
+    for i, c in enumerate(closes):
+        if i == len(closes) - 1:
+            # Open 108, close 100. body = 8 ≫ body_avg ~0.5 → 장대음봉.
+            o, h, lo = 108.0, 108.0, 99.5
+        else:
+            o, h, lo = c * 0.999, c * 1.005, c * 0.995
+        rows.append({
+            "date": pd.Timestamp("2022-01-07") + pd.Timedelta(weeks=i),
+            "open": o, "high": h, "low": lo,
+            "close": c, "adj_close": c, "volume": 1_000_000.0,
+        })
+    df = pd.DataFrame(rows)
+    df.attrs["grain"] = "W"
+    r = analyze_ticker("TEST.KS", df)
+    tags = (r.get("last_candle") or {}).get("tags") or []
+    assert "장대음봉" in tags, (
+        f"fixture failed to produce 장대음봉 tag: {tags}"
+    )
+    # Pre-gate action would have been BUY or STRONG_BUY (clean uptrend);
+    # post-gate it must be downgraded.
+    assert r["action"] not in ("BUY", "STRONG_BUY"), (
+        f"장대음봉 should downgrade BUY/STRONG_BUY, got {r['action']}"
+    )
+    sr = r.get("stretch_reason") or ""
+    assert any(k in sr for k in ("장대음봉", "저승사자")), (
+        f"stretch_reason should explain the downgrade: {sr!r}"
+    )
+
+
 def test_pos_52w_ignores_zero_ohlv_corruption():
     """Regression for the 009310.KS bug — bars table contained rows
     with high=0 + low=0 (FDR's 거래정지 placeholder leaking through

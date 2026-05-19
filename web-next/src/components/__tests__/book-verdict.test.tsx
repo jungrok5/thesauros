@@ -330,6 +330,66 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     expect(screen.getByText(/240MA.*아래.*죽은 차트/)).toBeInTheDocument();
   });
 
+  // ── 장대음봉 / 저승사자 branches (P0a in Phase 2) ────────────────
+  it("장대음봉 stretch_reason → 장대음봉 · 매도 압력 verdict", () => {
+    const r = makeResult({
+      ticker: "003555.KS",
+      action: "HOLD",
+      last_close: 72200,
+      stretch_reason: "마지막 봉 장대음봉 — 책 룰: 매도 압력",
+      patterns: [],
+      entry_plan: null,
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByRole("heading", { name: /장대음봉.*매도 압력/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/장대음봉 출현/)).toBeInTheDocument();
+    expect(screen.queryByText(/한 줄 평 · 관망/)).toBeNull();
+  });
+
+  it("저승사자 stretch_reason → 저승사자 · 청산 verdict (red card)", () => {
+    const r = makeResult({
+      action: "SELL_OR_SHORT",
+      stretch_reason: "저승사자 캔들 (장대음봉 + 주봉 10MA 하향 이탈)",
+      patterns: [],
+      entry_plan: null,
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByRole("heading", { name: /저승사자.*청산/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/즉시 청산/)).toBeInTheDocument();
+  });
+
+  it("invalidated pattern surfaces as warning on every verdict color", () => {
+    const r = makeResult({
+      action: "STRONG_BUY",
+      last_close: 72200,
+      patterns: [
+        {
+          kind: "쌍바닥", direction: "bullish", confidence: 0.85,
+          completed: true, detected_at: "2026-04-03",
+          entry: 72200, stop: 65000, target: 100600,
+          reason: "쌍바닥", timeframe: "weekly",
+          extra: { neckline: 81000 },
+          invalidated: true,
+          invalidation_reason: "close 72,200 < neckline 81,000 (돌파선 재이탈)",
+        },
+      ],
+      volume_case: {
+        case: 3, label_kr: "바닥권 거래량 폭증",
+        direction: "bullish", confidence: 0.85, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-22", open: 73000, high: 74500, low: 71800, close: 72500,
+        volume: 80000, body_pct: 0.40, upper_wick_pct: 0.20, lower_wick_pct: 0.40,
+        close_position: 0.32, is_bullish: false, tags: [], in_safe_zone_75: false,
+      },
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/쌍바닥 패턴 무효화/)).toBeInTheDocument();
+    expect(screen.getByText(/돌파선 재이탈/)).toBeInTheDocument();
+  });
+
   // ── 추세 유효 · 자리 지남 (analyzer stretch downgrade) ───────────
   // The analyzer flips BUY/STRONG_BUY → HOLD and stamps stretch_reason
   // when the chart is past the book's neat entry zone (rally ≥ 50 %,

@@ -123,13 +123,60 @@ def classify_volume_case(df: pd.DataFrame, window: int = 252,
             reason=f"상승 추세인데 거래량 -{(1-vol_ratio)*100:.0f}%. 책 케이스 7.",
         )
     # ---- Case 9: top + volume surge → distribution risk
+    # Book p364 reading: 거래량 ≥ 3× 평균이면 "세력 털기" 거의 확정.
+    # Additional confirmation = a strong upper-wick rejection candle on
+    # any of the last 4 bars (long upper wick + small body = price
+    # refused at the high). LG우 2026-05-15 pattern: high 98,700 vs
+    # close 79,000 with vol = 7× median = textbook case 9 강버전.
+    if zone == "top" and VOL_SURGE:
+        # Confidence boosted when any recent bar shows the rejection
+        # signature the book describes.
+        rejection = False
+        try:
+            recent = df.tail(4)
+            for _, row in recent.iterrows():
+                o, h, l, c = (float(row["open"]), float(row["high"]),
+                              float(row["low"]), float(row["close"]))
+                rng = max(h - l, 1e-9)
+                body = abs(c - o)
+                upper = h - max(o, c)
+                if (
+                    upper / rng >= 0.4
+                    and body / rng < 0.5
+                    and upper >= 2 * body
+                ):
+                    rejection = True
+                    break
+        except Exception:
+            pass
+        return VolumeCase(
+            case=9,
+            label_kr=(
+                "상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정)"
+                if rejection
+                else "상투권 거래량 폭증 (세력 털기 위험)"
+            ),
+            direction="bearish",
+            confidence=0.85 if rejection else 0.75,
+            reason=(
+                f"고점권 거래량 +{(vol_ratio-1)*100:.0f}% (책 3배 기준 초과)"
+                + (" + 위꼬리 거부 캔들" if rejection else "")
+                + ". 책 케이스 9."
+            ),
+        )
+    # Weaker variant: top + moderate volume rise (1.5×~3.0×) without
+    # rejection candle. Book is less definitive here — could be 손바뀜
+    # with continuation OR early distribution. Surface as a soft warning.
     if zone == "top" and VOL_UP:
         return VolumeCase(
             case=9,
-            label_kr="상투권 거래량 증가 (세력 털기 위험)",
-            direction="bearish",
-            confidence=0.72,
-            reason=f"고점권에서 거래량 +{(vol_ratio-1)*100:.0f}%. 책 케이스 9.",
+            label_kr="상투권 거래량 증가 (관찰)",
+            direction="neutral",
+            confidence=0.5,
+            reason=(
+                f"고점권 거래량 +{(vol_ratio-1)*100:.0f}% (책 3배 기준 미달)."
+                " 손바뀜 후 추가 상승 가능성도. 책 케이스 9 약버전."
+            ),
         )
     # ---- Case 5: bottom + falling + volume up
     if zone == "bottom" and trend == DOWN and VOL_UP:

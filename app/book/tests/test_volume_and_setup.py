@@ -82,6 +82,49 @@ def test_volume_case_0_only_for_truly_unclassified():
 # detect_ma_convergence_setup — Forking setup (NOT fired yet)
 # ─────────────────────────────────────────────────────────────────────
 
+def test_volume_case_9_fires_with_3x_volume_at_top():
+    """Top zone + vol_ratio ≥ 3.0 → case 9 fires with high confidence
+    (book p364 — "거래량 평균의 3배 이상" 임계).
+    LG우 5/15 pattern: high 98,700 → close 79,000 with vol 7× median.
+    Should NOT be lost to case 0."""
+    closes = list(np.linspace(50, 100, 50))   # uptrend, current near top
+    # last-10 mean ~7× the prior-10 mean
+    volumes = [10_000] * 40 + [70_000] * 10
+    df = _frame(closes, volumes)
+    # Last bar: long upper wick + small body — rejection candle
+    df.loc[df.index[-1], "high"] = 110.0
+    df.loc[df.index[-1], "low"] = 99.0
+    df.loc[df.index[-1], "open"] = 105.0
+    df.loc[df.index[-1], "close"] = 100.5
+    vc = classify_volume_case(df, window=52, days=20)
+    assert vc is not None, "case should fire"
+    assert vc.case == 9, f"expected case 9 (top + 3×), got case {vc.case}"
+    assert vc.direction == "bearish", (
+        f"case 9 should be bearish, got {vc.direction}"
+    )
+    # Confidence boosted when rejection candle confirms
+    assert vc.confidence >= 0.8, (
+        f"rejection candle should boost confidence ≥ 0.80, got {vc.confidence}"
+    )
+    assert "위꼬리" in vc.label_kr or "확정" in vc.label_kr
+
+
+def test_volume_case_9_weak_variant_at_top_without_rejection():
+    """Top zone + 1.5× ≤ vol < 3× without rejection candle = soft
+    warning (책 케이스 9 약버전). Should fire as neutral confidence 0.5."""
+    closes = list(np.linspace(50, 100, 50))
+    # last-10 ~2× prior-10
+    volumes = [10_000] * 40 + [20_000] * 10
+    df = _frame(closes, volumes)
+    vc = classify_volume_case(df, window=52, days=20)
+    assert vc is not None
+    assert vc.case == 9
+    assert vc.direction == "neutral", (
+        f"weak variant should be neutral, got {vc.direction}"
+    )
+    assert vc.confidence <= 0.55
+
+
 def test_setup_fires_on_tight_convergence_and_flat_box():
     """Long climb + extended flat plateau so MA 10/20/60 all converge
     at ~90. Final 4 bars in a tight ±1 % box. Detector should fire as

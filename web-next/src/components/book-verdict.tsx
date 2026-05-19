@@ -90,6 +90,21 @@ export function BookVerdict({ result }: Props) {
   }
   if (r.action === "SELL_OR_SHORT" || r.action === "SELL") {
     const ma10 = monthly?.ma_10 ?? weekly?.ma_10;
+    // 저승사자 = 장대음봉 + 주봉 10MA 동시 이탈. The analyzer stamps
+    // this in stretch_reason when the gate fires. Surface a dedicated
+    // verdict that calls out the candle pattern by name (책 p262).
+    const isReaper =
+      typeof r.stretch_reason === "string" && /저승사자/.test(r.stretch_reason);
+    if (isReaper) {
+      const lines = [
+        `🔴 저승사자 캔들 — 마지막 봉 장대음봉이 주봉 10MA를 동시에 깬 상태. ${r.stretch_reason}.`,
+        "책 p262: 저승사자 = 매도 패턴 완성 시그널. 매수 자리 0%.",
+        ma10
+          ? `보유 중이면 즉시 청산. 재진입은 ${formatPrice(ma10, ticker)} 회복 + 양봉 마감 확인 후.`
+          : "보유 중이면 즉시 청산.",
+      ];
+      return verdictCard("rose", "🔴", "저승사자 · 청산", lines, warnings);
+    }
     const lines = [
       monthly && monthly.above_ma_10 === false
         ? "월봉 10MA 하향 이탈 — 책의 청산 신호."
@@ -206,6 +221,10 @@ export function BookVerdict({ result }: Props) {
   // entry_plan, and we want a 매수 자격 X verdict, not the generic
   // "관망" copy.
   if (r.stretch_reason) {
+    // 저승사자 is handled in the SELL_OR_SHORT branch above (red card).
+    // Here we only handle the HOLD-via-stretch path, with optional
+    // "장대음봉" warning that doesn't reach 저승사자's 10MA-break severity.
+    const isLongBearish = /장대음봉/.test(r.stretch_reason);
     const ma10w = weekly?.ma_10 ?? null;
     const ma240 = weekly?.ma_240 ?? null;
     const above240Pct =
@@ -227,9 +246,11 @@ export function BookVerdict({ result }: Props) {
     const reversalCandle = reversalTag
       || (bigUpperWick ? "긴 위꼬리 캔들" : null);
     const lines: string[] = [
-      `추세는 살아있지만 신규 매수 자리는 한참 지남 — ${r.stretch_reason}.`,
+      isLongBearish
+        ? `⚠️ 장대음봉 출현 — 책 룰: 매도 압력. ${r.stretch_reason}.`
+        : `추세는 살아있지만 신규 매수 자리는 한참 지남 — ${r.stretch_reason}.`,
     ];
-    if (reversalCandle) {
+    if (reversalCandle && !isLongBearish) {
       lines.push(
         `마지막 캔들 ${reversalCandle} — 책: 큰 상승 끝의 위꼬리/도지 = 매수세 소진. 반전 주의.`,
       );
@@ -240,12 +261,22 @@ export function BookVerdict({ result }: Props) {
         : "책 룰: 추세 시작부 +50% 안에서만 신규 매수. 그 위는 보유 평가용.",
     );
     lines.push(
-      ma10w
-        ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산 — 그때까지는 추세 유지.`
-        : "보유 중이면 추세 이탈 시 청산.",
+      isLongBearish
+        ? ma10w
+          ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 즉시 청산. 그 위면 한 봉 더 관찰.`
+          : "보유 중이면 다음 봉 확인 — 추세 이탈 시 청산."
+        : ma10w
+          ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산 — 그때까지는 추세 유지.`
+          : "보유 중이면 추세 이탈 시 청산.",
     );
     lines.push(nextDecisionLine(ma10w, ticker));
-    return verdictCard("amber", "🟡", "추세 유효 · 자리 지남", lines, warnings);
+    return verdictCard(
+      "amber",
+      "🟡",
+      isLongBearish ? "장대음봉 · 매도 압력" : "추세 유효 · 자리 지남",
+      lines,
+      warnings,
+    );
   }
 
   // ── HOLD / fallback ─────────────────────────────────────────────
@@ -434,6 +465,17 @@ function isAmbushSetup(r: AnalysisResult): boolean {
 function collectWarnings(r: AnalysisResult): string[] {
   const out: string[] = [];
   const bullishAction = r.action === "BUY" || r.action === "STRONG_BUY";
+
+  // Invalidated patterns surface as warnings on every verdict color
+  // (including BUY/STRONG_BUY where they'd otherwise quietly inflate
+  // the score) so users see the contradiction.
+  for (const p of r.patterns ?? []) {
+    if (p.invalidated && p.completed) {
+      out.push(
+        `${p.kind} 패턴 무효화 — ${p.invalidation_reason ?? "전저점/돌파선 재이탈"}.`,
+      );
+    }
+  }
 
   // Volume vs action dissonance. Skip case 12 "수렴기 거래량 감소" —
   // that's bullish (accumulation finishing), not a contradiction.
