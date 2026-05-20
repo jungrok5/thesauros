@@ -32,6 +32,7 @@ import {
   HoldersCard,
   EarningsCalendarCard,
 } from "@/components/investor-intel-cards";
+import { VolumeSurgeCard } from "@/components/volume-surge-card";
 import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
@@ -260,6 +261,7 @@ export default async function StockDetailPage({ params }: PageProps) {
           holders: [],
           earnings: [],
           latestBar: null,
+          volumeSurge: null,
         }),
   ]);
   const result = cached.result;
@@ -393,6 +395,10 @@ export default async function StockDetailPage({ params }: PageProps) {
             dividend={ctx.dividend}
             todayIso={new Date().toISOString().slice(0, 10)}
           />
+          {/* 거래량 폭증 정보 — /volume-surge 페이지의 같은 메트릭을
+              단일 종목으로 표시. 폭증 목록에서 종목 상세 들어왔을 때
+              연속된 맥락 제공. */}
+          <VolumeSurgeCard surge={ctx.volumeSurge} />
           {/* 투자자 인텔 카드들 — 데이터 없으면 각 카드가 자체적으로
               null 반환해서 렌더 안 됨. 따로 if 분기 안 해도 됨. */}
           <ConsensusCard

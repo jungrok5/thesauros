@@ -6,9 +6,12 @@
  * function on Referer so it's trivially testable + so it works inside
  * a server component without grabbing a router.
  *
- * Behavior:
- *   /watchlist*           → "관심 종목으로"
- *   anything else / null  → "종목 검색"
+ * Behavior (first match wins):
+ *   /watchlist*       → "관심 종목으로"
+ *   /screener*        → "종목 스크리너로"      (preserves ?preset=…)
+ *   /flow-ranking*    → "큰손 매매 랭킹으로"
+ *   /volume-surge*    → "거래량 폭증 목록으로"
+ *   anything else     → "종목 검색"  (default)
  *
  * We deliberately don't chain history. If the user came
  *   /watchlist → /stocks/AAPL → /stocks/MSFT
@@ -20,13 +23,31 @@ export type BackLink = { href: string; label: string };
 
 const DEFAULT_BACK: BackLink = { href: "/stocks", label: "종목 검색" };
 
+const RULES: Array<{ prefix: string; back: BackLink }> = [
+  { prefix: "/watchlist",     back: { href: "/watchlist",     label: "관심 종목으로" } },
+  { prefix: "/screener",      back: { href: "/screener",      label: "종목 스크리너로" } },
+  { prefix: "/flow-ranking",  back: { href: "/flow-ranking",  label: "큰손 매매 랭킹으로" } },
+  { prefix: "/volume-surge",  back: { href: "/volume-surge",  label: "거래량 폭증 목록으로" } },
+];
+
 export function decideBackLink(referer: string | null | undefined): BackLink {
   if (!referer) return DEFAULT_BACK;
   try {
     const url = new URL(referer);
     const path = url.pathname;
-    if (path === "/watchlist" || path.startsWith("/watchlist/")) {
-      return { href: "/watchlist", label: "관심 종목으로" };
+    for (const { prefix, back } of RULES) {
+      const matches =
+        path === prefix ||
+        path.startsWith(prefix + "/") ||
+        path.startsWith(prefix + "?");
+      if (matches) {
+        // Preserve search params so the user lands back on the exact
+        // view they were on (e.g. /screener?preset=value-deep).
+        const query = url.search ?? "";
+        return query
+          ? { href: `${back.href}${query}`, label: back.label }
+          : back;
+      }
     }
   } catch {
     /* malformed Referer header — treat as no info */

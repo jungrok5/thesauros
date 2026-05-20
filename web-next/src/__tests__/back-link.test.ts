@@ -64,4 +64,30 @@ describe("decideBackLink", () => {
       decideBackLink("https://app.example.com/admin/watchlist-audit"),
     ).toEqual({ href: "/stocks", label: "종목 검색" });
   });
+
+  // Coming from list pages — user expects to go back to the same list
+  // (was bug 2026-05-20: /volume-surge → detail → back went to /stocks).
+  it("/volume-surge → 거래량 폭증 목록으로", () => {
+    expect(decideBackLink("https://app.example.com/volume-surge"))
+      .toEqual({ href: "/volume-surge", label: "거래량 폭증 목록으로" });
+  });
+
+  it("/flow-ranking → 큰손 매매 랭킹으로", () => {
+    expect(decideBackLink("https://app.example.com/flow-ranking"))
+      .toEqual({ href: "/flow-ranking", label: "큰손 매매 랭킹으로" });
+  });
+
+  it("/screener preserves preset query so user lands on same preset", () => {
+    expect(
+      decideBackLink("https://app.example.com/screener?preset=value-classic"),
+    ).toEqual({
+      href: "/screener?preset=value-classic",
+      label: "종목 스크리너로",
+    });
+  });
+
+  it("/screener without query still works", () => {
+    expect(decideBackLink("https://app.example.com/screener"))
+      .toEqual({ href: "/screener", label: "종목 스크리너로" });
+  });
 });

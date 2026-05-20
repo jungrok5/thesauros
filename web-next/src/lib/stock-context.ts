@@ -78,6 +78,17 @@ export type StockContext = {
   // 스냅샷 이라 stale 일 수 있어서 (예: 폭증 종목인데 watchlist 가 아니라
   // 며칠 전 분석 그대로) 가격 표시는 항상 이것 사용. analysis 결과
   // (action/entry_plan) 은 분석 시점 가격 기준이라 그대로 둠.
+  volumeSurge: VolumeSurgeRow | null;
+};
+
+export type VolumeSurgeRow = {
+  this_week_vol: number;
+  avg_vol: number;        // 직전 8주 평균
+  ratio: number;          // this / avg
+  this_week_close: number;
+  prev_week_close: number;
+  price_change_pct: number;
+  sample_n: number;       // 평균 계산에 쓴 주 수
 };
 
 export async function fetchStockContext(ticker: string): Promise<StockContext> {
@@ -85,7 +96,7 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [
     discR, finR, facR, warnR, shortR, divR,
-    consR, holdR, earnR, barR,
+    consR, holdR, earnR, barR, surgeR,
   ] = await Promise.all([
     sb.from("disclosures")
       .select("id, rcept_no, report_nm, report_type, filed_date, url")
@@ -142,8 +153,24 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
       .order("bar_date", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Volume-surge metrics — same RPC as /volume-surge page but
+    // single-ticker variant. Ratio < 2.0 still returned so card can
+    // show "정상 거래량" or "폭증" 자체 톤 결정.
+    sb.rpc("volume_surge_for_ticker", { p_ticker: ticker }),
   ]);
   const barRow = barR.data as { close: number; bar_date: string } | null;
+  // RPC returns SETOF — supabase-js wraps as array. Take first row.
+  type SurgeRpcRow = {
+    this_week_vol: string | number;
+    avg_vol: string | number;
+    ratio: string | number;
+    this_week_close: string | number;
+    prev_week_close: string | number;
+    price_change_pct: string | number;
+    sample_n: number;
+  };
+  const surgeArr = (surgeR.data ?? []) as unknown as SurgeRpcRow[];
+  const surge = surgeArr.length > 0 ? surgeArr[0] : null;
   return {
     disclosures: (discR.data ?? []) as DisclosureRow[],
     fin: finR.data as FinancialsEvalRow | null,
@@ -156,6 +183,17 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
     earnings: (earnR.data ?? []) as EarningsCalendarRow[],
     latestBar: barRow
       ? { close: Number(barRow.close), bar_date: String(barRow.bar_date) }
+      : null,
+    volumeSurge: surge
+      ? {
+          this_week_vol: Number(surge.this_week_vol),
+          avg_vol: Number(surge.avg_vol),
+          ratio: Number(surge.ratio),
+          this_week_close: Number(surge.this_week_close),
+          prev_week_close: Number(surge.prev_week_close),
+          price_change_pct: Number(surge.price_change_pct),
+          sample_n: Number(surge.sample_n),
+        }
       : null,
   };
 }
