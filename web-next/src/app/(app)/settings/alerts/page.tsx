@@ -26,6 +26,8 @@ const FIELDS: Array<{ key: string; label: string; help: string }> = [
     help: "관심/보유 종목의 240MA 라인 통과 시" },
   { key: "enable_quarter_25_break",  label: "4등분선 절대자리 (25%) 깨짐",
     help: "직전 장대양봉 몸통 25% 아래로 종가 — 책 시그니처 매도 시그널" },
+  { key: "enable_disclosure",        label: "📢 새 공시 알림 (DART)",
+    help: "관심/보유 종목에 새 DART 공시가 올라오면 즉시 알림 — 자사주 매입 / 유상증자 / 5% 지분 변동 / 실적 발표 등. 매일 17 시 KST 스캔" },
   // Removed 2026-05-19: enable_daily_top5 ("주간 추천 Top 5") — the
   // /recommendations page that consumed this digest is gone in the
   // search-only pivot. Telegram_worker no longer sends the digest;

@@ -133,6 +133,19 @@ jobs:
           # via the `alerts` table.
           python -m app.db.telegram_worker
 
+      - name: Disclosure alerts (DART 새 공시 → Telegram)
+        # Watchlist 종목만 (전체 universe X) → 30~100 종목, ~4 min.
+        # DART 1000 req/min cap 안에 안전. disclosure_alert_seen PK
+        # 로 (user, rcept_no) 멱등 — 재실행해도 중복 알림 X.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: timeout 10m python -m app.db.notify_disclosure_alerts
+
       - name: Data-quality assertions
         if: always()   # run even if a preceding step failed, so we surface what landed
         env:

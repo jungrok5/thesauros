@@ -39,6 +39,7 @@ _REQUIRED_TABLES = {
     "earnings_calendar",        # added 2026-05-20 with investor intel (029)
     "analyst_consensus",        # ditto
     "institutional_ownership",  # ditto
+    "disclosure_alert_seen",    # added 2026-05-20 with disclosure alerts (030)
     # search_history is self-trimming via DB trigger — exempt from rule below
 }
 

@@ -222,6 +222,15 @@ POLICIES: list[Policy] = [
         """,
         "closed ≥ 90 days",
     ),
+    # Disclosure-alert dedupe: only purpose is "don't alert the same
+    # rcept_no twice". After 14 days, the disclosure is past — even
+    # if we forget we'd already alerted, the disclosure's filed_date
+    # window (days_back=2) wouldn't include it again. 14d buffer.
+    (
+        "disclosure_alert_seen",
+        "DELETE FROM disclosure_alert_seen WHERE sent_at < CURRENT_DATE - INTERVAL '14 days'",
+        "14 days",
+    ),
     # Short-sales history: daily rows × ~2700 KR tickers grow ~700K/year.
     # 90 days is enough for trend cards + matches scan_results retention.
     (

@@ -16,6 +16,7 @@ const FIELDS = [
   "enable_ma240_break",
   "enable_quarter_25_break",
   "enable_daily_top5",
+  "enable_disclosure",
 ] as const;
 
 const DEFAULTS: Record<(typeof FIELDS)[number], boolean> = {
@@ -26,6 +27,7 @@ const DEFAULTS: Record<(typeof FIELDS)[number], boolean> = {
   enable_ma240_break: true,
   enable_quarter_25_break: true,
   enable_daily_top5: false,
+  enable_disclosure: true,
 };
 
 async function currentUser() {
