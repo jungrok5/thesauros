@@ -90,8 +90,8 @@ Policy = Tuple[str, Union[str, Callable[[bool], int]], str]
 POLICIES: list[Policy] = [
     (
         "bars",
-        "DELETE FROM bars WHERE bar_date < CURRENT_DATE - INTERVAL '6 years'",
-        "6 years (W + M) — 240MA needs 4.6y, 6y gives buffer",
+        "DELETE FROM bars WHERE bar_date < CURRENT_DATE - INTERVAL '5 years'",
+        "5 years (W + M) — 240MA 4.6y; backfill 효과 미미해 6년 rollback",
     ),
     (
         "investor_flow",
