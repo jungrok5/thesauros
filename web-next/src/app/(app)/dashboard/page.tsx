@@ -13,6 +13,7 @@ import { GlobalNews } from "@/components/global-news";
 import { MarketTicker } from "@/components/market-ticker";
 import { MarketActionCard } from "@/components/market-action-card";
 import { SeasonalBanner } from "@/components/seasonal-banner";
+import { indicatorVerdict } from "@/lib/macro-interpret";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
@@ -244,6 +245,7 @@ export default async function DashboardPage() {
 }
 
 function IndicatorCard({ it, compact = false }: { it: IndicatorState; compact?: boolean }) {
+  const verdict = indicatorVerdict(it.key, it.state, it.value, it.yoy_pct);
   return (
     <article
       className={`rounded-lg border border-border bg-card hover:bg-accent/40 transition-colors ${compact ? "p-3" : "p-4"}`}
@@ -275,7 +277,19 @@ function IndicatorCard({ it, compact = false }: { it: IndicatorState; compact?: 
           </span>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">{it.verdict}</p>
+      {/* "이 지표가 주식 시장에 어떻게" — 2-line:
+          (1) 정적 directional 룰 (값 무관)
+          (2) 현재 state 기반 액션 안내 */}
+      <p className="text-[11px] text-muted-foreground/90 leading-relaxed">
+        💡 {verdict.impact}
+      </p>
+      <p className="text-xs leading-relaxed mt-1">{verdict.action}</p>
+      {/* cron-generated verdict (legacy) — 디버그용으로 작게 남김 */}
+      {it.verdict && (
+        <p className="text-[10px] text-muted-foreground/60 mt-1 italic">
+          ({it.verdict})
+        </p>
+      )}
       <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground/70 text-right">
         {it.as_of ?? "—"}
       </div>

@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from "react";
 import { Sparkline } from "@/components/sparkline";
+import { tickerHint } from "@/lib/macro-interpret";
 
 type Quote = {
   symbol: string;
@@ -147,6 +148,17 @@ function Tile({
           />
         )}
       </div>
+      {/* Static "이 지표 ↑ → 주식 ↑/↓" hint for non-index tickers
+          (VIX/유가/금/달러 등). Indices skip this — interpreting their
+          own move against \"the stock market\" is tautological. */}
+      {(() => {
+        const hint = tickerHint(q.symbol);
+        return hint ? (
+          <div className="mt-1 text-[10px] text-muted-foreground/80 leading-snug">
+            💡 {hint}
+          </div>
+        ) : null;
+      })()}
     </div>
   );
 }
