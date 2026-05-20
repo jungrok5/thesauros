@@ -56,7 +56,7 @@ describe("holdersActionLine", () => {
     };
   }
 
-  it("NPS + total ≥ 20% → 매물 부담 작은 종목 message", () => {
+  it("NPS + external ≥ 20% → 매물 부담 작은 종목 message", () => {
     const rows = [row("국민연금공단", "NPS", 12), row("미래에셋", "AMC", 10)];
     const out = holdersActionLine(rows);
     expect(out).toContain("폭락장에서도");
@@ -68,7 +68,28 @@ describe("holdersActionLine", () => {
     expect(out).toContain("안전 후보");
   });
 
-  it("no NPS but total ≥ 30% → 유통주식 부족 bucket", () => {
+  it("AFFILIATE-only (cross-holding) → 모멘텀 약함 bucket", () => {
+    // The Samsung-style case: 삼성물산 holds 19.7% of 삼성전자 + no
+    // real external 큰손. Before the AFFILIATE bucket existed this
+    // mis-counted as "외부 큰손 30%" and gave a misleading message.
+    const rows = [row("삼성물산", "AFFILIATE", 25)];
+    const out = holdersActionLine(rows);
+    expect(out).toContain("그룹 계열사");
+    expect(out).toContain("모멘텀");
+  });
+
+  it("AFFILIATE does NOT inflate the external 30% threshold", () => {
+    // 25% affiliate + 8% AMC = 33% total — but external only 8% so
+    // shouldn't hit the "외부 큰손 30%↑" volatility warning.
+    const rows = [
+      row("삼성물산", "AFFILIATE", 25),
+      row("미래에셋", "AMC", 8),
+    ];
+    const out = holdersActionLine(rows);
+    expect(out).not.toContain("변동성 크고");
+  });
+
+  it("no NPS but EXTERNAL ≥ 30% → 유통주식 부족 bucket", () => {
     const rows = [
       row("미래에셋", "AMC", 20),
       row("한국투자", "AMC", 12),

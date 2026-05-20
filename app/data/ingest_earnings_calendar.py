@@ -93,6 +93,90 @@ def _seed_one(ticker: str, today: date) -> int:
     return len(upcoming)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Actuals backfill — pull from `fundamentals` once a report is filed.
+# Joins on (ticker, fiscal year + report_type → period_end month).
+# ─────────────────────────────────────────────────────────────────────
+
+# (report_type, period_end month). Dec-fiscal-year convention.
+_PERIOD_END_MONTH = {"Q1": 3, "Q2": 6, "Q3": 9, "FY": 12}
+
+# DART (KR) + SEC (US) variants of the same concept. We pick whichever
+# the ticker's namespace landed on — KR uses these; SEC uses the SEC
+# tags. The fundamentals row identifies which set was written.
+_EPS_CONCEPTS = ("EarningsPerShareBasic", "EarningsPerShareDiluted")
+_REV_CONCEPTS = (
+    "Revenues",
+    "SalesRevenueNet",
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+)
+
+
+def _backfill_actuals() -> int:
+    """For every earnings_calendar row whose expected_date is in the
+    past AND actual_eps is still NULL, look up matching fundamentals
+    rows and fill in actual_eps + actual_revenue.
+
+    Idempotent — once both fields are populated, the WHERE NULL guard
+    skips. Period_end → report_type mapping is the only inferential
+    step (we trust the filed_date metadata for everything else).
+    """
+    today = date.today()
+    sql_eps_concepts = ", ".join(["%s"] * len(_EPS_CONCEPTS))
+    sql_rev_concepts = ", ".join(["%s"] * len(_REV_CONCEPTS))
+
+    updated = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ticker, expected_date, report_type
+                  FROM earnings_calendar
+                 WHERE expected_date <= %s
+                   AND (actual_eps IS NULL OR actual_revenue IS NULL)
+                """,
+                (today,),
+            )
+            todo = cur.fetchall()
+
+            for ticker, expected, rtype in todo:
+                month = _PERIOD_END_MONTH.get(rtype)
+                if not month:
+                    continue
+                # expected_date 가 다음해 3/31 (FY) 등이면 fiscal_year 는
+                # expected.year - 1. 그 외는 expected.year 와 같음.
+                fy = expected.year - 1 if rtype == "FY" else expected.year
+                cur.execute(
+                    f"""
+                    SELECT concept, value FROM fundamentals
+                     WHERE ticker = %s AND fy = %s
+                       AND EXTRACT(MONTH FROM period_end) = %s
+                       AND concept IN ({sql_eps_concepts}, {sql_rev_concepts})
+                    """,
+                    (ticker, fy, month, *_EPS_CONCEPTS, *_REV_CONCEPTS),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    continue
+                eps = next((v for c, v in rows if c in _EPS_CONCEPTS), None)
+                rev = next((v for c, v in rows if c in _REV_CONCEPTS), None)
+                if eps is None and rev is None:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE earnings_calendar
+                       SET actual_eps = COALESCE(actual_eps, %s),
+                           actual_revenue = COALESCE(actual_revenue, %s),
+                           updated_at = now()
+                     WHERE ticker = %s AND expected_date = %s
+                       AND report_type = %s
+                    """,
+                    (eps, rev, ticker, expected, rtype),
+                )
+                updated += 1
+    return updated
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--tickers", nargs="*")
@@ -116,6 +200,13 @@ def main(argv: list[str] | None = None) -> int:
             total += _seed_one(t, today)
         except Exception as e:
             log.warning("ticker=%s error: %s", t, e)
+
+    # Pulls actuals from `fundamentals` for any past expected_date.
+    try:
+        updated = _backfill_actuals()
+        log.info("backfilled actuals on %d rows", updated)
+    except Exception as e:
+        log.warning("backfill_actuals failed: %s", e)
 
     log.info("done — %d rows seeded", total)
     return 0

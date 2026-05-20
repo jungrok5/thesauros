@@ -36,15 +36,25 @@ export function consensusActionLine(
 
 export function holdersActionLine(rows: InstitutionalOwnershipRow[]): string {
   const hasNps = rows.some((r) => r.holder_type === "NPS");
-  const totalPct = rows.reduce((s, r) => s + (r.share_pct ?? 0), 0);
-  if (hasNps && totalPct >= 20) {
-    return "국민연금이 들어와 있고 큰손 합산 비중도 두꺼움 → 기관 매물 부담은 작고, 폭락장에서도 어느 정도 받쳐주는 종목.";
+  // 외부 큰손만 합산 — 계열사 cross-holding 은 따라할 의미가 없으니 제외.
+  const externalPct = rows
+    .filter((r) => r.holder_type !== "AFFILIATE")
+    .reduce((s, r) => s + (r.share_pct ?? 0), 0);
+  const affiliatePct = rows
+    .filter((r) => r.holder_type === "AFFILIATE")
+    .reduce((s, r) => s + (r.share_pct ?? 0), 0);
+
+  if (hasNps && externalPct >= 20) {
+    return "국민연금이 들어와 있고 외부 큰손 합산 비중도 두꺼움 → 기관 매물 부담은 작고, 폭락장에서도 어느 정도 받쳐주는 종목.";
   }
   if (hasNps) {
     return "국민연금이 들고 있는 종목 — 운용 관점에서 “안전 후보”. 다만 국민연금이 지분 줄이기 시작하면 (정기보고서로 확인 가능) 단기 약세 신호.";
   }
-  if (totalPct >= 30) {
-    return "큰손 합산 30% 이상 — 유통주식 비중이 작아 변동성 크고, 한 명이 던지면 흔들릴 수 있음.";
+  if (affiliatePct >= 20 && externalPct < 10) {
+    return "보유 큰손의 대부분이 그룹 계열사 — cross-holding 으로 잠긴 지분. 외부 기관/펀드 유입은 작은 종목이라 모멘텀은 약할 수 있음.";
+  }
+  if (externalPct >= 30) {
+    return "외부 큰손 합산 30% 이상 — 유통주식 비중이 작아 변동성 크고, 한 명이 던지면 흔들릴 수 있음.";
   }
   return "5% 이상 보유한 큰손 명단. 큰손이 많이 들고 있는 종목은 자금 흐름이 단단해서 변동성이 조금 작다.";
 }

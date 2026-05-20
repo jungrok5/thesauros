@@ -50,7 +50,7 @@ export type AnalystConsensusRow = {
 
 export type InstitutionalOwnershipRow = {
   holder_name: string;
-  holder_type: "NPS" | "AMC" | "FUND" | "OTHER";
+  holder_type: "NPS" | "AMC" | "FUND" | "AFFILIATE" | "OTHER";
   shares: number | null;
   share_pct: number | null;
   reported_date: string;

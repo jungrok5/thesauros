@@ -42,17 +42,38 @@ _DART_URL = "https://opendart.fss.or.kr/api/majorstock.json"
 # Holder name → classification. Substring match (longest-first below).
 # 'NPS' / 국민연금공단 is the most important to surface because the
 # site has a "큰손 따라보기" framing.
+#
+# AFFILIATE is for 그룹 계열사 (e.g. 삼성물산 보유하는 삼성전자 지분).
+# Distinguishing 계열사 from 일반 법인 matters because their stake
+# is structural (cross-holding) not "scientific reason to buy" —
+# 사용자 입장에서는 따라할 의미가 없음. We can't catch every case,
+# but the obvious dae-gi-eop suffix patterns get 90% of the dollars.
 _HOLDER_TYPE_RULES: list[tuple[str, str]] = [
     ("국민연금", "NPS"),
+    # AMC — Korean asset managers, English equivalents.
     ("자산운용", "AMC"),
     ("운용", "AMC"),
     ("인베스트먼트", "AMC"),
     ("Investment", "AMC"),
     ("자산", "AMC"),
+    ("증권", "AMC"),
+    ("Asset", "AMC"),
+    # FUND — foreign-style fund vehicles + private equity.
     ("Capital", "FUND"),
     ("Fund", "FUND"),
     ("Partners", "FUND"),
-    ("증권", "AMC"),
+    ("Equity", "FUND"),
+    ("Pension", "FUND"),
+    # AFFILIATE — 한국 그룹 계열사. Substring "물산" / "건설" /
+    # "중공업" / "에버랜드" / "정유" / "제일" 등 + 그룹명.
+    # "Holdings" 도 한국 그룹 지주사 패턴.
+    ("물산", "AFFILIATE"),
+    ("건설", "AFFILIATE"),
+    ("중공업", "AFFILIATE"),
+    ("에버랜드", "AFFILIATE"),
+    ("Holdings", "AFFILIATE"),
+    ("홀딩스", "AFFILIATE"),
+    ("지주", "AFFILIATE"),
 ]
 
 

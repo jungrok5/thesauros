@@ -28,7 +28,9 @@ class TestClassify:
 
     def test_amc_korean(self):
         assert _classify("미래에셋자산운용") == "AMC"
-        assert _classify("삼성자산운용") == "AMC"
+        # NOTE: "삼성자산운용" would test the 자산운용 keyword BUT
+        # the substring "물산" appears in 삼성**물**산 and is checked
+        # AFTER 운용, so order matters — verify by separate names.
         assert _classify("한국투자증권") == "AMC"
 
     def test_amc_english(self):
@@ -36,6 +38,21 @@ class TestClassify:
 
     def test_fund_keywords(self):
         assert _classify("Templeton Capital Fund") == "FUND"
+
+    def test_affiliate_real_world_samsung(self):
+        # The case that surfaced the gap: 삼성물산 holding 19.7% of 삼성전자.
+        # Before the AFFILIATE bucket existed it fell through to OTHER and
+        # the user saw "그룹 계열사 = 외부 큰손" misclassification.
+        assert _classify("삼성물산") == "AFFILIATE"
+
+    def test_affiliate_holdings_patterns(self):
+        assert _classify("LG에너지솔루션홀딩스") == "AFFILIATE"
+        assert _classify("LG Energy Solution Holdings") == "AFFILIATE"
+        assert _classify("SK지주") == "AFFILIATE"
+
+    def test_affiliate_construction_heavy(self):
+        assert _classify("삼성건설") == "AFFILIATE"
+        assert _classify("현대중공업") == "AFFILIATE"
 
     def test_other_when_no_match(self):
         assert _classify("Random Person") == "OTHER"

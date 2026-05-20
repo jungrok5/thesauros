@@ -124,6 +124,11 @@ const HOLDER_TYPE_BADGE: Record<string, { label: string; cls: string }> = {
     label: "펀드",
     cls: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30",
   },
+  AFFILIATE: {
+    // 계열사 — 그룹 내 cross-holding. 외부 큰손 아님 → 회색조로 톤다운.
+    label: "계열사",
+    cls: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300 border-zinc-500/30",
+  },
   OTHER: {
     label: "기타",
     cls: "bg-muted text-muted-foreground border-border",
