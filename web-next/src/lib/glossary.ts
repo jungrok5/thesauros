@@ -535,6 +535,41 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     body: "특별한 매수/매도 우위 시그널이 없는 중립 상태.",
   },
 
+  // ─────────── 펀더멘털 단일 지표 ───────────
+  per: {
+    title: "PER (주가수익비율)",
+    body:
+      "Price / Earnings Ratio. 주가 ÷ 주당순이익(EPS).\n" +
+      "'1년치 이익을 몇 년 모아야 시가총액이 되는가' 라는 개념. 낮을수록 싸다고 본다.\n" +
+      "한국 KOSPI 평균 PER 은 보통 10~15 사이. 성장주는 30+, 가치주는 5~10.",
+    link: {
+      href: "https://ko.wikipedia.org/wiki/주가수익비율",
+      label: "위키 PER →",
+    },
+  },
+  pbr: {
+    title: "PBR (주가순자산비율)",
+    body:
+      "Price / Book Ratio. 주가 ÷ 주당순자산(BPS).\n" +
+      "'회사의 청산가치 대비 주가가 몇 배인가'. 1 미만이면 청산가치보다 싸게 거래되는 것.\n" +
+      "금융주/철강주는 보통 1 미만, 성장주/IT 는 5+ 흔함. PBR 하나로 비싸다/싸다 단정 X.",
+    link: {
+      href: "https://ko.wikipedia.org/wiki/주가순자산비율",
+      label: "위키 PBR →",
+    },
+  },
+  roe: {
+    title: "ROE (자기자본이익률)",
+    body:
+      "Return on Equity. 당기순이익 ÷ 자기자본.\n" +
+      "'주주가 맡긴 돈으로 1년에 몇 % 벌었는가' 라는 수익성 지표. 높을수록 자본을 잘 굴리는 기업.\n" +
+      "한국 평균 ROE 는 8~10% 정도. 워런 버핏은 15% 이상 꾸준한 기업을 선호.",
+    link: {
+      href: "https://ko.wikipedia.org/wiki/자기자본이익률",
+      label: "위키 ROE →",
+    },
+  },
+
   // ─────────── Factor gates (학계/유명 전략) ───────────
   gate_kang_value: {
     title: "강환국 가치 (PBR<1.5 & ROE>10%)",

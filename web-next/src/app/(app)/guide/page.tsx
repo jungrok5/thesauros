@@ -12,7 +12,7 @@
  * 모든 수치 2026 한국 세법 기준. 면책: 정보 제공 목적, 결정은 본인 책임.
  */
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowLeft, AlertTriangle, ArrowRight, ChevronRight, Map } from "lucide-react";
 import { HelpTip } from "@/components/help-tip";
 
 // NB: `dynamic = "force-static"` was here, but it conflicted with the
@@ -496,8 +496,8 @@ export default function GuidePage() {
       </Link>
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          🗺️ 절세·연금 가이드
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Map className="h-6 w-6" /> 절세·연금 가이드
         </h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
           직접 투자 전 거쳐야 할 5단계. 다 안 하면 매년 정부가 주는{" "}
@@ -674,14 +674,11 @@ export default function GuidePage() {
             종목 검색 시작
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <Link
-            href="/glossary"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
-          >
-            용어집 보기
-            <ArrowRight className="h-4 w-4" />
-          </Link>
         </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
+          모르는 용어는 페이지 곳곳에 있는 점선 밑줄 / 물음표 (?) 아이콘 클릭 →
+          그 자리에서 짧은 설명이 뜹니다.
+        </p>
       </section>
 
       {/* 보조 도구 — 1년에 1번 (주로 12월) 쓰는 도구라 사이드바엔 안 넣고

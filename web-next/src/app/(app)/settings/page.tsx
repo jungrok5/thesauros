@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Shield, ChevronRight } from "lucide-react";
+import { Bell, Shield, ChevronRight, Settings } from "lucide-react";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,9 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">설정</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Settings className="h-6 w-6" /> 설정
+        </h1>
       </header>
 
       <section className="rounded-lg border border-border bg-card p-4">

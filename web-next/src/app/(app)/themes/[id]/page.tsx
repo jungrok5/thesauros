@@ -4,9 +4,10 @@
  * 추천 X — 사용자가 발견 → 종목 페이지에서 본인 검증.
  */
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Hash } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getServerClient } from "@/lib/supabase";
+import { HelpTip } from "@/components/help-tip";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -107,8 +108,8 @@ export default async function ThemeDetailPage({ params }: PageProps) {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          🏷️ {theme.name}
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Hash className="h-6 w-6" /> {theme.name}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           총 {members.length} 종목 (Naver Finance 기준). 강매수/매수 우선 정렬.
@@ -127,9 +128,15 @@ export default async function ThemeDetailPage({ params }: PageProps) {
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">종목</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">PER</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">PBR</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">ROE</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                    <HelpTip term="per">PER</HelpTip>
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                    <HelpTip term="pbr">PBR</HelpTip>
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                    <HelpTip term="roe">ROE</HelpTip>
+                  </th>
                   <th className="px-3 py-2 text-center font-medium text-muted-foreground">차트 신호</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">책 점수 (/10)</th>
                 </tr>

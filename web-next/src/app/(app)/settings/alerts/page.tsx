@@ -3,7 +3,7 @@
  * plus a guide for hooking up the bot the first time.
  */
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Bell } from "lucide-react";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
@@ -69,7 +69,9 @@ export default async function AlertsSettingsPage() {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">알림 설정</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Bell className="h-6 w-6" /> 알림 설정
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           신호가 감지되면 텔레그램으로 즉시 전송됩니다. 매주 금요일 17시 KST 자동 스캔.
         </p>

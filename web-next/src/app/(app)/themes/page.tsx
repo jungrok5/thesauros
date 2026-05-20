@@ -8,7 +8,7 @@
  * 추천/점수/시계열 (theme_daily) 은 완전 제거 — false-positive 우려 X.
  */
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Hash } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -105,7 +105,9 @@ export default async function ThemesPage() {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">🏷️ 테마</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Hash className="h-6 w-6" /> 테마
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           Naver Finance 기반 한국 시장 테마 분류. 종목수가 많은 순.
           테마 클릭 → 종목 list. 각 종목의 책 정신 분석은 종목 페이지에서.

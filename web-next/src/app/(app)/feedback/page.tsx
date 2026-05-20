@@ -5,7 +5,7 @@
  * the form itself is a client component (validation + submission state).
  */
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MessageSquare } from "lucide-react";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { FeedbackForm } from "./form-client";
@@ -84,8 +84,8 @@ export default async function FeedbackPage() {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          🛠️ 버그 및 건의사항
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <MessageSquare className="h-6 w-6" /> 버그 및 건의사항
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           이상한 동작을 발견했거나 새 기능 아이디어가 있으면 알려주세요. 접수

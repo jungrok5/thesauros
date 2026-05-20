@@ -9,6 +9,7 @@
  * 이름 + 색상. 종목 row 의 group_id 가 매핑. NULL group_id = 미분류 섹션.
  */
 import Link from "next/link";
+import { Star } from "lucide-react";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
@@ -163,7 +164,9 @@ export default async function WatchlistPage() {
   return (
     <div className="space-y-8 max-w-5xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">관심 종목</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Star className="h-6 w-6" /> 관심 종목
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           주봉 종가매매 모드 — 매주 금요일 17 시 KST 책 신호 자동 갱신.
           보유 종목 EXIT 신호 발생 시 텔레그램 즉시 알림.

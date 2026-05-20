@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Search } from "lucide-react";
 import { TickerSearch } from "@/components/ticker-search";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
@@ -43,7 +44,9 @@ export default async function StockSearchPage() {
   return (
     <div className="space-y-8 max-w-4xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">종목 검색</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Search className="h-6 w-6" /> 종목 검색
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           종목 코드 또는 한글 이름을 입력하면 추세 · 패턴 · 거래량 · 매매플랜
           분석 결과가 표시됩니다.

@@ -7,13 +7,14 @@
  * established tone of every other interpretation card on the site.
  */
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, Filter } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
 import {
   PRESETS,
   findPreset,
   type ScreenerPreset,
 } from "@/lib/screener-presets";
+import { HelpTip } from "@/components/help-tip";
 
 export const dynamic = "force-dynamic";
 
@@ -176,7 +177,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
 
       <header>
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Search className="h-6 w-6" /> 종목 스크리너
+          <Filter className="h-6 w-6" /> 종목 스크리너
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           KOSPI / KOSDAQ 약 2,700 종목 중 조건에 맞는 후보 발굴.
@@ -289,9 +290,15 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground">종목</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">PER</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">PBR</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">ROE</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                        <HelpTip term="per">PER</HelpTip>
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                        <HelpTip term="pbr">PBR</HelpTip>
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                        <HelpTip term="roe">ROE</HelpTip>
+                      </th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground">부채</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground">영업이익률</th>
                       <th className="px-3 py-2 text-center font-medium text-muted-foreground">매수 신호</th>

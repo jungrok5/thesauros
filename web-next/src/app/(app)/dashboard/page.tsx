@@ -7,6 +7,7 @@
  * MV=PQ를 한 카드(MarketActionCard)에 통합 (이전엔 3군데 중복). 거시
  * 지표 34개 카드는 핵심 8개만 우선 노출, 나머지는 펼침 토글.
  */
+import { Compass } from "lucide-react";
 import { StatePill } from "@/components/state-pill";
 import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
@@ -139,7 +140,9 @@ export default async function DashboardPage() {
   if (!row || !row.macro_indicators || !row.regime) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Macro</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Compass className="h-6 w-6" /> 거시 (Macro)
+        </h1>
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
           <div className="font-medium text-amber-700 dark:text-amber-300">
             거시 데이터가 아직 발행되지 않았습니다.
@@ -175,7 +178,9 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">거시 (Macro)</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Compass className="h-6 w-6" /> 거시 (Macro)
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           탑다운 1 단계 — 시장 전체 분위기 진단. 매크로가 약세면 개별 종목
           아무리 좋아도 진입 자제. 실시간 시세는 위쪽 띠, 월/분기 지표는 카드로.

@@ -10,12 +10,7 @@
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
-import {
-  aggregateFlowRows,
-  sortAndTake,
-  fmtKRW,
-  type RawFlowRow,
-} from "@/lib/flow-aggregate";
+import { fmtKRW } from "@/lib/flow-aggregate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 600;  // 10 min — investor_flow updates daily
@@ -96,7 +91,7 @@ export default async function FlowRankingPage() {
 
       <header>
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          💰 큰손 매매 랭킹
+          <TrendingUp className="h-6 w-6" /> 큰손 매매 랭킹
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           최근 14 일간 <strong>외국인 투자자 + 기관 (자산운용·연기금 등)</strong> 가
