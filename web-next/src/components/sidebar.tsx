@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
+  Calculator,
   Compass,
   Map,
   Menu,
@@ -26,6 +27,7 @@ const NAV = [
   { href: "/screener", label: "종목 스크리너", icon: Search },
   { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
   { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
+  { href: "/tax", label: "세금 시뮬", icon: Calculator },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/glossary", label: "용어집", icon: BookOpen },
   { href: "/feedback", label: "버그·건의", icon: MessageSquare },
