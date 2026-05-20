@@ -129,12 +129,13 @@ export default async function PendingPage() {
 }
 
 /**
- * Rendered when the DB says "approved" but the user's JWT cookie still
- * carries the older "pending" status (rendering /pending instead of
- * /dashboard, where they belong). The auth.ts JWT callback refreshes
- * the token at most every 60 s; in the meantime we offer an explicit
- * continue button. Reloading /dashboard after the next request goes
- * through clean — the proxy admits the user with the refreshed token.
+ * Rendered when the DB says "approved". With the per-request JWT
+ * refresh for pending users (auth.ts), the proxy itself catches the
+ * approved status on the next request — so this banner is mostly a
+ * brief in-flight courtesy: the user typically lands here for one
+ * page render, clicks the button, and the redirect chain takes them
+ * to /dashboard immediately (proxy refreshes JWT → sees approved →
+ * redirects /pending → /dashboard on its own from then on).
  */
 function ApprovedBanner() {
   return (
@@ -146,9 +147,7 @@ function ApprovedBanner() {
         ✅ 사용 요청이 승인되었습니다!
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed">
-        세션 토큰이 자동으로 갱신되는 데 최대 1분 정도 걸릴 수 있습니다.
-        아래 버튼을 누르면 대시보드로 이동합니다 — 처음 한 번은 새로고침이
-        한 번 필요할 수도 있어요.
+        아래 버튼을 누르면 대시보드로 이동합니다.
       </p>
       <a
         href="/dashboard"
