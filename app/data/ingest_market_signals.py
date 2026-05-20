@@ -1,22 +1,35 @@
-"""Ingest KR market signals — short sales, dividends, market warnings.
+"""Ingest KR market signals — market warnings + dividends.
 
-Schema lives in migrations/027_market_signals.sql. The companion UI
-interpreter is web-next/src/lib/market-signals-interpret.ts.
+⚠️ Data-source policy (2026-05-20 — pykrx 영구 폐기 후 확정):
 
-Data sources:
-  - 공매도 (shorting):   pykrx.stock.get_shorting_*
-  - 배당 (dividends):    pykrx.stock.get_market_fundamental_by_date
-                         + DART for ex-dividend date when available
-  - 시장 경고 (warnings): Naver m.stock.naver.com integration page
-                          parses 단기과열·관리·거래정지 labels.
+  KRX (pykrx 가 호출하는 거래소 공식 endpoint) 는 비-KR cloud IP 전부
+  차단. GH Actions, Vercel, AWS, Azure, GCP 모두 같음. 정책상 KRX 는
+  라이센스 받은 기관/증권사용 데이터 통로지 자유 scraping 대상 X.
 
-Engagement-set filtered for KR universe + watchlist + recently-accessed
-tickers to keep the daily-scan / weekly-fundamentals workloads bounded.
+  남은 cloud-reachable 데이터 소스:
 
-Usage:
-    python -m app.data.ingest_market_signals              # all signals
-    python -m app.data.ingest_market_signals --shorts      # one type
+    1. **DART OpenAPI** (공식, API key 등록, 무료) — 가장 안정.
+       공시 + 사업보고서 detail (재무, 배당, 5% 지분 변동) 모두 커버.
+
+    2. **Naver Finance mobile API** (비공식, 정책 변경 위험) — 시가총액
+       / 시세 / 일부 metadata 가용. 공식 API 아니므로 언제든 막힐 수
+       있어 retry + backoff 로 보호 + DART 가 커버 안 하는 데이터만 사용.
+
+    3. **FinanceDataReader** (cloud 작동) — KR 일봉 fallback 으로 사용 중.
+
+  소스별 데이터 매핑:
+
+    배당 (dividend_info)    : Naver finance.annual `주당배당금` (yearly)
+                              실시간성 X. 향후 DART cashDividend 추가 검토.
+    시장 경고 (market_warn) : Naver integration `iconInfos`
+                              KRX 외엔 다른 소스 없음 — Naver 막히면 손실.
+    공매도 (short_sales)    : **포기**. KRX 전용, cloud-reachable 소스
+                              0. UI 카드는 데이터 없으면 자동 hide.
+
+usage:
+    python -m app.data.ingest_market_signals
     python -m app.data.ingest_market_signals --tickers 005930.KS
+    python -m app.data.ingest_market_signals --dividends-only
 """
 from __future__ import annotations
 
@@ -25,9 +38,9 @@ import logging
 import re
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -39,15 +52,55 @@ from app.db import get_conn  # noqa: E402
 
 log = logging.getLogger("ingest_market_signals")
 
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "https://m.stock.naver.com/",
+}
+_INTEGRATION_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
+_FINANCE_ANNUAL_URL = (
+    "https://m.stock.naver.com/api/stock/{code}/finance/annual"
+)
+
+
+def _naver_get(url: str, max_retries: int = 3) -> Optional[dict]:
+    """GET with exponential backoff + jitter — defends against Naver
+    transient rate-limiting (429) or short outages (5xx). Returns parsed
+    JSON dict or None on terminal failure. We log failures at INFO level
+    only when ALL retries are exhausted; transient retries stay quiet.
+    """
+    import random
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=8)
+        except requests.RequestException as e:
+            if attempt + 1 == max_retries:
+                log.info("naver GET %s exhausted retries: %s", url, e)
+                return None
+            time.sleep((2 ** attempt) + random.random())
+            continue
+        if r.status_code == 200:
+            try:
+                return r.json()
+            except ValueError:
+                return None
+        # 429 / 5xx — back off; 4xx other — give up.
+        if r.status_code == 429 or r.status_code >= 500:
+            if attempt + 1 == max_retries:
+                log.info("naver %s → %d (exhausted)", url, r.status_code)
+                return None
+            time.sleep((2 ** attempt) + random.random())
+            continue
+        # 4xx other (404 etc.) — no retry.
+        return None
+    return None
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Ticker selection
 # ─────────────────────────────────────────────────────────────────────
 
 def _engagement_kr_tickers() -> List[str]:
-    """KR universe (KOSPI/KOSDAQ active) ∪ watchlist (engaged).
-    Same filter we use for bars/fundamentals to keep workload bounded.
-    """
+    """KR universe ∪ engaged watchlist — same filter as bars/fundamentals."""
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -68,145 +121,9 @@ def _engagement_kr_tickers() -> List[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# 공매도
+# 시장 경고 (Naver iconInfos)
 # ─────────────────────────────────────────────────────────────────────
 
-def _ingest_shorts_for_ticker(ticker: str, days_back: int = 30) -> int:
-    """Pull recent shorting status (last `days_back` days) for one ticker."""
-    code = ticker.split(".")[0]
-    try:
-        from pykrx import stock
-    except ImportError:
-        log.error("pykrx not installed")
-        return 0
-    end = date.today()
-    start = end - timedelta(days=days_back)
-    try:
-        # `get_shorting_status_by_date` returns: 공매도 / 매수 / 잔고 / 비율.
-        df = stock.get_shorting_status_by_date(
-            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code,
-        )
-    except Exception as e:
-        log.debug("shorting %s failed: %s", ticker, e)
-        return 0
-    if df is None or df.empty:
-        return 0
-    rows: List[Tuple] = []
-    for d_idx, row in df.iterrows():
-        try:
-            day = d_idx.date() if hasattr(d_idx, "date") else d_idx
-            # pykrx column names: 공매도, 매수, 비중, 잔고 (조회 시점에 따라)
-            short_vol = _first_nonneg(row, ("공매도", "공매도수량"))
-            total_vol = _first_nonneg(row, ("거래량", "매수"))
-            ratio = (
-                short_vol / total_vol if (short_vol is not None and total_vol)
-                else None
-            )
-            # Balance fields exist on the *balance* endpoint; fold a
-            # second call below.
-            rows.append((ticker, day, short_vol, None, total_vol, ratio,
-                         None, None, None))
-        except Exception:
-            continue
-    if not rows:
-        return 0
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO short_sales
-                  (ticker, day, short_volume, short_value, total_volume,
-                   short_ratio, balance_shares, balance_value, balance_ratio)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ticker, day) DO UPDATE SET
-                  short_volume = EXCLUDED.short_volume,
-                  total_volume = EXCLUDED.total_volume,
-                  short_ratio = EXCLUDED.short_ratio,
-                  updated_at = now()
-                """,
-                rows,
-            )
-    return len(rows)
-
-
-def _first_nonneg(row, names: Tuple[str, ...]) -> Optional[int]:
-    for n in names:
-        if n in row.index:
-            v = row[n]
-            try:
-                iv = int(v)
-                if iv >= 0:
-                    return iv
-            except (TypeError, ValueError):
-                continue
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 배당
-# ─────────────────────────────────────────────────────────────────────
-
-def _ingest_dividend_for_ticker(ticker: str) -> int:
-    """Latest dividend yield + DPS from pykrx; ex-dividend date heuristic.
-
-    pykrx's `get_market_fundamental_by_date` returns DIV (수익률) + DPS
-    (주당 배당금) per day. The "current" snapshot is what users want;
-    we take the most recent trading day. Ex-dividend date is not in
-    that endpoint — DART's company-info endpoint has it, but here we
-    leave it null and the UI shows "next 배당락" as inferred from
-    typical 12월 결산 timing.
-    """
-    code = ticker.split(".")[0]
-    try:
-        from pykrx import stock
-    except ImportError:
-        return 0
-    end = date.today()
-    start = end - timedelta(days=14)
-    try:
-        df = stock.get_market_fundamental_by_date(
-            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code,
-        )
-    except Exception as e:
-        log.debug("fundamental %s failed: %s", ticker, e)
-        return 0
-    if df is None or df.empty:
-        return 0
-    latest = df.iloc[-1]
-    dps = latest.get("DPS") if "DPS" in df.columns else None
-    div = latest.get("DIV") if "DIV" in df.columns else None
-    try:
-        dps_v = float(dps) if dps is not None else None
-        div_v = float(div) if div is not None else None
-    except (TypeError, ValueError):
-        return 0
-    # Skip when company has no dividend at all (DPS == 0 and DIV == 0).
-    if (dps_v in (None, 0)) and (div_v in (None, 0)):
-        return 0
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO dividend_info
-                  (ticker, dps, yield_pct, ex_dividend, record_date, payment_date)
-                VALUES (%s, %s, %s, NULL, NULL, NULL)
-                ON CONFLICT (ticker) DO UPDATE SET
-                  dps = EXCLUDED.dps,
-                  yield_pct = EXCLUDED.yield_pct,
-                  updated_at = now()
-                """,
-                (ticker, dps_v, div_v),
-            )
-    return 1
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 시장 경고
-# ─────────────────────────────────────────────────────────────────────
-
-# Korean label → our enum level. Strict map — anything not here is
-# ignored so a future Naver markup change can't smuggle in a new level
-# we don't handle in the UI interpreter.
 _WARNING_LABEL_MAP = {
     "거래정지": "trading_halt",
     "관리": "surveillance",
@@ -217,70 +134,6 @@ _WARNING_LABEL_MAP = {
     "단기과열": "overheat",
     "단기과열종목": "overheat",
 }
-
-_NAVER_INTEGRATION_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
-
-
-def _ingest_warnings_for_ticker(ticker: str) -> int:
-    """Scrape Naver's mobile stock page for the warning chips Korean
-    investors see right next to the ticker name. The integration JSON
-    has an `iconInfos` array — each entry's `code` field carries the
-    label (\"투자경고\" 등).
-    """
-    code = ticker.split(".")[0]
-    url = _NAVER_INTEGRATION_URL.format(code=code)
-    try:
-        r = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0",
-                     "Referer": "https://m.stock.naver.com/"},
-            timeout=8,
-        )
-    except requests.RequestException as e:
-        log.debug("naver warnings %s: %s", ticker, e)
-        return 0
-    if r.status_code != 200:
-        return 0
-    try:
-        payload = r.json()
-    except ValueError:
-        return 0
-    icons = (payload or {}).get("iconInfos") or []
-    found: List[Tuple[str, str, Optional[date], Optional[date]]] = []
-    for it in icons:
-        label = (it.get("code") or it.get("name") or "").strip()
-        level = _WARNING_LABEL_MAP.get(label)
-        if not level:
-            continue
-        # Naver may attach designation / expiry dates on some icons via
-        # the `tooltip` field; parse YYYY.MM.DD ~ YYYY.MM.DD ranges.
-        tooltip = (it.get("tooltip") or "")
-        des, exp = _parse_warning_range(tooltip)
-        found.append((level, tooltip or label, des, exp))
-
-    # 1. Delete prior rows for this ticker so removals propagate.
-    # 2. Insert current set.
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM market_warnings WHERE ticker = %s",
-                        (ticker,))
-            if found:
-                cur.executemany(
-                    """
-                    INSERT INTO market_warnings
-                      (ticker, level, reason, designated_at, expires_at)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (ticker, level) DO UPDATE SET
-                      reason = EXCLUDED.reason,
-                      designated_at = EXCLUDED.designated_at,
-                      expires_at = EXCLUDED.expires_at,
-                      updated_at = now()
-                    """,
-                    [(ticker, level, reason, des, exp)
-                     for level, reason, des, exp in found],
-                )
-    return len(found)
-
 
 _DATE_RE = re.compile(r"(\d{4}\.\d{2}\.\d{2})(?:\s*~\s*(\d{4}\.\d{2}\.\d{2}))?")
 
@@ -304,31 +157,149 @@ def _parse_warning_range(text: str) -> Tuple[Optional[date], Optional[date]]:
     return d1, d2
 
 
+def _ingest_warnings_for_ticker(ticker: str) -> int:
+    code = ticker.split(".")[0]
+    payload = _naver_get(_INTEGRATION_URL.format(code=code))
+    if payload is None:
+        return 0
+    icons = payload.get("iconInfos") or []
+    found: List[Tuple[str, str, Optional[date], Optional[date]]] = []
+    for it in icons:
+        label = (it.get("code") or it.get("name") or "").strip()
+        level = _WARNING_LABEL_MAP.get(label)
+        if not level:
+            continue
+        tooltip = (it.get("tooltip") or "")
+        des, exp = _parse_warning_range(tooltip)
+        found.append((level, tooltip or label, des, exp))
+
+    # Always delete prior rows so removals propagate even when no
+    # current warnings are flagged.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM market_warnings WHERE ticker = %s",
+                        (ticker,))
+            if found:
+                cur.executemany(
+                    """
+                    INSERT INTO market_warnings
+                      (ticker, level, reason, designated_at, expires_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (ticker, level) DO UPDATE SET
+                      reason = EXCLUDED.reason,
+                      designated_at = EXCLUDED.designated_at,
+                      expires_at = EXCLUDED.expires_at,
+                      updated_at = now()
+                    """,
+                    [(ticker, level, reason, des, exp)
+                     for level, reason, des, exp in found],
+                )
+    return len(found)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 배당 (Naver finance.annual)
+# ─────────────────────────────────────────────────────────────────────
+
+def _ingest_dividend_for_ticker(ticker: str) -> int:
+    """Pull 주당배당금 (DPS) from Naver finance.annual, compute yield
+    against the latest weekly close stored in `bars`. Skip when no DPS
+    or no price.
+    """
+    code = ticker.split(".")[0]
+    payload = _naver_get(_FINANCE_ANNUAL_URL.format(code=code))
+    if payload is None:
+        return 0
+    finance = payload.get("financeInfo") or {}
+    rows = finance.get("rowList") or []
+    title_list = finance.get("trTitleList") or []
+    # Find the latest non-consensus column key.
+    latest_actual_key: Optional[str] = None
+    for t in reversed(title_list):
+        if t.get("isConsensus") == "N":
+            latest_actual_key = t.get("key")
+            break
+    if not latest_actual_key:
+        return 0
+
+    dps: Optional[float] = None
+    for row in rows:
+        if row.get("title") == "주당배당금":
+            cols = row.get("columns") or {}
+            cell = cols.get(latest_actual_key)
+            if isinstance(cell, dict):
+                v = cell.get("value")
+                if v not in (None, "", "-"):
+                    try:
+                        dps = float(str(v).replace(",", ""))
+                    except (TypeError, ValueError):
+                        dps = None
+            break
+    if dps is None or dps <= 0:
+        # Company doesn't pay dividend; clear stale row if exists then skip.
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM dividend_info WHERE ticker = %s",
+                            (ticker,))
+        return 0
+
+    # Compute yield = DPS / latest close. Pull latest weekly close.
+    yield_pct: Optional[float] = None
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT close FROM bars WHERE ticker = %s AND granularity = 'W' "
+                "ORDER BY bar_date DESC LIMIT 1",
+                (ticker,),
+            )
+            row = cur.fetchone()
+    if row and row[0] is not None:
+        try:
+            close = float(row[0])
+            if close > 0:
+                yield_pct = (dps / close) * 100
+        except (TypeError, ValueError):
+            pass
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dividend_info
+                  (ticker, dps, yield_pct, ex_dividend, record_date, payment_date)
+                VALUES (%s, %s, %s, NULL, NULL, NULL)
+                ON CONFLICT (ticker) DO UPDATE SET
+                  dps = EXCLUDED.dps,
+                  yield_pct = EXCLUDED.yield_pct,
+                  updated_at = now()
+                """,
+                (ticker, dps, yield_pct),
+            )
+    return 1
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Orchestration
 # ─────────────────────────────────────────────────────────────────────
 
 def run_all(
     tickers: Optional[Iterable[str]] = None,
-    do_shorts: bool = True,
-    do_dividends: bool = True,
     do_warnings: bool = True,
-    sleep_between: float = 0.1,
+    do_dividends: bool = True,
+    sleep_between: float = 0.08,
 ) -> dict:
     if tickers is None:
         tickers = _engagement_kr_tickers()
     tickers = list(tickers)
-    log.info("ingest_market_signals: %d tickers", len(tickers))
+    log.info("ingest_market_signals: %d tickers (Naver-only)", len(tickers))
 
-    counts = {"shorts": 0, "dividends": 0, "warnings": 0, "errors": 0}
+    counts = {"warnings": 0, "dividends": 0, "errors": 0}
     for i, t in enumerate(tickers, 1):
         try:
-            if do_shorts:
-                counts["shorts"] += _ingest_shorts_for_ticker(t)
-            if do_dividends:
-                counts["dividends"] += _ingest_dividend_for_ticker(t)
             if do_warnings:
                 counts["warnings"] += _ingest_warnings_for_ticker(t)
+            if do_dividends:
+                counts["dividends"] += _ingest_dividend_for_ticker(t)
         except Exception as e:
             counts["errors"] += 1
             log.debug("ingest %s error: %s", t, e)
@@ -342,9 +313,8 @@ def run_all(
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--tickers", nargs="*", default=None)
-    p.add_argument("--shorts-only", action="store_true")
-    p.add_argument("--dividends-only", action="store_true")
     p.add_argument("--warnings-only", action="store_true")
+    p.add_argument("--dividends-only", action="store_true")
     args = p.parse_args(argv)
 
     logging.basicConfig(
@@ -352,15 +322,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    do_s = not (args.dividends_only or args.warnings_only)
-    do_d = not (args.shorts_only or args.warnings_only)
-    do_w = not (args.shorts_only or args.dividends_only)
-    run_all(
-        tickers=args.tickers,
-        do_shorts=do_s,
-        do_dividends=do_d,
-        do_warnings=do_w,
-    )
+    do_w = not args.dividends_only
+    do_d = not args.warnings_only
+    run_all(tickers=args.tickers, do_warnings=do_w, do_dividends=do_d)
     return 0
 
 
