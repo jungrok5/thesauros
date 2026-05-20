@@ -345,67 +345,53 @@ export default async function StockDetailPage({ params }: PageProps) {
         )
       ) : (
         <>
-          {/* CRITICAL: warning banner before anything else. If a stock
-              is 거래정지 / 관리종목, every other widget below is
-              irrelevant to the buy/sell decision. */}
-          <MarketWarningBanner warnings={ctx.warnings} />
-          <MarketHoursNotice />
-          <LastClose ticker={ticker} />
-          <InvestorFlow ticker={ticker} />
-          {/* 240MA 분석 미가능 안내 — bars 가 240주 미만이면 240MA
-              계산 불가. 대부분 신규 상장 종목 (예: 두산로보틱스 2023) 이
-              본질적 원인. backfill 시도 실패 확인 (2026-05-20) — FDR/Naver
-              가 상장 이전 데이터 자체를 모름. */}
-          {result?.trend?.weekly?.ma_240 == null && (
-            <div className="rounded-md border border-zinc-500/40 bg-zinc-500/5 px-3 py-2 text-xs leading-relaxed">
-              <div className="text-zinc-700 dark:text-zinc-300 font-medium">
-                ⏳ 240MA 분석 미가능 — 240주 (약 4.6년) 의 데이터가 아직 부족
+          {/* ─────────────────────────────────────────────────────────
+              그룹 1. 매매 결정 — 책 정신 핵심.
+              위험 경고 → 시장 상태 → 실시간 종가 → 한 줄 평 + 정리표.
+              사용자가 페이지 열고 "사야 하나/팔아야 하나" 즉답이 끝나는
+              최상단 fold. 페이지 ordering 의 절대적 우선순위.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            {/* CRITICAL: 거래정지 / 관리종목 이면 아래 위젯 다 무의미. */}
+            <MarketWarningBanner warnings={ctx.warnings} />
+            {/* 240MA 미계산 = 신규 상장 → 책 정신상 안전 게이트 결여. */}
+            {result?.trend?.weekly?.ma_240 == null && (
+              <div className="rounded-md border border-zinc-500/40 bg-zinc-500/5 px-3 py-2 text-xs leading-relaxed">
+                <div className="text-zinc-700 dark:text-zinc-300 font-medium">
+                  ⏳ 240MA 분석 미가능 — 240주 (약 4.6년) 의 데이터가 아직 부족
+                </div>
+                <div className="mt-1 text-muted-foreground">
+                  대부분 <strong>신규 상장 종목</strong> 이라 본질적 한계 (상장
+                  이전 데이터 없음). 대안: <strong>월봉 + 주봉 10MA</strong> 위주로
+                  추세 판단. 시간이 흐르면 자동으로 240MA 가능해집니다.
+                </div>
               </div>
-              <div className="mt-1 text-muted-foreground">
-                대부분 <strong>신규 상장 종목</strong> 이라 본질적 한계 (상장
-                이전 데이터 없음). 대안: <strong>월봉 + 주봉 10MA</strong> 위주로
-                추세 판단. 시간이 흐르면 자동으로 240MA 가능해집니다.
-              </div>
-            </div>
-          )}
-          {/* 분석 시점 vs 현재가 차이는 BookVerdict header chip 에 통합
-              (2026-05-20). 예전엔 outer amber banner 로 별도 노출했지만
-              chip + trigger-cleared note 가 같은 정보를 더 contextual 하게
-              담아서 중복 제거. */}
-          <AnalysisView
-            result={result}
-            flow={flow}
-            currentPrice={ctx.latestBar?.close ?? null}
-            currentBarDate={ctx.latestBar?.bar_date ?? null}
-            analyzedAt={analyzedAt}
-          />
-          <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
-          <ShortAndDividendCards
-            shorts={ctx.shorts}
-            dividend={ctx.dividend}
-            todayIso={new Date().toISOString().slice(0, 10)}
-          />
-          {/* 거래량 폭증 정보 — /volume-surge 페이지의 같은 메트릭을
-              단일 종목으로 표시. 폭증 목록에서 종목 상세 들어왔을 때
-              연속된 맥락 제공. */}
-          <VolumeSurgeCard surge={ctx.volumeSurge} />
-          {/* 투자자 인텔 카드들 — 데이터 없으면 각 카드가 자체적으로
-              null 반환해서 렌더 안 됨. 따로 if 분기 안 해도 됨. */}
-          <ConsensusCard
-            consensus={ctx.consensus}
-            currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
-          />
-          <HoldersCard holders={ctx.holders} />
-          <EarningsCalendarCard earnings={ctx.earnings} />
-          <div>
-            <h2 className="mb-2 text-lg font-semibold tracking-tight">
-              차트 (시각적 검증)
+            )}
+            <MarketHoursNotice />
+            <LastClose ticker={ticker} />
+            {/* 분석 시점 vs 현재가 차이는 BookVerdict header chip 통합
+                (2026-05-20). chip + trigger-cleared note 가 같은 정보 carry. */}
+            <AnalysisView
+              result={result}
+              flow={flow}
+              currentPrice={ctx.latestBar?.close ?? null}
+              currentBarDate={ctx.latestBar?.bar_date ?? null}
+              analyzedAt={analyzedAt}
+            />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 2. 차트 — 결정의 시각 검증
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">
+              📈 차트 (시각 검증)
             </h2>
-            <p className="mb-2 text-xs text-muted-foreground leading-relaxed">
-              매매 결론은 위 정리표 + 한 줄 평이 끝냅니다. 이 차트는 결론의
-              근거를 시각적으로 검증하는 용도. 크게 보기 버튼으로 확대.
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              매매 결론은 위 한 줄 평 + 정리표가 끝냅니다. 이 차트는 결론의
+              근거를 시각적으로 확인하는 용도.
             </p>
-            <ul className="mb-3 text-xs text-muted-foreground space-y-0.5 leading-relaxed">
+            <ul className="text-xs text-muted-foreground space-y-0.5 leading-relaxed">
               <li>
                 <span className="text-rose-600 dark:text-rose-400">빨간선 (240MA)</span> —
                 약 5년 평균선. 이 위면 장기 상승 추세, 아래면 약세.
@@ -416,15 +402,64 @@ export default async function StockDetailPage({ params }: PageProps) {
               </li>
               <li>
                 <span className="text-foreground">가로 수평선 (4등분선)</span> —
-                직전 장대양봉을 4 등분한 매매 자리. 0% (몸통 바닥) / 25% / 50% / 75% / 100% (몸통 천장)
-                다섯 라인. 25% 깨지면 책 정신상 손절 시그널.
+                직전 장대양봉을 4 등분한 매매 자리. 0% / 25% / 50% / 75% / 100%.
+                25% 깨지면 책 정신상 손절.
               </li>
             </ul>
             <BookChart ticker={ticker} timeframe="weekly" years={5} />
-          </div>
-          <div className="mt-8">
-            <h2 className="mb-3 text-lg font-semibold tracking-tight">
-              종목 정보
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 3. 시장 흐름 — 큰 손 + 거래량.
+              실시간 종가는 그룹 1 에 있고, 여기는 "수급 + 거래량" 두 축.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">
+              💸 시장 흐름 (수급 · 거래량)
+            </h2>
+            <InvestorFlow ticker={ticker} />
+            <VolumeSurgeCard surge={ctx.volumeSurge} />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 4. 펀더멘털 검증 — PER/PBR/ROE + 배당/공매도.
+              차트는 추세, 여기는 회사의 "재무 상태".
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">
+              🏛️ 펀더멘털 검증
+            </h2>
+            <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
+            <ShortAndDividendCards
+              shorts={ctx.shorts}
+              dividend={ctx.dividend}
+              todayIso={new Date().toISOString().slice(0, 10)}
+            />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 5. 외부 의견 / 일정 — 참고 정보.
+              컨센서스 (목표주가) + 큰손 5% 지분 + 실적 발표 일정. 각
+              카드는 데이터 없으면 자체적으로 null 반환해서 렌더 X.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">
+              🔍 외부 의견 · 일정
+            </h2>
+            <ConsensusCard
+              consensus={ctx.consensus}
+              currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
+            />
+            <HoldersCard holders={ctx.holders} />
+            <EarningsCalendarCard earnings={ctx.earnings} />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 6. 심화 정보 — 공시 / 재무 / 펀더 상세 탭.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight">
+              📋 종목 정보 (상세)
             </h2>
             <StockContextTabs
               ticker={ticker}
@@ -432,7 +467,7 @@ export default async function StockDetailPage({ params }: PageProps) {
               fin={ctx.fin}
               fac={ctx.fac}
             />
-          </div>
+          </section>
         </>
       )}
     </div>
