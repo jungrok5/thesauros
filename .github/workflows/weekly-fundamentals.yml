@@ -125,14 +125,16 @@ jobs:
           # (~3K API calls), runs in <10 min.
           timeout 15m python -m app.data.ingest_company_profile
       - name: Evaluate financials + factors
-        # Eval is fast (~5 min) and is the final value-add of this
-        # workflow — let it run to completion (no continue-on-error).
-        # 10-min timeout absorbs slow Supabase batches.
+        # Eval scans ~2,700 KR tickers + computes PER/PBR + 4-axis +
+        # gates. 10 min was too tight (last run timed out). Bumped to
+        # 30 min with continue-on-error so the trailing retention
+        # sweep still runs if eval is slow.
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: timeout 10m python -m app.db.eval_financials --verbose
+        run: timeout 30m python -m app.db.eval_financials --verbose
       - name: Retention sweep (post-ingest)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
