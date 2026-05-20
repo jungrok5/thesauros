@@ -121,6 +121,15 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: timeout 25m python -m app.data.ingest_institutional_ownership
+      - name: KR themes (Naver Finance scrape)
+        # ~265 테마 + 6K members. weekly 빈도 충분 (테마 자체는 변동
+        # 빈도 낮음). 2026-05-20 부활 — 추천/점수 X, 단순 list.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: timeout 10m python -m app.db.ingest_themes
       - name: Earnings calendar (KR filing cadence)
         # Pure DB-side seed — no external calls. Inserts the next 4
         # legal filing cutoffs per ticker (1Q/2Q/3Q/FY). UI joins

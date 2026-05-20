@@ -24,6 +24,7 @@ const NAV = [
   { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/screener", label: "종목 스크리너", icon: Search },
+  { href: "/themes", label: "테마", icon: BookOpen },
   { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
   { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
   { href: "/watchlist", label: "관심 종목", icon: Star },

@@ -68,6 +68,8 @@ _RETENTION_EXEMPT = {
     "push_subscriptions",     # 1 row per user × endpoint
     "health_ping",            # 1 row total — Supabase keepalive ping
     "watchlist_groups",       # 1 row per user × group (bounded), user-owned
+    "themes",                 # ~265 rows (Naver theme universe), weekly upsert
+    "theme_members",          # ~6K rows, fully replaced per theme on each cron
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.
