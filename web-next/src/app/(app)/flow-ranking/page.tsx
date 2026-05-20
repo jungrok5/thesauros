@@ -31,29 +31,34 @@ type Row = {
 
 async function fetchTopRows(direction: "buy" | "sell", limit = 30): Promise<Row[]> {
   const sb = getServerClient();
-  // 14d window matches investor_flow retention. SUM per ticker.
-  // PostgREST doesn't aggregate directly — pull last 14 days then
-  // aggregate in JS. Cost: ~2700 tickers × 14 days = ~38K rows max.
-  const since = new Date(Date.now() - 14 * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-  const { data, error } = await sb
-    .from("investor_flow")
-    .select("ticker, day, foreign_net, institution_net")
-    .gte("day", since);
+  // Server-side aggregation via top_flow_rankings RPC (migration 033).
+  // 2026-05-20 audit 발견: PostgREST max_rows hard cap = 1000 이라
+  // explicit .limit() 명시해도 27K rows 중 첫 1K 만 도착, 랭킹이 부정확.
+  // RPC 가 DB-side GROUP BY 로 집계해서 ~30 row 만 wire 전송.
+  const { data, error } = await sb.rpc("top_flow_rankings", {
+    p_days_back: 14,
+    p_limit: limit,
+    p_direction: direction,
+  });
   if (error || !data) {
-    console.error("flow-ranking read:", error?.message);
+    console.error("top_flow_rankings rpc:", error?.message);
     return [];
   }
-  const flows = data as unknown as RawFlowRow[];
-  const aggregated = aggregateFlowRows(flows);
-  const top: Row[] = sortAndTake(aggregated, direction, limit).map((a) => ({
-    ticker: a.ticker,
+  type RpcRow = {
+    ticker: string;
+    foreign_sum: string | number | null;
+    institution_sum: string | number | null;
+    combined_sum: string | number | null;
+    days: number;
+  };
+  const rpcRows = data as unknown as RpcRow[];
+  const top: Row[] = rpcRows.map((r) => ({
+    ticker: r.ticker,
     name: null,
-    foreign_sum: a.foreign_sum,
-    institution_sum: a.institution_sum,
-    combined_sum: a.combined_sum,
-    days: a.days,
+    foreign_sum: Number(r.foreign_sum ?? 0),
+    institution_sum: Number(r.institution_sum ?? 0),
+    combined_sum: Number(r.combined_sum ?? 0),
+    days: Number(r.days ?? 0),
   }));
   // Fetch names.
   const tickers = top.map((r) => r.ticker);

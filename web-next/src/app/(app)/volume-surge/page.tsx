@@ -12,10 +12,8 @@ import Link from "next/link";
 import { ArrowLeft, Volume2 } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
 import {
-  detectSurges,
   interpretSurge,
   fmtVol,
-  type WeekBar,
   type SurgeHit,
 } from "@/lib/volume-surge";
 
@@ -26,23 +24,39 @@ type Hit = SurgeHit & { name: string | null };
 
 async function fetchSurges(): Promise<Hit[]> {
   const sb = getServerClient();
-  // 9 주 = 이번 주 + 직전 8 주 평균용
-  const since = new Date(Date.now() - 9 * 7 * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-  const { data, error } = await sb
-    .from("bars")
-    .select("ticker, bar_date, close, volume")
-    .eq("granularity", "W")
-    .gte("bar_date", since)
-    .order("bar_date", { ascending: false });
+  // Server-side aggregation via volume_surges RPC (migration 033).
+  // 2026-05-20 audit: PostgREST max_rows hard cap = 1000 이라 9주 × ~2900
+  // tickers = 26K rows 중 첫 1K 만 도착하던 문제 fix. RPC 는 DB-side
+  // window function 으로 ticker 별 this/avg 계산 후 ~30 row 만 전송.
+  const { data, error } = await sb.rpc("volume_surges", {
+    p_min_ratio: 2.0,
+    p_min_samples: 4,
+    p_limit: 30,
+  });
   if (error || !data) {
-    console.error("volume-surge bars:", error?.message);
+    console.error("volume_surges rpc:", error?.message);
     return [];
   }
-  const rows = data as unknown as WeekBar[];
-  const detected = detectSurges(rows);
-  const top: Hit[] = detected.slice(0, 30).map((h) => ({ ...h, name: null }));
+  type RpcRow = {
+    ticker: string;
+    this_week_vol: string | number | null;
+    avg_vol: string | number | null;
+    ratio: string | number | null;
+    this_week_close: string | number | null;
+    prev_week_close: string | number | null;
+    price_change_pct: string | number | null;
+  };
+  const rpcRows = data as unknown as RpcRow[];
+  const top: Hit[] = rpcRows.map((r) => ({
+    ticker: r.ticker,
+    name: null,
+    thisWeekVol: Number(r.this_week_vol ?? 0),
+    avgVol: Number(r.avg_vol ?? 0),
+    ratio: Number(r.ratio ?? 0),
+    thisWeekClose: Number(r.this_week_close ?? 0),
+    prevWeekClose: Number(r.prev_week_close ?? 0),
+    priceChangePct: Number(r.price_change_pct ?? 0),
+  }));
   // Names.
   if (top.length > 0) {
     const { data: namesRaw } = await sb
