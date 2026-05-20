@@ -42,7 +42,7 @@ export async function GET() {
   const sb = getServerClient();
   const { data, error } = await sb
     .from("watchlist")
-    .select("id, ticker, category, entry_price, entry_date, note, alerts_enabled, created_at")
+    .select("id, ticker, category, group_id, entry_price, entry_date, note, alerts_enabled, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) return dbError(error);
@@ -75,6 +75,20 @@ export async function POST(req: NextRequest) {
     ? Number(body.stop_price) : null;
   const stopPct = Number.isFinite(Number(body.stop_pct_from_entry))
     ? Number(body.stop_pct_from_entry) : null;
+  // group_id: null = 미분류 (관심 종목 페이지 기본 그룹). number = 사용자 정의 그룹.
+  // 클라이언트가 group_id 를 안 넘기면 (undefined) UPSERT 시 NULL 처리.
+  // typeof guard 추가 (2026-05-20) — `[]` / `{}` 같은 비정상 입력이
+  // Number([]) === 0 으로 coerce 되어 group_id=0 (FK violation) 으로
+  // 새는 것 차단.
+  const rawGroup = body.group_id;
+  const groupId =
+    rawGroup == null || rawGroup === ""
+      ? null
+      : (typeof rawGroup === "number" || typeof rawGroup === "string") &&
+          Number.isInteger(Number(rawGroup)) &&
+          Number(rawGroup) > 0
+        ? Number(rawGroup)
+        : null;
 
   // FK guard: `watchlist.ticker` references `tickers.ticker`. If a user
   // hits this with a ticker that isn't yet in our master (US name
@@ -114,6 +128,7 @@ export async function POST(req: NextRequest) {
 
   const payload: Record<string, unknown> = {
     user_id: userId, ticker, category, note,
+    group_id: groupId,
     entry_price: entryPrice, entry_date: entryDate,
     target_price: targetPrice,
     target_pct_from_entry: targetPct,
@@ -138,6 +153,54 @@ export async function POST(req: NextRequest) {
     void dispatchAnalyzeTicker(ticker);
   }
 
+  return NextResponse.json({ item: data });
+}
+
+/**
+ * PATCH /api/watchlist  — { id, group_id?, category? }
+ *
+ * Lightweight update for a single field — currently group_id (그룹 이동) +
+ * category (관심 ↔ 보유 전환). Doesn't touch entry/target/stop fields
+ * (use POST for those, which goes through the full upsert path).
+ */
+export async function PATCH(req: NextRequest) {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const body = await req.json().catch(() => ({}));
+  const id = Number(body.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  const update: Record<string, unknown> = {};
+  if ("group_id" in body) {
+    const g = body.group_id;
+    update.group_id =
+      g == null || g === ""
+        ? null
+        : (typeof g === "number" || typeof g === "string") &&
+            Number.isInteger(Number(g)) &&
+            Number(g) > 0
+          ? Number(g)
+          : null;
+  }
+  if (body.category === "holding" || body.category === "observing") {
+    update.category = body.category;
+  }
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "no fields" }, { status: 400 });
+  }
+
+  const userId = await ensureUserId(user.email, user.name);
+  const sb = getServerClient();
+  const { data, error } = await sb
+    .from("watchlist")
+    .update(update)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) return dbError(error);
   return NextResponse.json({ item: data });
 }
 

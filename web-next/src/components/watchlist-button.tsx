@@ -65,7 +65,7 @@ export function WatchlistButton({
             : "bg-background border-input hover:bg-muted"
         }`}
       >
-        {added && category === "observing" ? "✓ 관찰 중" : "+ 관찰"}
+        {added && category === "observing" ? "✓ 관심 종목" : "+ 관심"}
       </button>
       <button
         type="button"

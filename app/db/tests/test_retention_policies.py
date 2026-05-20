@@ -67,6 +67,7 @@ _RETENTION_EXEMPT = {
     "dividend_info",          # 1 row per ticker (covered by engagement filter)
     "push_subscriptions",     # 1 row per user × endpoint
     "health_ping",            # 1 row total — Supabase keepalive ping
+    "watchlist_groups",       # 1 row per user × group (bounded), user-owned
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.

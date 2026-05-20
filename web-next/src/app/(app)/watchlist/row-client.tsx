@@ -9,6 +9,7 @@ type Row = {
   id: number;
   ticker: string;
   category: "observing" | "holding";
+  group_id: number | null;
   entry_price: number | null;
   entry_date: string | null;
   note: string | null;
@@ -25,12 +26,20 @@ type Row = {
   fresh?: { kind: string; runupPct: number } | null;
 };
 
+export type GroupOption = { id: number; name: string; color: string | null };
+
 function fmt(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return "";
   return String(n);
 }
 
-export function WatchlistRowClient({ row }: { row: Row }) {
+export function WatchlistRowClient({
+  row,
+  groups = [],
+}: {
+  row: Row;
+  groups?: GroupOption[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -39,6 +48,24 @@ export function WatchlistRowClient({ row }: { row: Row }) {
   const [targetPct, setTargetPct] = useState(fmt(row.target_pct_from_entry));
   const [stop, setStop] = useState(fmt(row.stop_price));
   const [stopPct, setStopPct] = useState(fmt(row.stop_pct_from_entry));
+
+  async function moveToGroup(newGroupId: number | null) {
+    if (busy || newGroupId === row.group_id) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/watchlist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, group_id: newGroupId }),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      router.refresh();
+    } catch (e) {
+      alert(`그룹 이동 실패: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function remove() {
     if (busy) return;
@@ -167,7 +194,28 @@ export function WatchlistRowClient({ row }: { row: Row }) {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 그룹 이동 dropdown — observing 종목만 그룹 분류 가능.
+              holding (보유) 은 자체 "보유" 섹션이 별도라 그룹 dropdown 안 보임. */}
+          {row.category === "observing" && (
+            <select
+              value={row.group_id ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                moveToGroup(v === "" ? null : Number(v));
+              }}
+              disabled={busy}
+              className="text-xs px-2 py-1 rounded border border-input bg-background hover:bg-muted/30 disabled:opacity-50"
+              title="그룹 이동"
+            >
+              <option value="">📁 미분류</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  📁 {g.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}

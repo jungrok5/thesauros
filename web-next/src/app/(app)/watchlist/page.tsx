@@ -1,13 +1,19 @@
 /**
- * Watchlist — per-user list, fetched server-side by NextAuth email.
+ * /watchlist — 사용자별 관심 종목.
  *
- * Client-side delete via /api/watchlist (handled by `WatchlistRow`).
+ * 두 카테고리:
+ *   - 보유 (category='holding')    — 자기 own 섹션 — EXIT 알림 활성
+ *   - 관심 (category='observing') — 사용자 정의 그룹별 분리 (미분류 = 그룹 없음)
+ *
+ * 그룹: watchlist_groups 테이블 (migration 031, 2026-05-20). 사용자 정의
+ * 이름 + 색상. 종목 row 의 group_id 가 매핑. NULL group_id = 미분류 섹션.
  */
 import Link from "next/link";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
 import { WatchlistRowClient } from "./row-client";
+import { GroupManager, groupColorClass } from "./group-manager-client";
 import {
   pickFreshest,
   type FreshnessPatternInput,
@@ -20,6 +26,7 @@ type RawWatchlistRow = {
   id: number;
   ticker: string;
   category: "observing" | "holding";
+  group_id: number | null;
   entry_price: number | null;
   entry_date: string | null;
   note: string | null;
@@ -34,25 +41,39 @@ type RawWatchlistRow = {
   tickers?: { name?: string; market?: string } | null;
 };
 
-async function fetchWatchlist(email: string, name: string | null) {
+type RawGroup = {
+  id: number;
+  name: string;
+  color: string | null;
+  order_index: number;
+};
+
+async function fetchAll(email: string, name: string | null) {
   const userId = await ensureUserId(email, name);
   const sb = getServerClient();
-  const { data, error } = await sb
-    .from("watchlist")
-    .select(
-      "id, ticker, category, entry_price, entry_date, note, alerts_enabled, " +
-        "target_price, target_pct_from_entry, stop_price, stop_pct_from_entry, " +
-        "target_hit_at, stop_hit_at, created_at, tickers:ticker(name, market)",
-    )
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  const rows = (data ?? []) as unknown as RawWatchlistRow[];
 
-  // Bulk-fetch latest active scan signal + analyze_results for each ticker
-  // so the row can display the freshness chip + Korean signal label that
-  // tells the user "is the book still saying BUY this week, or has it
-  // shifted to SELL?". Same shape as the stock-detail page's verdict.
+  // Watchlist + groups in parallel.
+  const [wlR, grR] = await Promise.all([
+    sb.from("watchlist")
+      .select(
+        "id, ticker, category, group_id, entry_price, entry_date, note, alerts_enabled, " +
+          "target_price, target_pct_from_entry, stop_price, stop_pct_from_entry, " +
+          "target_hit_at, stop_hit_at, created_at, tickers:ticker(name, market)",
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false }),
+    sb.from("watchlist_groups")
+      .select("id, name, color, order_index")
+      .eq("user_id", userId)
+      .order("order_index", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (wlR.error) throw new Error(wlR.error.message);
+  const rows = (wlR.data ?? []) as unknown as RawWatchlistRow[];
+  const groups = (grR.data ?? []) as unknown as RawGroup[];
+
+  // Bulk-fetch signals + analyze_results (same as before).
   const tickers = rows.map((r) => r.ticker);
   const signalByTicker = new Map<string, { type: string; strength: number }>();
   const analyzeByTicker = new Map<
@@ -87,7 +108,7 @@ async function fetchWatchlist(email: string, name: string | null) {
     }
   }
 
-  return rows.map((r) => {
+  const enriched = rows.map((r) => {
     const signal = signalByTicker.get(r.ticker) ?? null;
     const analyze = analyzeByTicker.get(r.ticker);
     const lastClose = analyze?.last_close ?? 0;
@@ -103,32 +124,56 @@ async function fetchWatchlist(email: string, name: string | null) {
       fresh: fresh ? { kind: fresh.kind, runupPct: fresh.runupPct } : null,
     };
   });
+
+  return { rows: enriched, groups };
 }
 
 export default async function WatchlistPage() {
   const session = await auth();
   if (!session?.user?.email) redirect("/login");
 
-  const rows = await fetchWatchlist(
+  const { rows, groups } = await fetchAll(
     session.user.email.toLowerCase(),
     session.user.name ?? null,
   );
 
   const holding = rows.filter((r) => r.category === "holding");
   const observing = rows.filter((r) => r.category === "observing");
+  // 그룹별 분류 — id → rows. group_id == null 은 "미분류"
+  const byGroup = new Map<number, typeof observing>();
+  const unassigned: typeof observing = [];
+  for (const r of observing) {
+    if (r.group_id == null) {
+      unassigned.push(r);
+    } else {
+      const arr = byGroup.get(r.group_id) ?? [];
+      arr.push(r);
+      byGroup.set(r.group_id, arr);
+    }
+  }
+
+  // Group options for the row dropdown (id + name + color)
+  const groupOptions = groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    color: g.color,
+  }));
 
   return (
     <div className="space-y-8 max-w-5xl">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">관심 종목</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          주봉 종가매매 모드 — 매주 금요일 17시 KST 책 신호 자동 갱신. 보유 종목에 EXIT 신호 발생 시 텔레그램 알림.
+          주봉 종가매매 모드 — 매주 금요일 17 시 KST 책 신호 자동 갱신.
+          보유 종목 EXIT 신호 발생 시 텔레그램 즉시 알림.
         </p>
       </header>
 
+      <GroupManager groups={groups} />
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          보유 ({holding.length})
+          💼 보유 ({holding.length})
         </h2>
         {holding.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
@@ -138,27 +183,63 @@ export default async function WatchlistPage() {
           <ul className="space-y-2">
             {holding.map((r) => (
               <li key={r.id}>
-                <WatchlistRowClient row={r} />
+                <WatchlistRowClient row={r} groups={groupOptions} />
               </li>
             ))}
           </ul>
         )}
       </section>
 
+      {/* 그룹별 관심 종목 — 빈 그룹도 헤더는 보임 (드롭다운 매뉴를 위한 hint) */}
+      {groups.map((g) => {
+        const items = byGroup.get(g.id) ?? [];
+        return (
+          <section key={g.id} className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide flex items-center gap-2">
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded border text-xs ${groupColorClass(g.color)}`}
+              >
+                📁 {g.name}
+              </span>
+              <span className="text-muted-foreground">({items.length})</span>
+            </h2>
+            {items.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4 text-xs text-muted-foreground">
+                비어 있음. 관심 종목 행의 그룹 dropdown 으로 이동하세요.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {items.map((r) => (
+                  <li key={r.id}>
+                    <WatchlistRowClient row={r} groups={groupOptions} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          관찰 ({observing.length})
+          {groups.length > 0 ? `📂 미분류 (${unassigned.length})` : `👀 관심 (${unassigned.length})`}
         </h2>
-        {observing.length === 0 ? (
+        {unassigned.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-            관찰 중인 종목이 없습니다.{" "}
-            <Link href="/stocks" className="underline">종목 검색</Link>에서 추가하세요.
+            {groups.length > 0
+              ? "미분류 종목이 없습니다."
+              : (
+                <>
+                  관심 종목이 없습니다.{" "}
+                  <Link href="/stocks" className="underline">종목 검색</Link>에서 추가하세요.
+                </>
+              )}
           </div>
         ) : (
           <ul className="space-y-2">
-            {observing.map((r) => (
+            {unassigned.map((r) => (
               <li key={r.id}>
-                <WatchlistRowClient row={r} />
+                <WatchlistRowClient row={r} groups={groupOptions} />
               </li>
             ))}
           </ul>
