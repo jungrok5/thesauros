@@ -83,7 +83,12 @@ jobs:
             echo "Skipping scan on dow=$dow (only Friday + manual dispatch)"
             exit 0
           fi
-          python -m app.db.scan_daily --watchlist-only
+          # 2026-05-20: --watchlist-only 제거 → 전 KR 활성 종목 매일 재분석.
+          # 측정: 종목당 ~0.13초 × 2,700 = ~6분. 30분 cron budget 안에 여유.
+          # 효과: analyze_results 가 매일 fresh → 폭증/스크리너/검색 페이지의
+          # 가격 / action / score 가 항상 최신. 그동안 search-only pivot
+          # 으로 watchlist 외 종목 며칠~주 stale 던 문제 근본 해결.
+          python -m app.db.scan_daily
 
       - name: Publish macro state
         env:
