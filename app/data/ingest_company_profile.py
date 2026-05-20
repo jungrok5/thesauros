@@ -142,16 +142,31 @@ def kr_company_profile(ticker: str) -> Optional[Dict[str, Any]]:
     est = info.get("est_dt")
     if isinstance(est, str) and len(est) == 8 and est.isdigit():
         founded = f"{est[:4]}-{est[4:6]}-{est[6:]}"
+    # DART industry_code (3-5자리 KSIC) → 한글 산업명 매핑. 코드 자체보다
+    # 사용자한테 "알루미늄 압연제품 제조업" 같은 한글이 즉시 유의미.
+    # 매핑 없으면 raw 코드를 fallback 으로 노출.
+    from app.data.ksic_industry_map import ksic_korean_name
+    induty_code = info.get("induty_code") or None
+    industry_kr = ksic_korean_name(induty_code)
+    industry_field = industry_kr or induty_code
+    # Summary 에도 산업명 prepend 해서 키워드 검색 (예: "알루미늄") 매치
+    # 가능하게. 회사명 + 산업 + 주소 + 결산월 순.
+    summary_parts = [
+        f"{info.get('corp_name', '')} ({info.get('corp_name_eng', '')})",
+    ]
+    if industry_kr:
+        summary_parts.append(f"업종: {industry_kr}")
+    if info.get("adres"):
+        summary_parts.append(f"본사: {info['adres']}")
+    if info.get("acc_mt"):
+        summary_parts.append(f"결산월: {info['acc_mt']}")
+    summary = " · ".join(p for p in summary_parts if p).strip() or None
     return {
         "ticker": ticker,
         "source": "DART",
-        "industry": info.get("induty_code") or None,
+        "industry": industry_field,
         "sectors": None,           # DART doesn't expose sector list directly
-        "summary": (
-            f"{info.get('corp_name', '')} ({info.get('corp_name_eng', '')})"
-            + ((" — 본사 " + info.get("adres", "")) if info.get("adres") else "")
-            + ((" / 결산월 " + str(info.get("acc_mt", ""))) if info.get("acc_mt") else "")
-        ).strip() or None,
+        "summary": summary,
         "ceo": info.get("ceo_nm") or None,
         "founded": founded,
         "hq": info.get("adres") or None,
