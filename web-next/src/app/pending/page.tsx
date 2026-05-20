@@ -104,10 +104,41 @@ export default async function PendingPage() {
         )}
 
         {status !== "approved" && (
-          <PendingForm
-            initialReason={request?.reason ?? ""}
-            alreadyPending={!!request?.requested_at && !request.decided_at}
-          />
+          <>
+            {/* 동의 사항 — 권한 요청 제출 = 아래 두 가지에 동의로 간주.
+                별도 체크박스 없이 버튼 클릭 자체가 동의 행동. */}
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-xs space-y-3 leading-relaxed">
+              <div className="text-[11px] uppercase tracking-widest text-amber-700 dark:text-amber-300 font-medium">
+                📋 사용 요청 전에 — 동의 사항
+              </div>
+              <div className="space-y-1">
+                <div className="font-medium">
+                  ⚠️ 매매 결정과 손익은 본인 책임
+                </div>
+                <p className="text-muted-foreground">
+                  사이트의 신호 · 점수 · 액션은 알고리즘 분석 결과 — 미래
+                  수익 보장 X. 본인 판단 우선, 손실이 발생해도 운영자에게
+                  책임 X.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <div className="font-medium">
+                  🔧 개발 중 — 데이터 오류 가능
+                </div>
+                <p className="text-muted-foreground">
+                  외부 API (Naver / DART / SEC) + 자체 계산이라 오류·지연
+                  가능. 중요 결정 전엔 증권사 앱 / 공식 공시로 재확인.
+                </p>
+              </div>
+              <div className="pt-1 border-t border-amber-500/20 text-amber-700 dark:text-amber-300">
+                「사용 요청 보내기」를 누르면 위 두 가지에 동의로 간주됩니다.
+              </div>
+            </div>
+            <PendingForm
+              initialReason={request?.reason ?? ""}
+              alreadyPending={!!request?.requested_at && !request.decided_at}
+            />
+          </>
         )}
 
         <form
