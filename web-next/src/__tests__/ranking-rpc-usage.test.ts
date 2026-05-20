@@ -69,4 +69,12 @@ describe("/screener uses server-side RPC (no JS aggregation)", () => {
       /sb\.from\(["']analyze_results["']\)\.select\([^)]*\)\.in\(/
     );
   });
+
+  it("page mentions the secondary-sort behaviour in copy", () => {
+    // The header copy should NOT lie about pure book_score sort —
+    // we now sort by action priority too. Future-self should know.
+    const src = read("screener", "page.tsx");
+    expect(src).toMatch(/책 점수/);
+    expect(src).toMatch(/ROE/);
+  });
 });
