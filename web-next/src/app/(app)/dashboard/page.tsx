@@ -175,9 +175,10 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">거시 환경</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">거시 (Macro)</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          탑다운 1단계 — 글로벌 + 거시 → 책 정신상 종목 진입 자격 판정. 실시간 시세는 띠로, 월간/분기 지표는 카드로.
+          탑다운 1 단계 — 시장 전체 분위기 진단. 매크로가 약세면 개별 종목
+          아무리 좋아도 진입 자제. 실시간 시세는 위쪽 띠, 월/분기 지표는 카드로.
         </p>
       </header>
 
@@ -284,15 +285,18 @@ function IndicatorCard({ it, compact = false }: { it: IndicatorState; compact?: 
         💡 {verdict.impact}
       </p>
       <p className="text-xs leading-relaxed mt-1">{verdict.action}</p>
-      {/* cron-generated verdict (legacy) — 디버그용으로 작게 남김 */}
-      {it.verdict && (
-        <p className="text-[10px] text-muted-foreground/60 mt-1 italic">
-          ({it.verdict})
-        </p>
+      {/* cron-generated `it.verdict` was previously rendered here as
+          a small italic backup. Removed 2026-05-20 (audit): duplicates
+          the 💡 impact + action lines above and confuses users with
+          "왜 두 줄로 비슷한 말이 두 번 나오지?". Field still exists
+          in the DB for legacy compatibility. */}
+      {/* as_of 가 없으면 빈 footer 영역을 만들지 않음 — "—" 만 보이던
+          무가치 한 줄 제거. */}
+      {it.as_of && (
+        <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground/70 text-right">
+          {it.as_of}
+        </div>
       )}
-      <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground/70 text-right">
-        {it.as_of ?? "—"}
-      </div>
     </article>
   );
 }

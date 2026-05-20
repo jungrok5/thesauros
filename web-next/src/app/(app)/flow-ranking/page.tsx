@@ -91,11 +91,12 @@ export default async function FlowRankingPage() {
 
       <header>
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          💰 외인 + 기관 누적 매수 랭킹
+          💰 큰손 매매 랭킹
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          최근 14일간 외국인 + 기관이 가장 많이 산 종목 (위) / 가장 많이 판 종목 (아래).
-          큰 손의 자금이 어디로 모이고 있는지 한눈에.
+          최근 14 일간 <strong>외국인 투자자 + 기관 (자산운용·연기금 등)</strong> 가
+          가장 많이 산 종목 (위) / 판 종목 (아래). 큰 손 자금이 어디로
+          모이는지 한눈에 — 사이드바 “큰손 매매 랭킹”.
         </p>
       </header>
 

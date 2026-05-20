@@ -43,10 +43,10 @@ export default async function StockSearchPage() {
   return (
     <div className="space-y-8 max-w-4xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock Search</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">종목 검색</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          종목 코드를 입력하면 책의 전체 룰(추세 + 패턴 + 거래량 + 매매플랜)로
-          분석합니다.
+          종목 코드 또는 한글 이름을 입력하면 추세 · 패턴 · 거래량 · 매매플랜
+          분석 결과가 표시됩니다.
         </p>
       </header>
 
