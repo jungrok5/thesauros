@@ -122,12 +122,23 @@ export function ShortAndDividendCards({
       })
     : null;
 
+  // 공매도는 KRX 클라우드 IP 차단으로 영구히 수집 불가능 (pykrx 폐기,
+  // 2026-05-20). 데이터 있는 종목만 카드 렌더 — Empty placeholder 는
+  // "곧 채워질 것" 오해를 만들어서 제거. 배당은 Naver finance.annual
+  // 로 정상 수집 — 데이터 없으면 (DPS=0) Empty 카드 유지.
   if (!shortCard && !divCard) return null;
 
+  // 둘 다 데이터 없으면 위에서 이미 null. 하나라도 있으면 그 카드만
+  // 단독 렌더 (Empty placeholder 안 띄움).
   return (
-    <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {shortCard ? <SignalCard card={shortCard} title="공매도" /> : <Empty title="공매도" />}
-      {divCard ? <SignalCard card={divCard} title="배당" /> : <Empty title="배당" />}
+    <section className={
+      shortCard && divCard
+        ? "grid grid-cols-1 md:grid-cols-2 gap-3"
+        : "block"
+    }>
+      {shortCard && <SignalCard card={shortCard} title="공매도" />}
+      {!shortCard && divCard && null /* 공매도 placeholder 안 띄움 */}
+      {divCard ? <SignalCard card={divCard} title="배당" /> : null}
     </section>
   );
 }
@@ -168,15 +179,6 @@ function SignalCard({ card, title }: { card: SignalCardData; title: string }) {
           ))}
         </ul>
       </div>
-    </article>
-  );
-}
-
-function Empty({ title }: { title: string }) {
-  return (
-    <article className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-xs text-muted-foreground">
-      <div className="font-medium text-foreground/80 mb-1">{title}</div>
-      데이터 미적재 — 주간 cron 후 자동 채워짐.
     </article>
   );
 }

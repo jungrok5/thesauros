@@ -140,7 +140,13 @@ export function AnalysisView({
   flow?: FlowSummary | null;
 }) {
   const r = result;
-  const ts = new Date().toLocaleString("ko-KR");
+  // 분석 데이터 양 — "주봉 N 개" 가 "N bars" 보다 사용자한테 직관적.
+  // 분석 갱신 시각은 헷갈리는 정보 (대부분 사용자에게 무가치 + 페이지
+  // 로드 시각이라 오해 소지) 라 제거. r.rows 만 남겨서 "얼마나 많은
+  // 과거 데이터로 분석했는지" 만 보임.
+  const barLabel = r.rows >= 60
+    ? `${Math.round(r.rows / 52)}년치 주봉`
+    : `${r.rows} 개 주봉`;
 
   return (
     <div className="space-y-6">
@@ -150,14 +156,12 @@ export function AnalysisView({
             {r.ticker}
           </h1>
           {/* Authoritative date + close live in <LastClose/> above this
-              card (fetched fresh from Naver/Yahoo). The analyzer's
-              embedded `r.as_of` is the underlying weekly bar's
-              week-ending date (Friday) which can disagree with the
-              actual last trading day — we hide it here to avoid the
-              two-dates-disagree confusion. `r.rows` and the cache ts
-              still convey "how much data was analyzed". */}
+              card (fetched fresh from Naver/Yahoo). r.as_of (next-Friday
+              bar close) was hidden previously; analysis-cache timestamp
+              is also hidden (it confused users who read it as "현재 시각"
+              vs the actual analyze_results.updated_at). */}
           <p className="mt-1 text-sm text-muted-foreground">
-            {r.rows} bars · 분석 시각 {ts}
+            최근 {barLabel} 기준 분석
           </p>
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             <MultiTFMatrix

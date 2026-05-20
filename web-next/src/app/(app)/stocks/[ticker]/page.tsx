@@ -384,11 +384,25 @@ export default async function StockDetailPage({ params }: PageProps) {
             <h2 className="mb-2 text-lg font-semibold tracking-tight">
               차트 (시각적 검증)
             </h2>
-            <p className="mb-3 text-xs text-muted-foreground leading-relaxed">
+            <p className="mb-2 text-xs text-muted-foreground leading-relaxed">
               매매 결론은 위 정리표 + 한 줄 평이 끝냅니다. 이 차트는 결론의
-              근거를 시각적으로 검증하는 용도 — 빨간선 = 240MA, 녹색선 = 주봉 10MA,
-              가로 수평선 = 4등분선 / 매매 자리. 크게 보기 버튼으로 확대.
+              근거를 시각적으로 검증하는 용도. 크게 보기 버튼으로 확대.
             </p>
+            <ul className="mb-3 text-xs text-muted-foreground space-y-0.5 leading-relaxed">
+              <li>
+                <span className="text-rose-600 dark:text-rose-400">빨간선 (240MA)</span> —
+                약 5년 평균선. 이 위면 장기 상승 추세, 아래면 약세.
+              </li>
+              <li>
+                <span className="text-emerald-600 dark:text-emerald-400">녹색선 (주봉 10MA)</span> —
+                10주 평균선. 단기 추세 — 가격이 위면 매수 우위, 아래면 매도 우위.
+              </li>
+              <li>
+                <span className="text-foreground">가로 수평선 (4등분선)</span> —
+                직전 장대양봉을 4 등분한 매매 자리. 0% (몸통 바닥) / 25% / 50% / 75% / 100% (몸통 천장)
+                다섯 라인. 25% 깨지면 책 정신상 손절 시그널.
+              </li>
+            </ul>
             <BookChart ticker={ticker} timeframe="weekly" years={5} />
           </div>
           <div className="mt-8">
