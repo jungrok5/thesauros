@@ -63,6 +63,7 @@ async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
     p_passes_magic: f.passesMagicFormula ?? null,
     p_passes_kang: f.passesKangValue ?? null,
     p_action: f.action ?? null,
+    p_action_in: f.actionIn ?? null,
     p_book_score_min: f.bookScoreMin ?? null,
     p_limit: 50,
   });
@@ -262,8 +263,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
             {/* 정렬 + 필터 안내 */}
             <div className="flex items-baseline justify-between gap-2 flex-wrap text-[11px] text-muted-foreground">
               <span>
-                정렬: 책 점수 (book_score) 높은 순 — <strong>1위 ≠ 강매수</strong> 일 수
-                있음. 차트 신호 chip 확인 필수.
+                <strong>정렬:</strong> 책 점수 (book_score) 높은 순 → ROE 높은 순.
+                {!preset.filter.actionIn && !preset.filter.action && (
+                  <> 같은 점수면 <strong>1위가 강매수가 아닐 수 있음</strong> — 차트 chip 확인 필수.</>
+                )}
               </span>
               <Link
                 href={`/screener?preset=${preset.slug}${buyOnly ? "" : "&buy_only=1"}`}

@@ -25,8 +25,10 @@ export type ScreenerFilter = {
   passesGraham?: boolean;
   passesKangValue?: boolean;
   passesMagicFormula?: boolean;
-  // 분석 신호
+  // 분석 신호 — actionIn 은 ANY 매치 (STRONG_BUY OR BUY 처럼 여러개 가능),
+  // action 은 정확히 한 값. 둘 다 주면 actionIn 이 우선.
   action?: "STRONG_BUY" | "BUY" | "AVOID" | "SELL";
+  actionIn?: Array<"STRONG_BUY" | "BUY" | "HOLD" | "AVOID" | "SELL" | "SELL_OR_SHORT">;
   bookScoreMin?: number;
 };
 
@@ -52,7 +54,10 @@ export const PRESETS: ScreenerPreset[] = [
     action:
       "후보 발견 시 책 정신대로: (1) 분할 매수 (한 번에 다 X), " +
       "(2) 매수 후 손절가 미리 설정, (3) 강세 시즌 (11~4월) 이면 적극, 약세 시즌 (5~10월) 이면 비중 절반.",
-    filter: { action: "BUY", bookScoreMin: 0.7, roeMin: 0.05 },
+    // STRONG_BUY 도 포함해야 "책 정신 매수 후보" preset 답게 둘 다 보임.
+    // action: "BUY" 단일 값으로 두면 강매수 종목이 자동 제외되는 버그
+    // (사용자 보고 2026-05-20).
+    filter: { actionIn: ["STRONG_BUY", "BUY"], bookScoreMin: 0.7, roeMin: 0.05 },
   },
   {
     slug: "value-classic",

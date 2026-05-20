@@ -36,6 +36,28 @@ describe("PRESETS registry", () => {
   });
 });
 
+describe("book-buy 강매수 포함 (2026-05-20 fix)", () => {
+  // The bug: book-buy preset 의 filter 가 action="BUY" 단일값이라
+  // STRONG_BUY 종목이 자동 제외됨. 사용자가 "강매수 안 보임" 보고.
+  // Fix: actionIn=["STRONG_BUY","BUY"] 으로 둘 다 통과.
+  const preset = PRESETS.find((p) => p.slug === "book-buy")!;
+
+  it("uses actionIn (multi-action) instead of single action filter", () => {
+    expect(preset.filter.action).toBeUndefined();
+    expect(preset.filter.actionIn).toBeDefined();
+  });
+
+  it("actionIn includes both STRONG_BUY and BUY", () => {
+    expect(preset.filter.actionIn).toContain("STRONG_BUY");
+    expect(preset.filter.actionIn).toContain("BUY");
+  });
+
+  it("bookScoreMin / roeMin still applied", () => {
+    expect(preset.filter.bookScoreMin).toBe(0.7);
+    expect(preset.filter.roeMin).toBe(0.05);
+  });
+});
+
 describe("growth-quality 거품 제외 (2026-05-20 fix)", () => {
   // The bug: original filter had no PBR/PER cap, so 에이피알 PBR 33배 +
   // SK하이닉스 PBR 10배 통과. "퀄리티 성장주" 인데 거품주가 노출되는
