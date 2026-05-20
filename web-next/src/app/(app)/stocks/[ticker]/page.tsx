@@ -368,6 +368,22 @@ export default async function StockDetailPage({ params }: PageProps) {
           <MarketHoursNotice />
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
+          {/* 240MA 분석 미가능 안내 — bars 가 240주 미만이면 240MA
+              계산 불가. 대부분 신규 상장 종목 (예: 두산로보틱스 2023) 이
+              본질적 원인. backfill 시도 실패 확인 (2026-05-20) — FDR/Naver
+              가 상장 이전 데이터 자체를 모름. */}
+          {result?.trend?.weekly?.ma_240 == null && (
+            <div className="rounded-md border border-zinc-500/40 bg-zinc-500/5 px-3 py-2 text-xs leading-relaxed">
+              <div className="text-zinc-700 dark:text-zinc-300 font-medium">
+                ⏳ 240MA 분석 미가능 — 240주 (약 4.6년) 의 데이터가 아직 부족
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                대부분 <strong>신규 상장 종목</strong> 이라 본질적 한계 (상장
+                이전 데이터 없음). 대안: <strong>월봉 + 주봉 10MA</strong> 위주로
+                추세 판단. 시간이 흐르면 자동으로 240MA 가능해집니다.
+              </div>
+            </div>
+          )}
           {/* 분석 가격 (analyze_results.last_close) 가 bars 최신 종가와
               다를 때 명시 — analyze_results 는 watchlist 외 종목엔 며칠~
               주 단위 stale. entry_plan / 4등분선 등 분석 결과는 분석 시점
