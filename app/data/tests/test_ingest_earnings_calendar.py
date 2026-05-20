@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.data.ingest_earnings_calendar import _next_expected_dates
+from app.data.ingest_earnings_calendar import (
+    _next_expected_dates,
+    _PERIOD_END_MONTH,
+)
 
 
 class TestNextExpectedDates:
@@ -58,3 +61,32 @@ class TestNextExpectedDates:
         out = _next_expected_dates(date(2026, 6, 1))
         dates = [d for d, _ in out]
         assert dates == sorted(dates)
+
+
+class TestPeriodEndMapping:
+    """The backfill logic uses _PERIOD_END_MONTH to find which
+    fundamentals row matches a given report_type. If this mapping
+    drifts, actual_eps backfill silently no-ops."""
+
+    def test_all_four_report_types_present(self):
+        assert set(_PERIOD_END_MONTH.keys()) == {"Q1", "Q2", "Q3", "FY"}
+
+    def test_months_match_KR_filing_convention(self):
+        # Dec fiscal year: Q1=Mar, Q2=Jun, Q3=Sep, FY=Dec.
+        assert _PERIOD_END_MONTH["Q1"] == 3
+        assert _PERIOD_END_MONTH["Q2"] == 6
+        assert _PERIOD_END_MONTH["Q3"] == 9
+        assert _PERIOD_END_MONTH["FY"] == 12
+
+    def test_fy_year_shift_logic(self):
+        # FY filed in 2027 → expected_date 2027-03-31 → fy = 2026.
+        # The backfill computes fy = expected.year - 1 when report_type='FY'.
+        # Q3 filed in 2026 → expected_date 2026-11-14 → fy = 2026.
+        # (Just the convention check — no callable.)
+        expected_fy = date(2027, 3, 31)
+        fy = expected_fy.year - 1
+        assert fy == 2026
+
+        expected_q3 = date(2026, 11, 14)
+        fy_q3 = expected_q3.year  # not FY → no shift
+        assert fy_q3 == 2026
