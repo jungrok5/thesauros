@@ -54,6 +54,30 @@ echo "[check] React 16 component purity — delegated to eslint (react-hooks/pur
 echo "  (ESLint rule react-hooks/purity already catches Date.now()/Math.random()"
 echo "   inside client component render. Running 'npm run lint' covers this.)"
 
+echo "[check] Server module importing runtime non-component from 'use client'"
+# Bug seen 2026-05-20 (ERROR 1025776953): app/(app)/watchlist/page.tsx
+# imported groupColorClass (plain util) from group-manager-client.tsx
+# which is "use client". Production Vercel runtime crashed; local dev
+# tolerated. Static check now blocks this regression family.
+py=""
+# Probe python availability — `command -v python` can resolve to a stub
+# (Windows MS Store) that errors on script invocation. Run a real --version
+# probe to confirm execution actually works.
+for candidate in python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 \
+     && "$candidate" --version >/dev/null 2>&1; then
+    py="$candidate"
+    break
+  fi
+done
+if [ -n "$py" ]; then
+  if ! "$py" scripts/find_client_module_imports.py; then
+    fail=1
+  fi
+else
+  echo "  ⚠ python not available — skipping client-import audit"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
   echo "Static pitfall check FAILED — fix the above before committing."

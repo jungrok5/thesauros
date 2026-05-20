@@ -13,7 +13,8 @@ import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
 import { WatchlistRowClient } from "./row-client";
-import { GroupManager, groupColorClass } from "./group-manager-client";
+import { GroupManager } from "./group-manager-client";
+import { groupColorClass } from "./group-colors";
 import {
   pickFreshest,
   type FreshnessPatternInput,

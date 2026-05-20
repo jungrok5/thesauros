@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Pencil, Plus, Trash2, X, Check } from "lucide-react";
+import { COLOR_OPTIONS, groupColorClass } from "./group-colors";
 
 export type Group = {
   id: number;
@@ -10,21 +11,6 @@ export type Group = {
   color: string | null;
   order_index: number;
 };
-
-const COLOR_OPTIONS: Array<{ key: string; label: string; cls: string }> = [
-  { key: "emerald", label: "초록", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40" },
-  { key: "sky",     label: "파랑", cls: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/40" },
-  { key: "amber",   label: "주황", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40" },
-  { key: "violet",  label: "보라", cls: "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/40" },
-  { key: "rose",    label: "빨강", cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40" },
-  { key: "zinc",    label: "회색", cls: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 border-zinc-500/40" },
-];
-
-export function groupColorClass(color: string | null | undefined): string {
-  if (!color) return "bg-muted text-muted-foreground border-border";
-  const o = COLOR_OPTIONS.find((c) => c.key === color);
-  return o?.cls ?? "bg-muted text-muted-foreground border-border";
-}
 
 export function GroupManager({ groups }: { groups: Group[] }) {
   const router = useRouter();
