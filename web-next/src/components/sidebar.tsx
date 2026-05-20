@@ -14,6 +14,7 @@ import {
   Shield,
   Star,
   TrendingUp,
+  Volume2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/stocks", label: "종목 검색", icon: Search },
   { href: "/screener", label: "종목 스크리너", icon: Search },
   { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
+  { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/glossary", label: "용어집", icon: BookOpen },
   { href: "/feedback", label: "버그·건의", icon: MessageSquare },
