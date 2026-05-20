@@ -10,6 +10,12 @@
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
+import {
+  aggregateFlowRows,
+  sortAndTake,
+  fmtKRW,
+  type RawFlowRow,
+} from "@/lib/flow-aggregate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 600;  // 10 min — investor_flow updates daily
@@ -39,40 +45,16 @@ async function fetchTopRows(direction: "buy" | "sell", limit = 30): Promise<Row[
     console.error("flow-ranking read:", error?.message);
     return [];
   }
-  type FlowRow = {
-    ticker: string;
-    day: string;
-    foreign_net: string | number | null;
-    institution_net: string | number | null;
-  };
-  const flows = data as unknown as FlowRow[];
-  // Aggregate.
-  const agg = new Map<string, { f: number; i: number; days: number }>();
-  for (const r of flows) {
-    const cur = agg.get(r.ticker) ?? { f: 0, i: 0, days: 0 };
-    cur.f += Number(r.foreign_net ?? 0);
-    cur.i += Number(r.institution_net ?? 0);
-    cur.days += 1;
-    agg.set(r.ticker, cur);
-  }
-  const all: Row[] = [];
-  for (const [ticker, v] of agg.entries()) {
-    all.push({
-      ticker,
-      name: null,
-      foreign_sum: v.f,
-      institution_sum: v.i,
-      combined_sum: v.f + v.i,
-      days: v.days,
-    });
-  }
-  // Sort by combined; head N either direction.
-  if (direction === "buy") {
-    all.sort((a, b) => b.combined_sum - a.combined_sum);
-  } else {
-    all.sort((a, b) => a.combined_sum - b.combined_sum);
-  }
-  const top = all.slice(0, limit);
+  const flows = data as unknown as RawFlowRow[];
+  const aggregated = aggregateFlowRows(flows);
+  const top: Row[] = sortAndTake(aggregated, direction, limit).map((a) => ({
+    ticker: a.ticker,
+    name: null,
+    foreign_sum: a.foreign_sum,
+    institution_sum: a.institution_sum,
+    combined_sum: a.combined_sum,
+    days: a.days,
+  }));
   // Fetch names.
   const tickers = top.map((r) => r.ticker);
   if (tickers.length > 0) {
@@ -90,15 +72,6 @@ async function fetchTopRows(direction: "buy" | "sell", limit = 30): Promise<Row[
     }
   }
   return top;
-}
-
-function fmtKRW(v: number): string {
-  // 100만 (1e6) 미만은 0 처리.
-  const abs = Math.abs(v);
-  if (abs >= 1e12) return `${(v / 1e12).toFixed(1)}조`;
-  if (abs >= 1e8) return `${(v / 1e8).toFixed(0)}억`;
-  if (abs >= 1e4) return `${(v / 1e4).toFixed(0)}만`;
-  return v.toLocaleString("ko-KR");
 }
 
 export default async function FlowRankingPage() {
@@ -142,7 +115,7 @@ export default async function FlowRankingPage() {
           <li className="flex gap-2">
             <span className="text-amber-700 dark:text-amber-300">·</span>
             <span>
-              매수 랭킹 상위는 \"이미 큰 손 들어간 후 — 추격 vs 동행\" 판단 필요.
+              매수 랭킹 상위는 “이미 큰 손 들어간 후 — 추격 vs 동행” 판단 필요.
               차트 정배열 + 매수 신호 동반이면 동행 후보, 단기 급등 후 진입은 회피.
             </span>
           </li>
@@ -156,7 +129,7 @@ export default async function FlowRankingPage() {
             <span className="text-amber-700 dark:text-amber-300">·</span>
             <span>
               14 일은 단기. 진짜 추세는 분기 단위 누적이 더 신뢰성 ↑.
-              이 페이지는 \"요즘 어디로?\" 빠른 감 잡기 용도.
+              이 페이지는 “요즘 어디로?” 빠른 감 잡기 용도.
             </span>
           </li>
         </ul>

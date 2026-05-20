@@ -27,6 +27,11 @@ import {
   MarketWarningBanner,
   ShortAndDividendCards,
 } from "@/components/market-signals";
+import {
+  ConsensusCard,
+  HoldersCard,
+  EarningsCalendarCard,
+} from "@/components/investor-intel-cards";
 import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
@@ -251,6 +256,9 @@ export default async function StockDetailPage({ params }: PageProps) {
           warnings: [],
           shorts: [],
           dividend: null,
+          consensus: [],
+          holders: [],
+          earnings: [],
         }),
   ]);
   const result = cached.result;
@@ -364,6 +372,14 @@ export default async function StockDetailPage({ params }: PageProps) {
             dividend={ctx.dividend}
             todayIso={new Date().toISOString().slice(0, 10)}
           />
+          {/* 투자자 인텔 카드들 — 데이터 없으면 각 카드가 자체적으로
+              null 반환해서 렌더 안 됨. 따로 if 분기 안 해도 됨. */}
+          <ConsensusCard
+            consensus={ctx.consensus}
+            lastClose={result?.last_close ?? null}
+          />
+          <HoldersCard holders={ctx.holders} />
+          <EarningsCalendarCard earnings={ctx.earnings} />
           <div>
             <h2 className="mb-2 text-lg font-semibold tracking-tight">
               차트 (시각적 검증)

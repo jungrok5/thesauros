@@ -11,27 +11,18 @@
 import Link from "next/link";
 import { ArrowLeft, Volume2 } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
+import {
+  detectSurges,
+  interpretSurge,
+  fmtVol,
+  type WeekBar,
+  type SurgeHit,
+} from "@/lib/volume-surge";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 600;
 
-type WeekRow = {
-  ticker: string;
-  bar_date: string;
-  close: number;
-  volume: number;
-};
-
-type Hit = {
-  ticker: string;
-  name: string | null;
-  thisWeekVol: number;
-  avgVol: number;       // 직전 8 주 평균
-  ratio: number;        // thisWeekVol / avgVol
-  thisWeekClose: number;
-  prevWeekClose: number;
-  priceChangePct: number;
-};
+type Hit = SurgeHit & { name: string | null };
 
 async function fetchSurges(): Promise<Hit[]> {
   const sb = getServerClient();
@@ -49,47 +40,9 @@ async function fetchSurges(): Promise<Hit[]> {
     console.error("volume-surge bars:", error?.message);
     return [];
   }
-  const rows = data as unknown as WeekRow[];
-  // Group by ticker, newest-first.
-  const byTicker = new Map<string, WeekRow[]>();
-  for (const r of rows) {
-    const arr = byTicker.get(r.ticker) ?? [];
-    arr.push(r);
-    byTicker.set(r.ticker, arr);
-  }
-
-  const hits: Hit[] = [];
-  for (const [ticker, arr] of byTicker.entries()) {
-    if (arr.length < 5) continue;  // 데이터 부족
-    arr.sort((a, b) => b.bar_date.localeCompare(a.bar_date));
-    const thisWeek = arr[0];
-    const prevWeek = arr[1];
-    const past8 = arr.slice(1, 9);  // 직전 ~8 주
-    const past8Vols = past8.map((r) => Number(r.volume ?? 0)).filter((v) => v > 0);
-    if (past8Vols.length < 4) continue;
-    const avgVol = past8Vols.reduce((a, b) => a + b, 0) / past8Vols.length;
-    const thisVol = Number(thisWeek.volume ?? 0);
-    if (avgVol === 0 || thisVol === 0) continue;
-    const ratio = thisVol / avgVol;
-    // 2x 이상만 표시 (그 이하는 평이).
-    if (ratio < 2.0) continue;
-    const thisClose = Number(thisWeek.close);
-    const prevClose = Number(prevWeek?.close ?? 0);
-    const priceChangePct = prevClose > 0 ? (thisClose / prevClose - 1) * 100 : 0;
-    hits.push({
-      ticker,
-      name: null,
-      thisWeekVol: thisVol,
-      avgVol,
-      ratio,
-      thisWeekClose: thisClose,
-      prevWeekClose: prevClose,
-      priceChangePct,
-    });
-  }
-  // Sort by ratio desc.
-  hits.sort((a, b) => b.ratio - a.ratio);
-  const top = hits.slice(0, 30);
+  const rows = data as unknown as WeekBar[];
+  const detected = detectSurges(rows);
+  const top: Hit[] = detected.slice(0, 30).map((h) => ({ ...h, name: null }));
   // Names.
   if (top.length > 0) {
     const { data: namesRaw } = await sb
@@ -104,59 +57,6 @@ async function fetchSurges(): Promise<Hit[]> {
     for (const h of top) h.name = nameMap.get(h.ticker) ?? null;
   }
   return top;
-}
-
-function fmtVol(v: number): string {
-  if (v >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
-  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e4) return `${(v / 1e4).toFixed(0)}만`;
-  return v.toLocaleString("ko-KR");
-}
-
-/** 가격 변동 + 거래량 폭증 조합 해석 — 책 §거래량 12 케이스 단순화. */
-function interpretSurge(h: Hit): { tone: string; label: string; action: string } {
-  const up = h.priceChangePct > 1.5;
-  const down = h.priceChangePct < -1.5;
-  if (up && h.ratio >= 3) {
-    return {
-      tone: "text-rose-700 dark:text-rose-300",
-      label: "🟢 강한 매집",
-      action:
-        "큰 손이 매수 + 가격 동반 상승 = 책 §매수 진입 자리 후보. " +
-        "단, 단기 +30% 후 폭증이면 stretch — 추격 매수 X. 차트 정배열 확인 필수.",
-    };
-  }
-  if (up) {
-    return {
-      tone: "text-amber-700 dark:text-amber-300",
-      label: "🟡 매수 우위",
-      action:
-        "거래량 ↑ + 가격 ↑ 약한 동반. 추세 전환 가능성 — 차트 + 외인 매수 동반이면 매수 검토.",
-    };
-  }
-  if (down && h.ratio >= 3) {
-    return {
-      tone: "text-sky-700 dark:text-sky-300",
-      label: "🔴 강한 매도",
-      action:
-        "거래량 폭증 + 가격 ↓ = 큰 손 이탈. 보유 중이면 손절가 즉시 점검, " +
-        "신규 매수 X (떨어지는 칼날).",
-    };
-  }
-  if (down) {
-    return {
-      tone: "text-sky-700 dark:text-sky-300",
-      label: "🟠 매도 우위",
-      action: "거래량 ↑ + 가격 ↓ 약한 동반. 추세 약화 가능. 보유 중이면 모니터.",
-    };
-  }
-  return {
-    tone: "text-muted-foreground",
-    label: "🟤 횡보 + 폭증",
-    action:
-      "거래량만 ↑ + 가격 변화 X = 방향 미정. \"폭풍 전 고요\" 또는 \"의미 없는 회전\" — " +
-      "다음 주 가격으로 방향 판단.",
-  };
 }
 
 export default async function VolumeSurgePage() {
@@ -201,13 +101,13 @@ export default async function VolumeSurgePage() {
           <li className="flex gap-2">
             <span className="text-sky-700 dark:text-sky-300">·</span>
             <span>
-              <strong>가격 정체 + 거래량 폭증</strong> = 방향 미정 \"폭풍 전 고요\". 다음 주 가격으로 판단.
+              <strong>가격 정체 + 거래량 폭증</strong> = 방향 미정 “폭풍 전 고요”. 다음 주 가격으로 판단.
             </span>
           </li>
           <li className="flex gap-2">
             <span className="text-sky-700 dark:text-sky-300">·</span>
             <span>
-              주봉 기준 — 일봉 \"오늘\" 폭증은 종목 상세의 LastClose + 차트로 확인.
+              주봉 기준 — 일봉 “오늘” 폭증은 종목 상세의 LastClose + 차트로 확인.
             </span>
           </li>
         </ul>

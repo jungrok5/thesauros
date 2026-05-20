@@ -36,6 +36,9 @@ _REQUIRED_TABLES = {
     "short_sales",      # added 2026-05-19 with market signals (027)
     "market_warnings",  # ditto
     "dividend_info",    # ditto
+    "earnings_calendar",        # added 2026-05-20 with investor intel (029)
+    "analyst_consensus",        # ditto
+    "institutional_ownership",  # ditto
     # search_history is self-trimming via DB trigger — exempt from rule below
 }
 
@@ -107,6 +110,9 @@ _NEEDS_ENGAGEMENT_FILTER = {
     "short_sales",
     "market_warnings",
     "dividend_info",
+    "earnings_calendar",
+    "analyst_consensus",
+    "institutional_ownership",
 }
 
 

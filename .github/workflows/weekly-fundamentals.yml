@@ -98,6 +98,39 @@ jobs:
           # pykrx (shorts + dividends) + Naver scrape (warnings).
           # Engagement-set filter inside the script keeps this bounded.
           timeout 20m python -m app.data.ingest_market_signals
+      - name: Analyst consensus + target price (Naver mobile)
+        # Pulls forward EPS / revenue / op_income from finance.annual
+        # and priceTargetMean from integration. Engagement-filtered →
+        # ~2,700 KR tickers × 2 Naver calls each. ~12-15 min with
+        # 0.15s sleep cushioning the rate limit.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: timeout 25m python -m app.data.ingest_consensus
+      - name: 5% 대량보유 보고 (DART majorstock)
+        # DART openAPI is rate-bounded at 10K calls/day. Engagement set
+        # ~2,700 tickers → 1 call each, comfortably under cap. Most
+        # small caps return status=013 (no holder ever ≥5%); only
+        # mid/large caps actually write rows.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: timeout 25m python -m app.data.ingest_institutional_ownership
+      - name: Earnings calendar (KR filing cadence)
+        # Pure DB-side seed — no external calls. Inserts the next 4
+        # legal filing cutoffs per ticker (1Q/2Q/3Q/FY). UI joins
+        # against analyst_consensus + fundamentals for actuals.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: timeout 5m python -m app.data.ingest_earnings_calendar
       - name: SEC EDGAR fundamentals + filings (US tickers)
         continue-on-error: true
         env:

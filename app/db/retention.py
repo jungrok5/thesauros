@@ -277,6 +277,81 @@ POLICIES: list[Policy] = [
         """,
         "outside engagement set",
     ),
+    # ──────────────────────────────────────────────────────────────────
+    # Investor-intel (migration 029): earnings_calendar / analyst_consensus
+    # / institutional_ownership. All three are per-ticker, so they also
+    # need the engagement filter so a one-time US search doesn't keep
+    # eating rows.
+    # ──────────────────────────────────────────────────────────────────
+    # earnings_calendar: past dates 90 days back can be pruned (actual
+    # already merged in; users don't browse "what was reported last
+    # year"). Future-dated rows are the live signal — keep until they
+    # become past.
+    (
+        "earnings_calendar",
+        "DELETE FROM earnings_calendar "
+        "WHERE expected_date < CURRENT_DATE - INTERVAL '90 days'",
+        "past expected_date > 90 days",
+    ),
+    (
+        "earnings_calendar",
+        """
+        DELETE FROM earnings_calendar WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
+    # analyst_consensus: keep last 3 fiscal years (current + 2). Older
+    # fiscal years are noise — the consensus is for forecasting.
+    (
+        "analyst_consensus",
+        "DELETE FROM analyst_consensus "
+        "WHERE fiscal_year < EXTRACT(YEAR FROM CURRENT_DATE)::int - 2",
+        "fiscal_year < current - 2",
+    ),
+    (
+        "analyst_consensus",
+        """
+        DELETE FROM analyst_consensus WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
+    # institutional_ownership: 5% reports are filed sporadically. Keep
+    # 2 years of history so the user can see "이 펀드 작년에 들어왔다"
+    # type narratives, but older filings are noise.
+    (
+        "institutional_ownership",
+        "DELETE FROM institutional_ownership "
+        "WHERE reported_date < CURRENT_DATE - INTERVAL '2 years'",
+        "2 years",
+    ),
+    (
+        "institutional_ownership",
+        """
+        DELETE FROM institutional_ownership WHERE ticker NOT IN (
+            SELECT ticker FROM tickers
+             WHERE is_active = true AND market IN ('KOSPI','KOSDAQ')
+            UNION
+            SELECT DISTINCT ticker FROM watchlist
+             WHERE category = 'holding'
+                OR last_accessed_at >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        """,
+        "outside engagement set",
+    ),
     # search_history is self-trimming via the trg_trim_search_history
     # trigger (30 newest per user). No retention rule needed.
     # investor_flow is KR-only by construction (Naver frgn page), so

@@ -12,7 +12,6 @@ import { getServerClient } from "@/lib/supabase";
 import {
   PRESETS,
   findPreset,
-  type ScreenerFilter,
   type ScreenerPreset,
 } from "@/lib/screener-presets";
 
@@ -174,7 +173,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           KOSPI / KOSDAQ 약 2,700 종목 중 조건에 맞는 후보 발굴.
           아래 검색 중 하나 선택하면 즉시 결과 표시. 톤 일관: 종목만 보여주는 게
-          아니라 \"이런 종목 발견 시 어떻게 행동할지\" 함께 안내.
+          아니라 “이런 종목 발견 시 어떻게 행동할지” 함께 안내.
         </p>
       </header>
 
