@@ -14,11 +14,103 @@
  * For Korean tickers the price is formatted in 원 (no decimals); for US
  * in $ with 2 decimals.
  */
+import type { ReactNode } from "react";
 import type { AnalysisResult } from "@/lib/types/analysis";
 import { pickCatalyst } from "@/lib/freshness";
 
 interface Props {
   result: AnalysisResult;
+  /** Latest bar close from `bars` table — fresher than
+   *  `result.last_close` (which is frozen at the analyzer's run time,
+   *  i.e. last Friday 17 KST for KR). Used to surface the gap between
+   *  what BookVerdict's narrative was computed on vs the price the
+   *  user sees right now, so a "포킹 발사 4,944원 위로 대기" verdict
+   *  doesn't mislead when today's 5,300원 already cleared the trigger. */
+  currentPrice?: number | null;
+  /** Bar date for `currentPrice` (YYYY-MM-DD). Optional companion to
+   *  `currentPrice`; rendered in the analysis-vs-now header chip. */
+  currentBarDate?: string | null;
+}
+
+/** Days between two YYYY-MM-DD strings, ignoring tz (calendar days). */
+function daysBetween(fromIso: string, toIso: string): number | null {
+  if (!fromIso || !toIso) return null;
+  const a = new Date(`${fromIso}T00:00:00Z`).getTime();
+  const b = new Date(`${toIso}T00:00:00Z`).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86_400_000);
+}
+
+/** Render a header chip explaining when the analysis was last computed
+ *  and how far the current price has moved since — so a stale narrative
+ *  doesn't read as live guidance. */
+function AnalyzedAtChip({
+  asOf,
+  analyzedClose,
+  currentPrice,
+  currentBarDate,
+  ticker,
+}: {
+  asOf: string;
+  analyzedClose: number;
+  currentPrice: number | null | undefined;
+  currentBarDate: string | null | undefined;
+  ticker: string;
+}) {
+  const hasFreshPrice =
+    typeof currentPrice === "number"
+    && currentPrice > 0
+    && Math.abs(currentPrice - analyzedClose) > 0.0001;
+  const deltaPct = hasFreshPrice
+    ? ((currentPrice! / analyzedClose) - 1) * 100
+    : 0;
+  const days = currentBarDate ? daysBetween(asOf, currentBarDate) : null;
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground/80 mb-2">
+      <span>
+        🗓️ <strong className="text-foreground/80">{asOf}</strong> 분석 ·
+        종가 <span className="font-mono">{formatPrice(analyzedClose, ticker)}</span>
+      </span>
+      {hasFreshPrice && (
+        <span className="rounded-full border border-current/20 px-1.5 py-0.5 font-mono">
+          현재 {formatPrice(currentPrice!, ticker)}
+          <span className={deltaPct >= 0 ? "text-emerald-600 dark:text-emerald-300 ml-1" : "text-rose-600 dark:text-rose-300 ml-1"}>
+            {deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(1)}%
+          </span>
+          {days != null && days >= 1 && (
+            <span className="ml-1 opacity-70">· {days}일 전</span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Append a "trigger already cleared since analysis" sentence to a
+ *  wait-for-trigger verdict when currentPrice has moved past `trigger`
+ *  since the analyzer ran. Returns null when no append is warranted —
+ *  caller does the optional spread. */
+function triggerClearedNote(
+  trigger: number | null | undefined,
+  analyzedClose: number,
+  currentPrice: number | null | undefined,
+  ticker: string,
+  label = "트리거",
+): string | null {
+  if (typeof trigger !== "number" || trigger <= 0) return null;
+  if (typeof currentPrice !== "number" || currentPrice <= 0) return null;
+  // The analyzer's last_close was at-or-below trigger (otherwise the
+  // verdict wouldn't be "대기"); only fire when the fresh price has
+  // *crossed* the trigger upward. Allow 0.5% buffer so a wobble at the
+  // line doesn't fire spuriously.
+  if (!(analyzedClose < trigger * 1.005)) return null;
+  if (currentPrice <= trigger) return null;
+  const overPct = ((currentPrice / trigger) - 1) * 100;
+  return (
+    `⚡ 분석 이후 현재가 ${formatPrice(currentPrice, ticker)} > ${label} ` +
+    `${formatPrice(trigger, ticker)} (+${overPct.toFixed(1)}%) — ` +
+    "이번 주 발사 가능. 이번 주 금요일 종가로 추세 재확인."
+  );
 }
 
 /**
@@ -73,20 +165,29 @@ function formatPrice(v: number, ticker: string): string {
   return `${Math.round(v).toLocaleString("ko-KR")}원`;
 }
 
-export function BookVerdict({ result }: Props) {
+export function BookVerdict({ result, currentPrice, currentBarDate }: Props) {
   const r = result;
   const monthly = r.trend.monthly;
   const weekly = r.trend.weekly;
   const last = r.last_close;
   const ticker = r.ticker;
   const warnings = collectWarnings(r);
+  const analyzedAtChip = (
+    <AnalyzedAtChip
+      asOf={r.as_of}
+      analyzedClose={last}
+      currentPrice={currentPrice}
+      currentBarDate={currentBarDate}
+      ticker={ticker}
+    />
+  );
 
   // ── BEARISH branches ─────────────────────────────────────────────
   if (r.action === "AVOID") {
     return verdictCard("rose", "🔴", "회피", [
       "월봉 240MA 아래 — 책의 죽은 차트.",
       "신규 매수 금지. 추세가 240MA 위로 다시 올라설 때까지 관망.",
-    ], warnings);
+    ], warnings, analyzedAtChip);
   }
   if (r.action === "SELL_OR_SHORT" || r.action === "SELL") {
     const ma10 = monthly?.ma_10 ?? weekly?.ma_10;
@@ -103,7 +204,7 @@ export function BookVerdict({ result }: Props) {
           ? `보유 중이면 즉시 청산. 재진입은 ${formatPrice(ma10, ticker)} 회복 + 양봉 마감 확인 후.`
           : "보유 중이면 즉시 청산.",
       ];
-      return verdictCard("rose", "🔴", "저승사자 · 청산", lines, warnings);
+      return verdictCard("rose", "🔴", "저승사자 · 청산", lines, warnings, analyzedAtChip);
     }
     const lines = [
       monthly && monthly.above_ma_10 === false
@@ -113,7 +214,7 @@ export function BookVerdict({ result }: Props) {
         ? `보유 중이면 즉시 청산. 재진입은 ${formatPrice(ma10, ticker)} 회복 + 양봉 마감 확인 후.`
         : "보유 중이면 즉시 청산.",
     ];
-    return verdictCard("rose", "🔴", r.action === "SELL_OR_SHORT" ? "청산/인버스" : "매도", lines, warnings);
+    return verdictCard("rose", "🔴", r.action === "SELL_OR_SHORT" ? "청산/인버스" : "매도", lines, warnings, analyzedAtChip);
   }
 
   // ── BULLISH branches ────────────────────────────────────────────
@@ -135,7 +236,7 @@ export function BookVerdict({ result }: Props) {
           ? `보유 중이면 월봉 10MA(${formatPrice(monthly.ma_10, ticker)}) 이탈 시 청산.`
           : "보유 중이면 추세 이탈 시 청산.",
       ];
-      return verdictCard("amber", "⚠️", "추세 유효 · 진입 자리 지남", lines, warnings);
+      return verdictCard("amber", "⚠️", "추세 유효 · 진입 자리 지남", lines, warnings, analyzedAtChip);
     }
 
     // ── 랠리 후 조정 (post-rally exhaustion): price within 10 % of
@@ -162,7 +263,7 @@ export function BookVerdict({ result }: Props) {
           : "보유 중이면 추세 이탈 시 청산. 신규 매수 자리 아님.",
         "다음 확인: 금요일 종가가 10MA 위 마감하면 추세 유지, 아래면 추세 약화.",
       ];
-      return verdictCard("amber", "🟡", "랠리 후 조정 · 반전 주의", lines, warnings);
+      return verdictCard("amber", "🟡", "랠리 후 조정 · 반전 주의", lines, warnings, analyzedAtChip);
     }
 
     // ── 매복 단계 (Ambush / Forking-setup): book's "기간 조정 / 빨래
@@ -181,7 +282,15 @@ export function BookVerdict({ result }: Props) {
           ? `포킹 발사 (장대양봉 + 거래량 증가)가 ${formatPrice(ma10w, ticker)} 위로 터질 때까지 매복.`
           : "포킹 발사 캔들이 뜰 때까지 매복.",
       ];
-      return verdictCard("amber", "🟡", "매복 · 포킹 대기", lines, warnings);
+      const cleared = triggerClearedNote(
+        ma10w ?? null,
+        last,
+        currentPrice,
+        ticker,
+        "포킹 트리거",
+      );
+      if (cleared) lines.push(cleared);
+      return verdictCard("amber", "🟡", "매복 · 포킹 대기", lines, warnings, analyzedAtChip);
     }
 
     // FRESH or no-pattern bullish — true entry zone.
@@ -209,7 +318,7 @@ export function BookVerdict({ result }: Props) {
       ].filter(Boolean).join(" · ");
       lines.push(bits);
     }
-    return verdictCard("emerald", "🟢", r.action === "STRONG_BUY" ? "강한 매수" : "매수", lines, warnings);
+    return verdictCard("emerald", "🟢", r.action === "STRONG_BUY" ? "강한 매수" : "매수", lines, warnings, analyzedAtChip);
   }
 
   // ── HOLD due to late-trend stretch (analyzer downgrade) ─────────
@@ -276,6 +385,7 @@ export function BookVerdict({ result }: Props) {
       isLongBearish ? "장대음봉 · 매도 압력" : "추세 유효 · 자리 지남",
       lines,
       warnings,
+      analyzedAtChip,
     );
   }
 
@@ -359,7 +469,7 @@ export function BookVerdict({ result }: Props) {
     lines.push("추세 약함, catalyst 없음, 패턴 미발현. 다음 주봉 마감까지 관망.");
   }
 
-  return verdictCard("zinc", "🟡", "관망", lines, warnings);
+  return verdictCard("zinc", "🟡", "관망", lines, warnings, analyzedAtChip);
 }
 
 /** Next-decision-point guidance — book's 종가매매 mode (주봉 = 금요일
@@ -574,6 +684,7 @@ function verdictCard(
   title: string,
   lines: string[],
   warnings: string[] = [],
+  headerChip: ReactNode = null,
 ) {
   const colorMap = {
     emerald: "border-emerald-500/40 bg-emerald-500/5 text-emerald-900 dark:text-emerald-100",
@@ -584,6 +695,7 @@ function verdictCard(
   return (
     <section className={`rounded-lg border-2 ${colorMap[tone]} p-4 space-y-3`}>
       <div>
+        {headerChip}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">{icon}</span>
           <h2 className="text-sm font-semibold uppercase tracking-wider">한 줄 평 · {title}</h2>

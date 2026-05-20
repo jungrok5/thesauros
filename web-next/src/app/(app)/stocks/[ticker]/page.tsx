@@ -373,7 +373,12 @@ export default async function StockDetailPage({ params }: PageProps) {
               </div>
             </div>
           )}
-          <AnalysisView result={result} flow={flow} />
+          <AnalysisView
+            result={result}
+            flow={flow}
+            currentPrice={ctx.latestBar?.close ?? null}
+            currentBarDate={ctx.latestBar?.bar_date ?? null}
+          />
           <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
           <ShortAndDividendCards
             shorts={ctx.shorts}

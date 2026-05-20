@@ -547,3 +547,125 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     expect(screen.getByText(/강한 매수/)).toBeInTheDocument();
   });
 });
+
+/**
+ * 088350.KS 2026-05-20 사용자 reported case:
+ *   - 매복 verdict ("포킹 발사 4,944원 위로 매복")
+ *   - analyze_results.last_close (지난주 금요일) = 4944
+ *   - bars latest close (오늘) = 5300 — 이미 트리거 위
+ *   사용자가 "이미 넘었는데 왜 대기?" 라는 인지 불일치 → 분석 시점 chip
+ *   + trigger-cleared note 로 명시.
+ */
+describe("BookVerdict — currentPrice (analysis-vs-now) header chip + trigger-cleared note", () => {
+  it("renders the analyzed-at header chip with fresh price + delta when currentPrice diverges", () => {
+    const r = makeResult({
+      ticker: "088350.KS",
+      as_of: "2026-05-16",
+      last_close: 4944,
+      action: "STRONG_BUY",
+      patterns: [
+        {
+          kind: "MA 수렴 매복", direction: "neutral", confidence: 0.55,
+          completed: false, detected_at: "2026-05-16",
+          entry: 4944, stop: 4500, target: null, reason: "",
+          timeframe: "weekly", extra: {},
+        },
+      ],
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 4944, ma_10: 4944,
+          above_ma_10: true, ma_10_slope_up: false,
+          ma_240: 4200, above_ma_240: true,
+          alignment_score: 0.4, overall_score: 0.75, label: "박스권",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      volume_case: {
+        case: 12, label_kr: "수렴기 거래량 감소",
+        direction: "bullish", confidence: 0.65, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-16", open: 4900, high: 4960, low: 4870, close: 4944,
+        volume: 100000, body_pct: 0.15, upper_wick_pct: 0.20, lower_wick_pct: 0.55,
+        close_position: 0.40, is_bullish: true, tags: ["도지"], in_safe_zone_75: null,
+      },
+      consolidation_ratio: 0.04,
+    });
+    render(
+      <BookVerdict
+        result={r}
+        currentPrice={5300}
+        currentBarDate="2026-05-20"
+      />,
+    );
+    // Header chip surfaces the analysis date + current price + delta
+    expect(screen.getByText(/2026-05-16/)).toBeInTheDocument();
+    // 4일 전 lives only in the chip (analysis-vs-now)
+    expect(screen.getByText(/4일 전/)).toBeInTheDocument();
+    // 매복 verdict still fires…
+    expect(screen.getByText(/매복.*포킹 대기/)).toBeInTheDocument();
+    // …and a trigger-cleared line is appended because currentPrice 5300
+    // is above the ma_10w trigger 4944 (analyzed close was at the line).
+    expect(
+      screen.getByText(/분석 이후 현재가.*5,300.*포킹 트리거.*4,944/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/이번 주 발사 가능/)).toBeInTheDocument();
+  });
+
+  it("does NOT render the trigger-cleared note when current price has NOT crossed the trigger", () => {
+    const r = makeResult({
+      ticker: "088350.KS",
+      as_of: "2026-05-16",
+      last_close: 4500,    // analyzed below trigger
+      action: "STRONG_BUY",
+      patterns: [
+        {
+          kind: "MA 수렴 매복", direction: "neutral", confidence: 0.55,
+          completed: false, detected_at: "2026-05-16",
+          entry: 4500, stop: 4200, target: null, reason: "",
+          timeframe: "weekly", extra: {},
+        },
+      ],
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 4500, ma_10: 4944,
+          above_ma_10: false, ma_10_slope_up: false,
+          ma_240: 4200, above_ma_240: true,
+          alignment_score: 0.4, overall_score: 0.75, label: "박스권",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      volume_case: {
+        case: 12, label_kr: "수렴기 거래량 감소",
+        direction: "bullish", confidence: 0.65, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-16", open: 4500, high: 4550, low: 4450, close: 4500,
+        volume: 80000, body_pct: 0.15, upper_wick_pct: 0.20, lower_wick_pct: 0.55,
+        close_position: 0.40, is_bullish: true, tags: ["도지"], in_safe_zone_75: null,
+      },
+      consolidation_ratio: 0.04,
+    });
+    // currentPrice 4700 still below ma_10w 4944 — no cleared note.
+    render(
+      <BookVerdict
+        result={r}
+        currentPrice={4700}
+        currentBarDate="2026-05-20"
+      />,
+    );
+    expect(screen.getByText(/매복.*포킹 대기/)).toBeInTheDocument();
+    expect(screen.queryByText(/이번 주 발사 가능/)).toBeNull();
+  });
+
+  it("omits the analysis-vs-now chip when currentPrice is null (legacy callers)", () => {
+    const r = makeResult({ ticker: "066620.KQ", as_of: "2026-05-22" });
+    render(<BookVerdict result={r} />);
+    // as_of date still renders, but no "현재" delta chip.
+    expect(screen.queryByText(/현재 /)).toBeNull();
+  });
+});

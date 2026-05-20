@@ -135,9 +135,16 @@ function PatternCard({
 export function AnalysisView({
   result,
   flow,
+  currentPrice,
+  currentBarDate,
 }: {
   result: AnalysisResult;
   flow?: FlowSummary | null;
+  /** Latest bar close from `bars` table — passed straight to
+   *  <BookVerdict/> so the analysis-vs-now header chip + trigger-cleared
+   *  notes can render even when analyze_results is a few days stale. */
+  currentPrice?: number | null;
+  currentBarDate?: string | null;
 }) {
   const r = result;
   // 분석 데이터 양 — "주봉 N 개" 가 "N bars" 보다 사용자한테 직관적.
@@ -175,7 +182,11 @@ export function AnalysisView({
         <ActionBadge action={r.action} score={r.book_score} size="lg" />
       </header>
 
-      <BookVerdict result={r} />
+      <BookVerdict
+        result={r}
+        currentPrice={currentPrice}
+        currentBarDate={currentBarDate}
+      />
 
       {/* 책 정신 정리표 — 시간프레임/캔들/거래량/패턴/4등분선/외인을 한
           표에 집약. 이전엔 6개 카드로 흩어져 있던 정보를 사용자 매뉴얼
