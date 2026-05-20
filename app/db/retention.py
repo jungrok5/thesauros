@@ -287,6 +287,22 @@ POLICIES: list[Policy] = [
         """,
         "outside engagement set",
     ),
+    # macro_series — FRED + BOK 등 47 지표 × 시계열.
+    # dashboard 카드가 최근 값 + YoY 만 사용 → 13개월 윈도우면 충분.
+    # 5+ 년 시계열은 dead. 2026-05-20 retention 추가.
+    (
+        "macro_series",
+        "DELETE FROM macro_series WHERE date < CURRENT_DATE - INTERVAL '13 months'",
+        "13 months — YoY 계산 + buffer",
+    ),
+    # fundamentals — DART/SEC 재무. financials_eval 이 최근 3년치만 사용.
+    # 5년 fy 보유 = 3년 분석 + 2년 비교 buffer. 그 이상은 dead.
+    # 2026-05-20 retention 추가 — 이전엔 누적만 됐음.
+    (
+        "fundamentals",
+        "DELETE FROM fundamentals WHERE fy < EXTRACT(YEAR FROM CURRENT_DATE)::int - 5",
+        "5 fiscal years — financials_eval 3y + buffer",
+    ),
     # ──────────────────────────────────────────────────────────────────
     # Investor-intel (migration 029): earnings_calendar / analyst_consensus
     # / institutional_ownership. All three are per-ticker, so they also
