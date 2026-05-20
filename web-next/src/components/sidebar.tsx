@@ -21,6 +21,7 @@ const NAV = [
   { href: "/guide", label: "절세·연금 가이드", icon: Map },
   { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
   { href: "/stocks", label: "종목 검색", icon: Search },
+  { href: "/screener", label: "종목 스크리너", icon: Search },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/glossary", label: "용어집", icon: BookOpen },
   { href: "/feedback", label: "버그·건의", icon: MessageSquare },
