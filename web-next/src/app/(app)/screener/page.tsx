@@ -14,7 +14,6 @@ import {
   findPreset,
   type ScreenerPreset,
 } from "@/lib/screener-presets";
-import { actionDistribution } from "@/lib/screener-action-dist";
 
 export const dynamic = "force-dynamic";
 
@@ -47,103 +46,90 @@ async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
   const sb = getServerClient();
   const f = preset.filter;
 
-  // Pull factors_eval first since most filters are there. Then join
-  // to analyze_results for action/book_score, and to tickers for name.
-  let q = sb
-    .from("factors_eval")
-    .select(
-      "ticker, per, pbr, roe, debt_ratio, op_margin, revenue_growth, " +
-        "passes_kang_value, passes_graham, passes_magic_formula, passes_buffett",
-    )
-    .limit(200);
-
-  if (f.perMin != null) q = q.gte("per", f.perMin);
-  if (f.perMax != null) q = q.lte("per", f.perMax).gt("per", 0);
-  if (f.pbrMax != null) q = q.lte("pbr", f.pbrMax).gt("pbr", 0);
-  if (f.roeMin != null) q = q.gte("roe", f.roeMin);
-  if (f.debtRatioMax != null) q = q.lte("debt_ratio", f.debtRatioMax);
-  if (f.opMarginMin != null) q = q.gte("op_margin", f.opMarginMin);
-  if (f.revenueGrowthMin != null)
-    q = q.gte("revenue_growth", f.revenueGrowthMin);
-  if (f.passesBuffett != null) q = q.eq("passes_buffett", f.passesBuffett);
-  if (f.passesGraham != null) q = q.eq("passes_graham", f.passesGraham);
-  if (f.passesKangValue != null)
-    q = q.eq("passes_kang_value", f.passesKangValue);
-  if (f.passesMagicFormula != null)
-    q = q.eq("passes_magic_formula", f.passesMagicFormula);
-
-  const { data: factsRaw, error: facErr } = await q;
-  if (facErr || !factsRaw) {
-    console.error("screener factors_eval:", facErr?.message);
+  // Single RPC — DB-side LEFT JOIN factors_eval × tickers × analyze_results,
+  // WHERE + ORDER + LIMIT 다 처리해서 ~50 rows 만 응답. 옛 방식 (200 raw
+  // fetch + 3 query + JS filter/sort) 대비 wire traffic 95% 감소 + JSONB
+  // action 필터링도 DB-side 인덱스 사용. (migration 034, 2026-05-20)
+  const { data, error } = await sb.rpc("screener_results", {
+    p_per_min: f.perMin ?? null,
+    p_per_max: f.perMax ?? null,
+    p_pbr_max: f.pbrMax ?? null,
+    p_roe_min: f.roeMin ?? null,
+    p_debt_ratio_max: f.debtRatioMax ?? null,
+    p_op_margin_min: f.opMarginMin ?? null,
+    p_revenue_growth_min: f.revenueGrowthMin ?? null,
+    p_passes_graham: f.passesGraham ?? null,
+    p_passes_buffett: f.passesBuffett ?? null,
+    p_passes_magic: f.passesMagicFormula ?? null,
+    p_passes_kang: f.passesKangValue ?? null,
+    p_action: f.action ?? null,
+    p_book_score_min: f.bookScoreMin ?? null,
+    p_limit: 50,
+  });
+  if (error || !data) {
+    console.error("screener_results rpc:", error?.message);
     return [];
   }
-  // Supabase's generic-string-error union; cast to the row shape we
-  // selected. PostgREST returns data XOR error — we already short-circuit
-  // on error above.
-  const facts = factsRaw as unknown as Array<{
-    ticker: string;
-    per: number | null;
-    pbr: number | null;
-    roe: number | null;
-    debt_ratio: number | null;
-    op_margin: number | null;
-    revenue_growth: number | null;
-  }>;
-  const tickers = facts.map((r) => r.ticker);
-  if (tickers.length === 0) return [];
-
-  // Pull names + analyze results in parallel.
-  const [namesR, anR] = await Promise.all([
-    sb.from("tickers").select("ticker, name").in("ticker", tickers),
-    sb.from("analyze_results").select("ticker, result").in("ticker", tickers),
-  ]);
-  const nameRows = (namesR.data ?? []) as unknown as Array<{
+  type RpcRow = {
     ticker: string;
     name: string | null;
-  }>;
-  const anRows = (anR.data ?? []) as unknown as Array<{
-    ticker: string;
-    result: { action?: string; book_score?: number } | null;
-  }>;
-  const nameByTicker = new Map<string, string>();
-  for (const r of nameRows) {
-    nameByTicker.set(r.ticker, r.name ?? "");
-  }
-  const analyzeByTicker = new Map<string, { action?: string; score?: number }>();
-  for (const r of anRows) {
-    if (r.result) {
-      analyzeByTicker.set(r.ticker, {
-        action: r.result.action,
-        score: r.result.book_score,
-      });
-    }
-  }
+    per: string | number | null;
+    pbr: string | number | null;
+    roe: string | number | null;
+    debt_ratio: string | number | null;
+    op_margin: string | number | null;
+    revenue_growth: string | number | null;
+    action: string | null;
+    book_score: string | number | null;
+  };
+  const rpcRows = data as unknown as RpcRow[];
+  return rpcRows.map((r) => ({
+    ticker: r.ticker,
+    name: r.name,
+    per: numOrNull(r.per),
+    pbr: numOrNull(r.pbr),
+    roe: numOrNull(r.roe),
+    debt_ratio: numOrNull(r.debt_ratio),
+    op_margin: numOrNull(r.op_margin),
+    action: r.action,
+    book_score: numOrNull(r.book_score),
+  }));
+}
 
-  // Build hits + apply action/score filters in JS (analyze_results.result is JSONB).
-  const hits: Hit[] = [];
-  for (const fact of facts) {
-    const an = analyzeByTicker.get(fact.ticker);
-    if (f.action && an?.action !== f.action) continue;
-    if (f.bookScoreMin != null && (an?.score ?? -1) < f.bookScoreMin) continue;
-    hits.push({
-      ticker: fact.ticker,
-      name: nameByTicker.get(fact.ticker) ?? null,
-      per: numOrNull(fact.per),
-      pbr: numOrNull(fact.pbr),
-      roe: numOrNull(fact.roe),
-      debt_ratio: numOrNull(fact.debt_ratio),
-      op_margin: numOrNull(fact.op_margin),
-      action: an?.action ?? null,
-      book_score: an?.score ?? null,
-    });
-  }
-  // Sort: book_score desc → roe desc → ticker
-  hits.sort((a, b) => {
-    const s = (b.book_score ?? 0) - (a.book_score ?? 0);
-    if (s !== 0) return s;
-    return (b.roe ?? -1) - (a.roe ?? -1);
+/** Action distribution via RPC. */
+async function fetchDistribution(preset: ScreenerPreset) {
+  const sb = getServerClient();
+  const f = preset.filter;
+  const { data, error } = await sb.rpc("screener_action_distribution", {
+    p_per_min: f.perMin ?? null,
+    p_per_max: f.perMax ?? null,
+    p_pbr_max: f.pbrMax ?? null,
+    p_roe_min: f.roeMin ?? null,
+    p_debt_ratio_max: f.debtRatioMax ?? null,
+    p_op_margin_min: f.opMarginMin ?? null,
+    p_revenue_growth_min: f.revenueGrowthMin ?? null,
+    p_passes_graham: f.passesGraham ?? null,
+    p_passes_buffett: f.passesBuffett ?? null,
+    p_passes_magic: f.passesMagicFormula ?? null,
+    p_passes_kang: f.passesKangValue ?? null,
   });
-  return hits.slice(0, 50);
+  if (error || !data) {
+    console.error("screener_action_distribution rpc:", error?.message);
+    return { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 };
+  }
+  // RPC returns a single-row TABLE; supabase-js wraps it in an array.
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    strong_buy: number; buy: number; hold: number;
+    avoid: number; unanalyzed: number;
+  } | null;
+  if (!row) return { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 };
+  return {
+    strong_buy: row.strong_buy ?? 0,
+    buy: row.buy ?? 0,
+    hold: row.hold ?? 0,
+    avoid: row.avoid ?? 0,
+    none: row.unanalyzed ?? 0,
+  };
 }
 
 function numOrNull(v: unknown): number | null {
@@ -161,10 +147,19 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const preset = findPreset(sp.preset);
   const buyOnly = sp.buy_only === "1";
-  const allHits = preset ? await runPreset(preset) : [];
-  // Distribution counts ALL action variants including SELL_OR_SHORT —
-  // the helper locks this in via test (see screener-action-dist.test.ts).
-  const distribution = actionDistribution(allHits);
+  // Two RPC calls in parallel — results (≤50 rows) + full-universe
+  // distribution (whole-preset counts even when buy_only=1 filters
+  // the visible list). Old code computed distribution from a JS
+  // counter over the same 50 rows — same numbers in normal flow.
+  const [allHits, distribution] = preset
+    ? await Promise.all([runPreset(preset), fetchDistribution(preset)])
+    : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }];
+  // total = "펀더 통과 N 종목" header. With the new distribution RPC
+  // counting the FULL preset (not just the displayed top 50), the
+  // number now reflects real preset breadth.
+  const totalPassing =
+    distribution.strong_buy + distribution.buy + distribution.hold +
+    distribution.avoid + distribution.none;
   const hits = buyOnly
     ? allHits.filter((h) => h.action === "STRONG_BUY" || h.action === "BUY")
     : allHits;
@@ -223,7 +218,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
               <span className="text-lg">{preset.emoji}</span>
               <h2 className="text-base font-semibold">{preset.title}</h2>
               <span className="text-xs text-muted-foreground">
-                · 펀더 통과 {allHits.length} 종목
+                · 펀더 통과 {totalPassing} 종목
               </span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
