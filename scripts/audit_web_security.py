@@ -40,12 +40,35 @@ def main() -> int:
     else:
         print("  ✅ None")
 
-    # 2. API routes without auth
+    # 2. API routes without auth — accounting for middleware (proxy.ts)
+    # which guards all /api/* except an explicit whitelist.
     print()
     print("=== 2. API routes missing auth() ===")
-    PUBLIC = {"search", "news", "tickers", "macro", "health", "webhook",
-              "admin-bootstrap", "robots", "manifest", "sitemap", "ack",
-              "issue-session"}
+
+    # Parse proxy.ts to extract the whitelist of paths that bypass the
+    # middleware login gate. Anything NOT in this set is auth-protected
+    # by proxy regardless of whether the handler calls auth() itself.
+    proxy_src = ""
+    proxy_path = os.path.join(ROOT, "proxy.ts")
+    if os.path.exists(proxy_path):
+        proxy_src = open(proxy_path, encoding="utf-8").read()
+    # Pull literal API paths from the `isPublic =` block. Heuristic — we
+    # match `pathname === "/api/..."` and `pathname.startsWith("/api/...")`.
+    whitelist_eq = set(re.findall(
+        r'pathname\s*===\s*["\'](/api/[^"\']+)["\']', proxy_src,
+    ))
+    whitelist_prefix = set(re.findall(
+        r'pathname\.startsWith\(\s*["\'](/api/[^"\']+)["\']\s*\)', proxy_src,
+    ))
+
+    def is_proxy_protected(api_path: str) -> bool:
+        # api_path looks like "/api/quotes/realtime"
+        if api_path in whitelist_eq:
+            return False
+        if any(api_path.startswith(p) for p in whitelist_prefix):
+            return False
+        return True
+
     for p in scan_files():
         if "/api/" not in p or not p.endswith("/route.ts"):
             continue
@@ -58,13 +81,19 @@ def main() -> int:
         )
         if not verbs:
             continue
+        # Derive the URL path from the file path
+        # "web-next/src/app/api/quotes/realtime/route.ts" → "/api/quotes/realtime"
+        rel_url = p.replace(ROOT + "/", "").replace("app/", "/", 1)
+        rel_url = "/" + rel_url.lstrip("/").rsplit("/", 1)[0]
+        proxy_guards = is_proxy_protected(rel_url)
         has_auth = bool(
             re.search(r"\b(auth\(\)|currentUser\(\)|getServerSession|ensureUserId\b)",
                       txt)
         )
-        public_intent = any(seg in p for seg in PUBLIC)
-        if not has_auth and not public_intent:
-            print(f"  ⚠️ {p}: {verbs} — no auth() found")
+        if proxy_guards or has_auth:
+            continue
+        # Otherwise — neither middleware nor handler auth = real concern
+        print(f"  ⚠️ {p}: {verbs} — no proxy guard AND no auth() in handler")
 
     # 3. Open redirect — Location headers from req params
     print()
