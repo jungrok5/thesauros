@@ -18,20 +18,78 @@ type ThemeRow = {
   theme_id: number;
   name: string;
   members: number;
+  strong_buy: number;  // 이 테마 안의 STRONG_BUY 종목 수
+  buy: number;
+  hold: number;
+  avoid: number;
 };
 
 async function fetchThemes(): Promise<ThemeRow[]> {
   const sb = getServerClient();
-  const { data, error } = await sb
+  // 1) 테마 + members
+  const { data: themes, error } = await sb
     .from("themes")
     .select("theme_id, name, members")
     .order("members", { ascending: false })
     .limit(300);
-  if (error || !data) {
+  if (error || !themes) {
     console.error("themes read:", error?.message);
     return [];
   }
-  return data as unknown as ThemeRow[];
+  // 2) 테마 ID 별 종목 action 분포 — theme_members JOIN analyze_results
+  //    한 query 로 받아서 JS aggregate.
+  const themeIds = (themes as unknown as Array<{ theme_id: number }>).map((t) => t.theme_id);
+  if (themeIds.length === 0) return [];
+  const { data: members } = await sb
+    .from("theme_members")
+    .select("theme_id, ticker")
+    .in("theme_id", themeIds)
+    .limit(50000);
+  type MemberRow = { theme_id: number; ticker: string };
+  const memberRows = (members ?? []) as unknown as MemberRow[];
+  const allTickers = Array.from(new Set(memberRows.map((m) => m.ticker)));
+  // analyze_results 의 action 만 batch fetch
+  const { data: anRows } = allTickers.length > 0
+    ? await sb.from("analyze_results")
+        .select("ticker, result")
+        .in("ticker", allTickers)
+        .limit(50000)
+    : { data: [] };
+  const actionByTicker = new Map<string, string | null>();
+  for (const r of (anRows ?? []) as unknown as Array<{ ticker: string; result: { action?: string } | null }>) {
+    actionByTicker.set(r.ticker, r.result?.action ?? null);
+  }
+  // theme_id → 분포 집계
+  const distByTheme = new Map<number, { sb: number; b: number; h: number; av: number }>();
+  for (const m of memberRows) {
+    const cur = distByTheme.get(m.theme_id) ?? { sb: 0, b: 0, h: 0, av: 0 };
+    const action = actionByTicker.get(m.ticker);
+    if (action === "STRONG_BUY") cur.sb += 1;
+    else if (action === "BUY") cur.b += 1;
+    else if (action === "HOLD") cur.h += 1;
+    else if (action === "AVOID" || action === "SELL" || action === "SELL_OR_SHORT") cur.av += 1;
+    distByTheme.set(m.theme_id, cur);
+  }
+  const out = (themes as unknown as Array<{ theme_id: number; name: string; members: number }>).map((t) => {
+    const d = distByTheme.get(t.theme_id) ?? { sb: 0, b: 0, h: 0, av: 0 };
+    return {
+      theme_id: t.theme_id,
+      name: t.name,
+      members: t.members,
+      strong_buy: d.sb,
+      buy: d.b,
+      hold: d.h,
+      avoid: d.av,
+    };
+  });
+  // Sort: 강매수+매수 많은 순 → members 순 (테마 자체가 \"뜨거운\" 정도).
+  out.sort((a, b) => {
+    const aBuys = a.strong_buy * 2 + a.buy;
+    const bBuys = b.strong_buy * 2 + b.buy;
+    if (bBuys !== aBuys) return bBuys - aBuys;
+    return b.members - a.members;
+  });
+  return out;
 }
 
 export default async function ThemesPage() {
@@ -79,12 +137,38 @@ export default async function ThemesPage() {
               <li key={t.theme_id}>
                 <Link
                   href={`/themes/${t.theme_id}`}
-                  className="flex items-baseline justify-between gap-2 rounded-lg border border-border bg-card p-3 hover:bg-muted/30 transition-colors"
+                  className="block rounded-lg border border-border bg-card p-3 hover:bg-muted/30 transition-colors space-y-1.5"
                 >
-                  <span className="text-sm font-medium truncate">{t.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {t.members}종목
-                  </span>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium truncate">{t.name}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {t.members}종목
+                    </span>
+                  </div>
+                  {/* 테마 안의 종목 action 분포 — 강매수/매수 비중이 높으면
+                      그 테마 자체가 \"오르는 흐름\" 인 신호. 추천 아님, 단순 통계. */}
+                  <div className="flex gap-1.5 text-[10px]">
+                    {t.strong_buy > 0 && (
+                      <span className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5">
+                        🟢 {t.strong_buy}
+                      </span>
+                    )}
+                    {t.buy > 0 && (
+                      <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
+                        🟡 {t.buy}
+                      </span>
+                    )}
+                    {t.hold > 0 && (
+                      <span className="rounded-full bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5">
+                        ⚪ {t.hold}
+                      </span>
+                    )}
+                    {t.avoid > 0 && (
+                      <span className="rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5">
+                        🔴 {t.avoid}
+                      </span>
+                    )}
+                  </div>
                 </Link>
               </li>
             ))}
