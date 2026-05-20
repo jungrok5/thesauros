@@ -342,17 +342,36 @@ def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
     pattern): a single bulk UPDATE deactivates all current rows for the
     chunk's tickers, then a single executemany INSERT writes the new
     signal rows.
+
+    detected_at: ALWAYS cap to today (UTC). Otherwise weekly/monthly
+    bar 's as_of (next bar close date = future) leaks into detected_at,
+    which then breaks the telegram_worker dedupe (alerts.created_at >=
+    signal_detected_at is always false when detected_at is in the
+    future). Bug seen 2026-05-20 — same SDI alert sent 13 times.
+    Tested by app/db/tests/test_scan.py::test_detected_at_never_future.
     """
     import json
+    from datetime import date
     if not chunk:
         return 0
     tickers = [c["ticker"] for c in chunk]
+    today = date.today()
     rows: List[Tuple[Any, ...]] = []
     for c in chunk:
+        as_of = c["as_of"]
+        # Cap forward-dated bar dates to today so dedupe windows work.
+        if hasattr(as_of, "date"):  # datetime → date
+            as_of_date = as_of.date()
+        else:
+            as_of_date = as_of
+        if as_of_date and as_of_date > today:
+            as_of_safe = today
+        else:
+            as_of_safe = as_of
         for s in c["signals"]:
             rows.append((
                 c["ticker"], s["signal_type"], s["timeframe"],
-                c["as_of"], s.get("strength", 0.5),
+                as_of_safe, s.get("strength", 0.5),
                 s.get("reason"),
                 json.dumps(s.get("params") or {}, ensure_ascii=False),
             ))

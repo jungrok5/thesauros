@@ -379,12 +379,29 @@ def _flow_5d(ticker: str) -> Optional[Dict[str, float]]:
 
 def _already_alerted(user_id: str, ticker: str, alert_type: str,
                      signal_detected_at: str) -> bool:
+    """Check if (user, ticker, alert_type) was alerted recently.
+
+    Uses an absolute time window (24h) instead of `created_at >=
+    signal_detected_at`. The original detected_at comparison fails
+    silently when signal_detected_at is in the future (weekly bars
+    set as_of to next Friday) — `created_at >= 미래` is always false,
+    so dedupe is bypassed and the same alert fires every cron run.
+    Bug seen 2026-05-20 — same SDI alert sent 13 times in 24h.
+
+    24h window: matches the daily-scan cadence (5pm KST), so a real
+    new signal next day still gets through, but bursty mid-day cron
+    dispatches don't re-fire. signal_detected_at is retained for
+    backward compat / future use but no longer participates in the
+    SQL — checked covered by test_telegram_worker_dedupe.py.
+    """
+    _ = signal_detected_at  # kept for backward-compat signature
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT 1 FROM alerts WHERE user_id = %s AND ticker = %s "
-                "AND alert_type = %s AND created_at >= %s LIMIT 1",
-                (user_id, ticker, alert_type, signal_detected_at),
+                "AND alert_type = %s "
+                "AND created_at >= NOW() - INTERVAL '24 hours' LIMIT 1",
+                (user_id, ticker, alert_type),
             )
             return cur.fetchone() is not None
 

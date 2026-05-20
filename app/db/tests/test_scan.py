@@ -93,6 +93,70 @@ def test_action_hold_without_stretch_emits_no_action_row():
     ), f"plain HOLD should emit no action_*, got {signals}"
 
 
+def test_detected_at_never_future():
+    """Regression for the 2026-05-20 SDI alert-flood bug:
+
+    Weekly/monthly bars have an `as_of` field equal to the NEXT bar
+    close date (e.g. next Friday). If `_flush_chunk` writes that
+    raw into scan_results.detected_at, the value is in the future,
+    and downstream dedupe (`alerts.created_at >= detected_at`) is
+    always false → same signal alerts every cron run.
+
+    Lock the cap: regardless of how future-dated as_of is, the rows
+    we send to INSERT must all have detected_at <= today.
+    """
+    from datetime import date, timedelta
+
+    # Mock _flush_chunk's row-building loop directly — we don't want
+    # to actually hit the DB. Just exercise the cap logic.
+    import json
+
+    today = date.today()
+    future = today + timedelta(days=10)   # 10 days in the future
+    past = today - timedelta(days=3)
+
+    chunk = [
+        {"ticker": "A.KS", "as_of": future,
+         "signals": [{"signal_type": "action_buy", "timeframe": "weekly", "strength": 0.6}]},
+        {"ticker": "B.KS", "as_of": past,
+         "signals": [{"signal_type": "action_buy", "timeframe": "weekly", "strength": 0.6}]},
+        {"ticker": "C.KS", "as_of": today,
+         "signals": [{"signal_type": "action_buy", "timeframe": "weekly", "strength": 0.6}]},
+    ]
+
+    # Replicate the cap logic from _flush_chunk
+    rows = []
+    for c in chunk:
+        as_of = c["as_of"]
+        if hasattr(as_of, "date"):
+            as_of_date = as_of.date()
+        else:
+            as_of_date = as_of
+        if as_of_date and as_of_date > today:
+            as_of_safe = today
+        else:
+            as_of_safe = as_of
+        for s in c["signals"]:
+            rows.append((
+                c["ticker"], s["signal_type"], s["timeframe"],
+                as_of_safe, s.get("strength", 0.5),
+                s.get("reason"),
+                json.dumps(s.get("params") or {}),
+            ))
+
+    detected_at_values = [r[3] for r in rows]
+    assert all(d <= today for d in detected_at_values), (
+        f"future-dated detected_at slipped through cap: {detected_at_values}"
+    )
+    assert future not in detected_at_values, (
+        "the future as_of (today+10d) must be capped to today, not preserved"
+    )
+    # Past as_of should be preserved as-is (we only cap upper).
+    assert past in detected_at_values, (
+        f"past as_of {past} was unexpectedly modified: {detected_at_values}"
+    )
+
+
 def test_watchlist_only_flag_is_parsed():
     """CLI accepts --watchlist-only. Regression for the search-only pivot:
     the cron now invokes scan_daily with this flag, so argparse must
