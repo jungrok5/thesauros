@@ -546,6 +546,71 @@ describe("BookVerdict — 매복 (ambush) classification", () => {
     render(<BookVerdict result={r} />);
     expect(screen.getByText(/강한 매수/)).toBeInTheDocument();
   });
+
+  it("매매플랜 line 아래에 짧은 explainer 추가 (근거 + 손절/목표 의미)", () => {
+    // entry_plan with both target + stop + based_on → explainer must
+    // render with all three pieces ("근거", "손절", "목표").
+    const r = makeResult({
+      action: "STRONG_BUY",
+      last_close: 24450,
+      patterns: [
+        {
+          kind: "쌍바닥", direction: "bullish", confidence: 0.9, completed: true,
+          detected_at: "2026-05-22",
+          entry: 24450, stop: 19000, target: 30000, reason: "쌍바닥",
+          timeframe: "weekly", extra: { neckline: 23800 },
+        },
+      ],
+      entry_plan: {
+        entry: 24450, stop: 22760, target: 30000,
+        based_on: "쌍바닥 (weekly)  · 손절은 주봉 10MA",
+      },
+      volume_case: {
+        case: 3, label_kr: "바닥권 거래량 폭증",
+        direction: "bullish", confidence: 0.85, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-22", open: 23800, high: 24500, low: 23700, close: 24450,
+        volume: 80000, body_pct: 0.81, upper_wick_pct: 0.06, lower_wick_pct: 0.12,
+        close_position: 0.94, is_bullish: true, tags: ["장대양봉"], in_safe_zone_75: true,
+      },
+      consolidation_ratio: 0.18,
+    });
+    render(<BookVerdict result={r} />);
+    // 진입/손절/목표 line itself
+    expect(screen.getByText(/진입.*손절.*목표/)).toBeInTheDocument();
+    // Explainer with 근거 + 청산 룰 + 목표 의미
+    expect(screen.getByText(/근거.*쌍바닥/)).toBeInTheDocument();
+    expect(screen.getByText(/주봉 종가가 손절 아래.*청산/)).toBeInTheDocument();
+    expect(screen.getByText(/목표는 일부 익절 검토.*추세 살아있으면 보유/)).toBeInTheDocument();
+  });
+
+  it("매매플랜 target=null 일 때는 trailing-stop 안내로 분기", () => {
+    const r = makeResult({
+      action: "BUY",
+      last_close: 24450,
+      patterns: [],
+      entry_plan: {
+        entry: 24450, stop: 23000, target: null,
+        based_on: "주봉 10MA 스톱",
+      },
+      volume_case: {
+        case: 3, label_kr: "바닥권 거래량 폭증",
+        direction: "bullish", confidence: 0.85, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-22", open: 24000, high: 24500, low: 23800, close: 24450,
+        volume: 80000, body_pct: 0.6, upper_wick_pct: 0.10, lower_wick_pct: 0.10,
+        close_position: 0.9, is_bullish: true, tags: ["장대양봉"], in_safe_zone_75: true,
+      },
+      consolidation_ratio: 0.18,
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/근거.*주봉 10MA 스톱/)).toBeInTheDocument();
+    expect(screen.getByText(/10MA 이탈까지 trailing stop.*open-ended/)).toBeInTheDocument();
+    // No "목표는 일부 익절 검토" — that branch is for target!=null only
+    expect(screen.queryByText(/목표는 일부 익절 검토/)).toBeNull();
+  });
 });
 
 /**

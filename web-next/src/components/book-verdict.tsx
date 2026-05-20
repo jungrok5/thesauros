@@ -362,6 +362,15 @@ export function BookVerdict({
           : null,
       ].filter(Boolean).join(" · ");
       lines.push(bits);
+      // Short explainer — 사용자가 숫자만 보고 "어디서 나왔고 뭘 의미해?"
+      // 라는 두 질문에 한 줄로 답. based_on 은 analyzer 가 채운 산출 근거.
+      const base = ep.based_on ? `근거: ${ep.based_on}. ` : "";
+      const tgtMeaning = ep.target != null
+        ? " · 목표는 일부 익절 검토 라인 — 추세 살아있으면 보유 유지"
+        : " · 10MA 이탈까지 trailing stop 으로 들고 가는 open-ended";
+      lines.push(
+        `${base}주봉 종가가 손절 아래로 마감 시 청산${tgtMeaning}.`,
+      );
     }
     return verdictCard("emerald", "🟢", r.action === "STRONG_BUY" ? "강한 매수" : "매수", lines, warnings, analyzedAtChip);
   }
