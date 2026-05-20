@@ -90,9 +90,14 @@ def test_trigger_keeps_only_newest_30(transient_user):
 
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
+            # `id ASC` tiebreaker matters: 31 inserts in one transaction share
+            # the same `now()` snapshot → `created_at` is identical. The
+            # trigger keeps rows by `created_at DESC, id DESC` (newest 30),
+            # so query01..query30 (ids 2..31) remain after query00 (id 1) is
+            # trimmed. Without the tiebreaker the ASC sort is indeterminate.
             cur.execute(
                 "SELECT query FROM search_history "
-                "WHERE user_id = %s ORDER BY created_at ASC",
+                "WHERE user_id = %s ORDER BY created_at ASC, id ASC",
                 (user_id,),
             )
             queries = [r[0] for r in cur.fetchall()]
