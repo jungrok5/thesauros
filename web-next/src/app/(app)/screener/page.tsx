@@ -14,11 +14,16 @@ import {
   findPreset,
   type ScreenerPreset,
 } from "@/lib/screener-presets";
+import { actionDistribution } from "@/lib/screener-action-dist";
 
 export const dynamic = "force-dynamic";
 
 interface SearchParams {
   preset?: string;
+  // 매수 신호 필터 — value-classic 같은 펀더만 보는 preset 의 1위가
+  // 차트 약해서 HOLD 인 케이스를 사용자가 "강매수 1위" 로 오해하는
+  // 사고가 있어서, 페이지 자체에 토글 추가 (2026-05-20).
+  buy_only?: string;
 }
 
 interface PageProps {
@@ -155,7 +160,14 @@ function fmtPct(v: number | null, digits = 1): string {
 export default async function ScreenerPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const preset = findPreset(sp.preset);
-  const hits = preset ? await runPreset(preset) : [];
+  const buyOnly = sp.buy_only === "1";
+  const allHits = preset ? await runPreset(preset) : [];
+  // Distribution counts ALL action variants including SELL_OR_SHORT —
+  // the helper locks this in via test (see screener-action-dist.test.ts).
+  const distribution = actionDistribution(allHits);
+  const hits = buyOnly
+    ? allHits.filter((h) => h.action === "STRONG_BUY" || h.action === "BUY")
+    : allHits;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -206,19 +218,64 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
       {/* 결과 */}
       {preset && (
         <section className="space-y-3">
-          <header className="rounded-xl border-2 border-foreground/20 bg-muted/30 p-4 space-y-2">
+          <header className="rounded-xl border-2 border-foreground/20 bg-muted/30 p-4 space-y-3">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-lg">{preset.emoji}</span>
               <h2 className="text-base font-semibold">{preset.title}</h2>
               <span className="text-xs text-muted-foreground">
-                · 통과 {hits.length} 종목
+                · 펀더 통과 {allHits.length} 종목
               </span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {preset.oneLiner}
             </p>
+            {/* 액션 분포 — 1위가 강매수가 아닐 수 있다는 점 명시. */}
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              <span className="text-muted-foreground">차트 신호:</span>
+              <span className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5">
+                🟢 강매수 {distribution.strong_buy}
+              </span>
+              <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5">
+                🟡 매수 {distribution.buy}
+              </span>
+              <span className="rounded-full bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 px-2 py-0.5">
+                ⚪ 보류 {distribution.hold}
+              </span>
+              {distribution.avoid > 0 && (
+                <span className="rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 px-2 py-0.5">
+                  🔴 회피 {distribution.avoid}
+                </span>
+              )}
+              {distribution.none > 0 && (
+                <span className="rounded-full bg-muted text-muted-foreground px-2 py-0.5">
+                  분석 대기 {distribution.none}
+                </span>
+              )}
+            </div>
             <div className="rounded-md bg-background/70 border border-border p-2.5 text-xs leading-relaxed">
               <span className="font-medium">💡 발견 후 액션:</span> {preset.action}
+            </div>
+            {distribution.strong_buy + distribution.buy === 0
+              && allHits.length > 0 && (
+              <div className="rounded-md border border-rose-500/40 bg-rose-500/5 p-2.5 text-xs leading-relaxed text-rose-700 dark:text-rose-300">
+                ⚠️ 이 조건 통과 종목 중 차트가 매수 자리인 종목은 <strong>0 개</strong>.
+                펀더는 좋지만 차트 추세가 약함 — 책 정신상 “지금 매수” 자리 아님.
+                차트가 회복될 때까지 관망하거나, 다른 검색 (예: 📚 책 정신 매수 후보)
+                으로 차트 + 펀더 동시 통과 종목을 보세요.
+              </div>
+            )}
+            {/* 정렬 + 필터 안내 */}
+            <div className="flex items-baseline justify-between gap-2 flex-wrap text-[11px] text-muted-foreground">
+              <span>
+                정렬: 책 점수 (book_score) 높은 순 — <strong>1위 ≠ 강매수</strong> 일 수
+                있음. 차트 신호 chip 확인 필수.
+              </span>
+              <Link
+                href={`/screener?preset=${preset.slug}${buyOnly ? "" : "&buy_only=1"}`}
+                className="rounded-md border border-border bg-background px-2 py-1 hover:bg-accent transition-colors"
+              >
+                {buyOnly ? "✓ 강매수/매수만 보는 중 (클릭=해제)" : "강매수/매수만 보기"}
+              </Link>
             </div>
           </header>
 
@@ -357,19 +414,23 @@ function ActionPill({
       </span>
     );
   }
+  const isAvoid =
+    action === "AVOID" || action === "SELL" || action === "SELL_OR_SHORT";
   const tone =
     action === "STRONG_BUY"
       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
       : action === "BUY"
         ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-        : action === "AVOID"
+        : isAvoid
           ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
           : "bg-muted text-muted-foreground";
   const label: Record<string, string> = {
     STRONG_BUY: "🟢 강매수",
     BUY: "🟡 매수",
-    AVOID: "🟠 회피",
+    HOLD: "⚪ 보류",
+    AVOID: "🔴 회피",
     SELL: "🔴 청산",
+    SELL_OR_SHORT: "🔴 매도/숏",
   };
   return (
     <span

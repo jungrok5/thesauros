@@ -10,7 +10,7 @@
  *     (would break dynamic route → preset binding).
  */
 import { describe, it, expect } from "vitest";
-import { PRESETS, findPreset } from "@/lib/screener-presets";
+import { PRESETS, findPreset, type ScreenerPreset } from "@/lib/screener-presets";
 
 describe("PRESETS registry", () => {
   it("every preset has the required user-facing fields", () => {
