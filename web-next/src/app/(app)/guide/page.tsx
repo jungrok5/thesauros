@@ -683,6 +683,25 @@ export default function GuidePage() {
           </Link>
         </div>
       </section>
+
+      {/* 보조 도구 — 1년에 1번 (주로 12월) 쓰는 도구라 사이드바엔 안 넣고
+          가이드 페이지 바닥에 발견 가능하게 link 만 노출 (2026-05-20). */}
+      <section className="rounded-lg border border-border bg-card p-4 space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          🛠️ 보조 도구 (12월 한 번 쓰는)
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          연말 정산 시 매도 시기 결정 / 미국 양도세 계산 / ISA → 연금저축
+          이전 환급 — 1년에 1~2 번만 쓰니까 사이드바엔 안 띄움.
+        </p>
+        <Link
+          href="/tax"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs hover:bg-muted"
+        >
+          📊 세금 시뮬레이터 열기
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      </section>
     </div>
   );
 }

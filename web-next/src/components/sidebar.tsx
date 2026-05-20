@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
-  Calculator,
   Compass,
   Map,
   Menu,
@@ -27,11 +26,13 @@ const NAV = [
   { href: "/screener", label: "종목 스크리너", icon: Search },
   { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
   { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
-  { href: "/tax", label: "세금 시뮬", icon: Calculator },
   { href: "/watchlist", label: "관심 종목", icon: Star },
   { href: "/glossary", label: "용어집", icon: BookOpen },
   { href: "/feedback", label: "버그·건의", icon: MessageSquare },
   { href: "/settings", label: "설정", icon: Settings },
+  // /tax (세금 시뮬레이터) 는 1년에 1번 쓰는 12월 한정 도구라
+  // 사이드바 상시 노출에서 제외 (2026-05-20). 페이지 자체는 살아있고
+  // /guide 의 "12월 절세 매도 시뮬" 박스에서 링크로 발견 가능.
 ];
 
 const ADMIN_NAV = [
