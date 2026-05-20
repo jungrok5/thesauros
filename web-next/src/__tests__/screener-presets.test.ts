@@ -36,6 +36,30 @@ describe("PRESETS registry", () => {
   });
 });
 
+describe("growth-quality 거품 제외 (2026-05-20 fix)", () => {
+  // The bug: original filter had no PBR/PER cap, so 에이피알 PBR 33배 +
+  // SK하이닉스 PBR 10배 통과. "퀄리티 성장주" 인데 거품주가 노출되는
+  // 모순. Cap PBR ≤ 5 + PER ≤ 40 so growth + sane pricing 동시 합격.
+  const preset = PRESETS.find((p) => p.slug === "growth-quality")!;
+
+  it("has pbrMax and perMax caps", () => {
+    expect(preset.filter.pbrMax).toBe(5);
+    expect(preset.filter.perMax).toBe(40);
+  });
+
+  it("growth + ROE thresholds remain unchanged", () => {
+    expect(preset.filter.revenueGrowthMin).toBe(0.10);
+    expect(preset.filter.roeMin).toBe(0.15);
+    expect(preset.filter.debtRatioMax).toBe(1.0);
+  });
+
+  it("oneLiner mentions the cap so users know what's excluded", () => {
+    // If someone removes the cap, the oneLiner becomes a lie — fail
+    // the test so the rationale is preserved in the UI copy.
+    expect(preset.oneLiner).toMatch(/거품|PBR|PER/);
+  });
+});
+
 describe("findPreset", () => {
   it("returns the preset object for a known slug", () => {
     const p = findPreset("book-buy");

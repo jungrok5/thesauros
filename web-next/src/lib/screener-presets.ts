@@ -84,11 +84,20 @@ export const PRESETS: ScreenerPreset[] = [
     title: "퀄리티 성장주",
     oneLiner:
       "매출 +10%↑ 성장 + ROE 15%↑ 수익성 + 부채 < 100% 안전. " +
-      "비싸지만 (PER 무관) 사업 자체가 강한 회사.",
+      "거품 종목 (PBR > 5, PER > 40) 은 자동 제외 — 성장 + 가치 동시 합격.",
     action:
       "성장주는 약세 시즌 (5~10월) 에 -20~30% 조정 빈번. 분할 매수 + " +
       "조정 시 추매 전략. 주변 매크로 (금리 / VIX) 도 같이 모니터.",
-    filter: { revenueGrowthMin: 0.10, roeMin: 0.15, debtRatioMax: 1.0 },
+    // PBR/PER 상한 추가 — "퀄리티 성장주" 인데 PBR 33배 에이피알 / SK하이닉스
+    // PBR 10배 같은 거품주가 통과되던 문제 (2026-05-20). 성장 + 합리적
+    // 가격 동시 합격 종목만 노출.
+    filter: {
+      revenueGrowthMin: 0.10,
+      roeMin: 0.15,
+      debtRatioMax: 1.0,
+      pbrMax: 5,
+      perMax: 40,
+    },
   },
   {
     slug: "high-dividend-safe",
