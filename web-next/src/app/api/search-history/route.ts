@@ -43,14 +43,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid query" }, { status: 400 });
   }
 
+  // UPSERT — 같은 (user_id, query) 가 이미 있으면 created_at 만
+  // 갱신해서 가장 최근 위치로 끌어올림. UNIQUE INDEX 가 migration
+  // 028 에서 잡혀 있어 onConflict 가 그대로 동작.
+  // ticker 도 갱신 — 처음에 미해소 (null) 였다가 나중에 canonical
+  // ticker 가 풀린 경우 정확한 값으로 덮어씀.
   const sb = getServerClient();
-  const { error } = await sb.from("search_history").insert({
-    user_id: userId,
-    query,
-    ticker,
-  });
+  const { error } = await sb
+    .from("search_history")
+    .upsert(
+      {
+        user_id: userId,
+        query,
+        ticker,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,query" },
+    );
   if (error) {
-    console.error("search_history insert:", error.message);
+    console.error("search_history upsert:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
   return NextResponse.json({ ok: true });

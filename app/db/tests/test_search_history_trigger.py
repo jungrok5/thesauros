@@ -103,6 +103,94 @@ def test_trigger_keeps_only_newest_30(transient_user):
     assert len(queries) == 30
 
 
+def test_unique_constraint_dedupes_same_query(transient_user):
+    """Migration 028 added UNIQUE (user_id, query). Inserting the same
+    query twice should violate the constraint — the API uses ON
+    CONFLICT DO UPDATE instead, so a repeat search just refreshes
+    `created_at` without adding a row. This test pins the underlying
+    constraint so the API's upsert path can rely on it.
+    """
+    user_id = transient_user
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO search_history (user_id, query, ticker) "
+                "VALUES (%s, %s, %s)",
+                (user_id, "삼성전자", "005930.KS"),
+            )
+
+    # Same query again — must raise the unique violation.
+    import psycopg
+    raised = False
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO search_history (user_id, query, ticker) "
+                    "VALUES (%s, %s, %s)",
+                    (user_id, "삼성전자", "005930.KS"),
+                )
+    except psycopg.errors.UniqueViolation:
+        raised = True
+    assert raised, "second insert of same (user_id, query) must violate UNIQUE"
+
+    # Different query for the same user is fine.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO search_history (user_id, query) VALUES (%s, %s)",
+                (user_id, "AAPL"),
+            )
+
+    # Final count — only the two unique queries remain.
+    assert _history_count(user_id) == 2
+
+
+def test_upsert_pattern_refreshes_created_at(transient_user):
+    """The API uses ON CONFLICT DO UPDATE to refresh `created_at` —
+    pin that the pattern actually moves the row's recency."""
+    user_id = transient_user
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO search_history (user_id, query, ticker, created_at) "
+                "VALUES (%s, %s, %s, now() - INTERVAL '1 hour')",
+                (user_id, "삼성전자", "005930.KS"),
+            )
+            cur.execute(
+                "INSERT INTO search_history (user_id, query) "
+                "VALUES (%s, %s)",
+                (user_id, "AAPL"),
+            )
+
+    # Same UPSERT the API does.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO search_history (user_id, query, ticker, created_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (user_id, query) DO UPDATE SET
+                  created_at = EXCLUDED.created_at,
+                  ticker = EXCLUDED.ticker
+                """,
+                (user_id, "삼성전자", "005930.KS"),
+            )
+
+    # 삼성전자 should now be the newest row.
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT query FROM search_history WHERE user_id = %s "
+                "ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            )
+            newest = cur.fetchone()[0]
+    assert newest == "삼성전자", "upsert should move repeated query to newest"
+    # Still only 2 rows — no duplicate created.
+    assert _history_count(user_id) == 2
+
+
 def test_trigger_scoped_per_user(transient_user):
     """Inserting many rows for user A must not delete user B's rows."""
     user_a = transient_user
