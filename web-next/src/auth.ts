@@ -97,10 +97,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = (user.email ?? "").toLowerCase();
       if (!email) return false;
       try {
-        const synced = await syncUser(email, user.name ?? null);
-        // Block rejected accounts; pending CAN sign in but the proxy will
-        // redirect them to /pending.
-        return synced.access_status !== "rejected";
+        await syncUser(email, user.name ?? null);
+        // Both pending AND rejected users CAN sign in — proxy.ts
+        // routes them to /pending which (a) shows a friendly Korean
+        // status message and (b) lets rejected users re-submit a new
+        // reason. Returning false here would land them on NextAuth's
+        // default English "Access Denied" page with no way back
+        // (사용자 보고 2026-05-20). Approved logic happens in proxy.
+        return true;
       } catch (e) {
         console.error("syncUser failed:", e);
         return false;
