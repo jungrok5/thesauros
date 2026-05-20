@@ -131,7 +131,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">PBR</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">ROE</th>
                   <th className="px-3 py-2 text-center font-medium text-muted-foreground">차트 신호</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">책 점수</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">책 점수 (/10)</th>
                 </tr>
               </thead>
               <tbody>
@@ -170,7 +170,9 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                         )}
                       </td>
                       <td className="px-3 py-2 text-right font-mono">
-                        {m.book_score != null ? Number(m.book_score).toFixed(2) : "—"}
+                        {m.book_score != null
+                          ? `${(Number(m.book_score) * 10).toFixed(1)}/10`
+                          : "—"}
                       </td>
                     </tr>
                   );
@@ -198,7 +200,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                       PER {m.per != null ? Number(m.per).toFixed(1) : "—"} ·
                       PBR {m.pbr != null ? Number(m.pbr).toFixed(2) : "—"} ·
                       ROE {m.roe != null ? `${(Number(m.roe) * 100).toFixed(1)}%` : "—"} ·
-                      책점수 {m.book_score != null ? Number(m.book_score).toFixed(2) : "—"}
+                      책점수 {m.book_score != null ? `${(Number(m.book_score) * 10).toFixed(1)}/10` : "—"}
                     </div>
                   </Link>
                 </li>
