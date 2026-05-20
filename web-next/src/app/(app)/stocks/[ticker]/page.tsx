@@ -18,7 +18,6 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { decideBackLink } from "@/lib/back-link";
-import { isAnalysisStale } from "@/lib/market-staleness";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
@@ -172,34 +171,23 @@ async function getWatchlistState(
   return { added: false, category: "observing" };
 }
 
-interface CachedAnalysis {
-  result: AnalysisResult | null;
-  /** True when the row's `as_of` is older than the expected latest
-   *  completed trading day for the ticker's market — or when there's
-   *  no row at all. The UI surfaces "분석 갱신 중" and the page
-   *  dispatches an analyze-ticker workflow in parallel.
-   *
-   *  Market-aware staleness (see lib/market-staleness.ts) replaced
-   *  the older 24h TTL: a KR ticker viewed at 19:00 KST should already
-   *  have today's close, not Mon's. */
-  stale: boolean;
-}
-
-async function getAnalysis(ticker: string): Promise<CachedAnalysis> {
+async function getAnalysis(ticker: string): Promise<AnalysisResult | null> {
+  // 주봉/월봉 pivot 후 scan_daily 는 금요일 17 KST 에만 의미 있게
+  // 갱신됨 (W bar 가 Mon-Thu 에 안 바뀜). 따라서 daily 기준 stale
+  // 판정 + on-demand dispatch 는 평일에 처음 열어보는 종목마다 매번
+  // 트리거되어 노이즈만 발생 — 2026-05-20 제거. 결과가 있으면 그대로
+  // 보여주고, 없으면 "분석 대기" 안내만 한다.
   const sb = getServerClient();
   const { data, error } = await sb
     .from("analyze_results")
-    .select("result, updated_at")
+    .select("result")
     .eq("ticker", ticker)
     .maybeSingle();
   if (error) {
     console.error("analyze_results read:", error.message);
-    return { result: null, stale: true };
+    return null;
   }
-  if (!data) return { result: null, stale: true };
-  const result = (data.result as AnalysisResult | undefined) ?? null;
-  const stale = !result || isAnalysisStale(ticker, data.updated_at as string);
-  return { result, stale };
+  return (data?.result as AnalysisResult | undefined) ?? null;
 }
 
 async function getFlowSummary(ticker: string): Promise<
@@ -244,8 +232,8 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [cached, watch, flow, ctx] = await Promise.all([
-    isCanonical ? getAnalysis(ticker) : Promise.resolve<CachedAnalysis>({ result: null, stale: true }),
+  const [result, watch, flow, ctx] = await Promise.all([
+    isCanonical ? getAnalysis(ticker) : Promise.resolve<AnalysisResult | null>(null),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
     isCanonical
@@ -264,19 +252,6 @@ export default async function StockDetailPage({ params }: PageProps) {
           volumeSurge: null,
         }),
   ]);
-  const result = cached.result;
-
-  // On-demand analysis trigger — fire-and-forget. Search-only pivot:
-  // out-of-watchlist tickers no longer hit the nightly scan, so when
-  // a user opens /stocks/[ticker] and the cached row is missing or
-  // stale (> 24 h), we dispatch the analyze-ticker.yml workflow so
-  // the next page load shows fresh data (~2-3 min later). No-op when
-  // GITHUB_DISPATCH_TOKEN is absent (e.g. local dev).
-  if (isCanonical && cached.stale) {
-    const { dispatchAnalyzeTicker } = await import("@/lib/github-dispatch");
-    // Don't await — the page render must not block on the dispatch.
-    dispatchAnalyzeTicker(ticker).catch(() => {});
-  }
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -355,12 +330,6 @@ export default async function StockDetailPage({ params }: PageProps) {
         )
       ) : (
         <>
-          {cached.stale && (
-            <div className="rounded-md border border-sky-500/40 bg-sky-500/5 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
-              🔄 캐시된 분석을 보여드립니다 — 백그라운드에서 최신 분석이
-              진행 중입니다 (~3분). 잠시 후 새로고침하면 최신 결과가 표시됩니다.
-            </div>
-          )}
           {/* CRITICAL: warning banner before anything else. If a stock
               is 거래정지 / 관리종목, every other widget below is
               irrelevant to the buy/sell decision. */}
