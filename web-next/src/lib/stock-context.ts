@@ -73,6 +73,11 @@ export type StockContext = {
   consensus: AnalystConsensusRow[];     // forward fiscal years
   holders: InstitutionalOwnershipRow[]; // newest-first ≤ 12 5%-보고 rows
   earnings: EarningsCalendarRow[];      // upcoming ≤ 4
+  latestBar: { close: number; bar_date: string } | null;
+  // ↑ bars 의 최신 주봉 종가. analyze_results.last_close 는 분석 시점
+  // 스냅샷 이라 stale 일 수 있어서 (예: 폭증 종목인데 watchlist 가 아니라
+  // 며칠 전 분석 그대로) 가격 표시는 항상 이것 사용. analysis 결과
+  // (action/entry_plan) 은 분석 시점 가격 기준이라 그대로 둠.
 };
 
 export async function fetchStockContext(ticker: string): Promise<StockContext> {
@@ -80,7 +85,7 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [
     discR, finR, facR, warnR, shortR, divR,
-    consR, holdR, earnR,
+    consR, holdR, earnR, barR,
   ] = await Promise.all([
     sb.from("disclosures")
       .select("id, rcept_no, report_nm, report_type, filed_date, url")
@@ -128,7 +133,17 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
       .gte("expected_date", todayIso)
       .order("expected_date", { ascending: true })
       .limit(4),
+    // Latest bar close — source of truth for "current price" in the
+    // header. Weekly bar is the project's primary timeframe.
+    sb.from("bars")
+      .select("close, bar_date")
+      .eq("ticker", ticker)
+      .eq("granularity", "W")
+      .order("bar_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+  const barRow = barR.data as { close: number; bar_date: string } | null;
   return {
     disclosures: (discR.data ?? []) as DisclosureRow[],
     fin: finR.data as FinancialsEvalRow | null,
@@ -139,6 +154,9 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
     consensus: (consR.data ?? []) as AnalystConsensusRow[],
     holders: (holdR.data ?? []) as InstitutionalOwnershipRow[],
     earnings: (earnR.data ?? []) as EarningsCalendarRow[],
+    latestBar: barRow
+      ? { close: Number(barRow.close), bar_date: String(barRow.bar_date) }
+      : null,
   };
 }
 

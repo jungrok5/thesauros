@@ -259,6 +259,7 @@ export default async function StockDetailPage({ params }: PageProps) {
           consensus: [],
           holders: [],
           earnings: [],
+          latestBar: null,
         }),
   ]);
   const result = cached.result;
@@ -365,6 +366,26 @@ export default async function StockDetailPage({ params }: PageProps) {
           <MarketHoursNotice />
           <LastClose ticker={ticker} />
           <InvestorFlow ticker={ticker} />
+          {/* 분석 가격 (analyze_results.last_close) 가 bars 최신 종가와
+              다를 때 명시 — analyze_results 는 watchlist 외 종목엔 며칠~
+              주 단위 stale. entry_plan / 4등분선 등 분석 결과는 분석 시점
+              가격 기준이라 사용자가 두 가격 차이 인지해야 정확한 판단. */}
+          {result && ctx.latestBar &&
+           Math.abs(result.last_close - ctx.latestBar.close) / ctx.latestBar.close > 0.005 && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed">
+              <div className="text-amber-700 dark:text-amber-300 font-medium">
+                📊 분석 기준 가격 ({result.last_close.toLocaleString("ko-KR")}원)
+                과 최신 주봉 종가 ({ctx.latestBar.close.toLocaleString("ko-KR")}원,
+                {ctx.latestBar.bar_date})가 다릅니다 ·
+                {((ctx.latestBar.close / result.last_close - 1) * 100).toFixed(1)}%
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                매수 자리 (진입/손절/목표) 는 <strong>분석 시점 가격 기준</strong>입니다.
+                최신 가격이 진입가 ±5% 안이면 그대로 유효, 너무 멀어졌으면 추격 매수 X.
+                관심 종목 추가 시 자동 재분석됩니다.
+              </div>
+            </div>
+          )}
           <AnalysisView result={result} flow={flow} />
           <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
           <ShortAndDividendCards
