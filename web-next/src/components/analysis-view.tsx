@@ -137,6 +137,7 @@ export function AnalysisView({
   flow,
   currentPrice,
   currentBarDate,
+  analyzedAt,
 }: {
   result: AnalysisResult;
   flow?: FlowSummary | null;
@@ -145,6 +146,11 @@ export function AnalysisView({
    *  notes can render even when analyze_results is a few days stale. */
   currentPrice?: number | null;
   currentBarDate?: string | null;
+  /** `analyze_results.updated_at` (ISO) — the actual analyzer run
+   *  timestamp. Used in BookVerdict's chip instead of `as_of` /
+   *  `last_candle.date` which the analyzer stamps with the **next**
+   *  Friday's settlement date (future). */
+  analyzedAt?: string | null;
 }) {
   const r = result;
   // 분석 데이터 양 — "주봉 N 개" 가 "N bars" 보다 사용자한테 직관적.
@@ -186,6 +192,7 @@ export function AnalysisView({
         result={r}
         currentPrice={currentPrice}
         currentBarDate={currentBarDate}
+        analyzedAt={analyzedAt}
       />
 
       {/* 책 정신 정리표 — 시간프레임/캔들/거래량/패턴/4등분선/외인을 한

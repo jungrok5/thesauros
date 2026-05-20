@@ -171,23 +171,34 @@ async function getWatchlistState(
   return { added: false, category: "observing" };
 }
 
-async function getAnalysis(ticker: string): Promise<AnalysisResult | null> {
+async function getAnalysis(
+  ticker: string,
+): Promise<{ result: AnalysisResult | null; updatedAt: string | null }> {
   // 주봉/월봉 pivot 후 scan_daily 는 금요일 17 KST 에만 의미 있게
   // 갱신됨 (W bar 가 Mon-Thu 에 안 바뀜). 따라서 daily 기준 stale
   // 판정 + on-demand dispatch 는 평일에 처음 열어보는 종목마다 매번
   // 트리거되어 노이즈만 발생 — 2026-05-20 제거. 결과가 있으면 그대로
   // 보여주고, 없으면 "분석 대기" 안내만 한다.
+  //
+  // updated_at 도 같이 fetch — BookVerdict header chip 의 "🗓️ N월 N일
+  // 분석" 표시용. result.as_of / last_candle.date 둘 다 analyzer 가
+  // "다음 결산일" (미래 금요일) 로 stamp 해서 사용자에게 미래 시점으로
+  // 읽힌다 (088350.KS 2026-05-20 reported case: "2026-05-22 분석"
+  // 으로 표시됨). updated_at = 실제 분석 실행 timestamp 라 자연스러움.
   const sb = getServerClient();
   const { data, error } = await sb
     .from("analyze_results")
-    .select("result")
+    .select("result, updated_at")
     .eq("ticker", ticker)
     .maybeSingle();
   if (error) {
     console.error("analyze_results read:", error.message);
-    return null;
+    return { result: null, updatedAt: null };
   }
-  return (data?.result as AnalysisResult | undefined) ?? null;
+  return {
+    result: (data?.result as AnalysisResult | undefined) ?? null,
+    updatedAt: (data?.updated_at as string | undefined) ?? null,
+  };
 }
 
 async function getFlowSummary(ticker: string): Promise<
@@ -232,8 +243,10 @@ export default async function StockDetailPage({ params }: PageProps) {
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [result, watch, flow, ctx] = await Promise.all([
-    isCanonical ? getAnalysis(ticker) : Promise.resolve<AnalysisResult | null>(null),
+  const [analysis, watch, flow, ctx] = await Promise.all([
+    isCanonical
+      ? getAnalysis(ticker)
+      : Promise.resolve<{ result: AnalysisResult | null; updatedAt: string | null }>({ result: null, updatedAt: null }),
     isCanonical ? getWatchlistState(ticker) : Promise.resolve({ added: false, category: "observing" as const }),
     isCanonical ? getFlowSummary(ticker) : Promise.resolve(null),
     isCanonical
@@ -252,6 +265,8 @@ export default async function StockDetailPage({ params }: PageProps) {
           volumeSurge: null,
         }),
   ]);
+  const result = analysis.result;
+  const analyzedAt = analysis.updatedAt;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -353,31 +368,16 @@ export default async function StockDetailPage({ params }: PageProps) {
               </div>
             </div>
           )}
-          {/* 분석 가격 (analyze_results.last_close) 가 bars 최신 종가와
-              다를 때 명시 — analyze_results 는 watchlist 외 종목엔 며칠~
-              주 단위 stale. entry_plan / 4등분선 등 분석 결과는 분석 시점
-              가격 기준이라 사용자가 두 가격 차이 인지해야 정확한 판단. */}
-          {result && ctx.latestBar &&
-           Math.abs(result.last_close - ctx.latestBar.close) / ctx.latestBar.close > 0.005 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed">
-              <div className="text-amber-700 dark:text-amber-300 font-medium">
-                📊 분석 기준 가격 ({result.last_close.toLocaleString("ko-KR")}원)
-                과 최신 주봉 종가 ({ctx.latestBar.close.toLocaleString("ko-KR")}원,
-                {ctx.latestBar.bar_date})가 다릅니다 ·
-                {((ctx.latestBar.close / result.last_close - 1) * 100).toFixed(1)}%
-              </div>
-              <div className="mt-1 text-muted-foreground">
-                매수 자리 (진입/손절/목표) 는 <strong>분석 시점 가격 기준</strong>입니다.
-                최신 가격이 진입가 ±5% 안이면 그대로 유효, 너무 멀어졌으면 추격 매수 X.
-                관심 종목 추가 시 자동 재분석됩니다.
-              </div>
-            </div>
-          )}
+          {/* 분석 시점 vs 현재가 차이는 BookVerdict header chip 에 통합
+              (2026-05-20). 예전엔 outer amber banner 로 별도 노출했지만
+              chip + trigger-cleared note 가 같은 정보를 더 contextual 하게
+              담아서 중복 제거. */}
           <AnalysisView
             result={result}
             flow={flow}
             currentPrice={ctx.latestBar?.close ?? null}
             currentBarDate={ctx.latestBar?.bar_date ?? null}
+            analyzedAt={analyzedAt}
           />
           <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
           <ShortAndDividendCards
@@ -393,7 +393,7 @@ export default async function StockDetailPage({ params }: PageProps) {
               null 반환해서 렌더 안 됨. 따로 if 분기 안 해도 됨. */}
           <ConsensusCard
             consensus={ctx.consensus}
-            lastClose={result?.last_close ?? null}
+            currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
           />
           <HoldersCard holders={ctx.holders} />
           <EarningsCalendarCard earnings={ctx.earnings} />

@@ -30,6 +30,15 @@ interface Props {
   /** Bar date for `currentPrice` (YYYY-MM-DD). Optional companion to
    *  `currentPrice`; rendered in the analysis-vs-now header chip. */
   currentBarDate?: string | null;
+  /** `analyze_results.updated_at` ISO timestamp — the actual analyzer
+   *  run time, which is what we want in the header chip. Both
+   *  `result.as_of` and `result.last_candle.date` are stamped with the
+   *  **next** Friday's settlement date by the analyzer (future date in
+   *  the middle of a week), so they read as "분석 시점이 미래" to
+   *  users. 088350.KS 2026-05-20 reported case proved this:
+   *  `as_of=last_candle.date="2026-05-22"` while the analyzer actually
+   *  ran at `updated_at="2026-05-20 23:53 KST"`. */
+  analyzedAt?: string | null;
 }
 
 /** Days between two YYYY-MM-DD strings, ignoring tz (calendar days). */
@@ -43,7 +52,9 @@ function daysBetween(fromIso: string, toIso: string): number | null {
 
 /** Render a header chip explaining when the analysis was last computed
  *  and how far the current price has moved since — so a stale narrative
- *  doesn't read as live guidance. */
+ *  doesn't read as live guidance. Adds a one-line "entry_plan은 분석 시점
+ *  가격 기준" hint when the gap is large enough (>5 %) to risk a user
+ *  chasing the trade at a different price than the analyzer planned. */
 function AnalyzedAtChip({
   asOf,
   analyzedClose,
@@ -65,22 +76,36 @@ function AnalyzedAtChip({
     ? ((currentPrice! / analyzedClose) - 1) * 100
     : 0;
   const days = currentBarDate ? daysBetween(asOf, currentBarDate) : null;
+  // Large-gap hint: when price has moved >5 % since the analyzer ran,
+  // entry/stop/target numbers shown elsewhere on the page may be off
+  // enough that a user "chasing" the trade ends up at a worse R/R than
+  // the analyzer's plan. Surface this once, here, instead of as a
+  // separate banner up the tree (was redundant with this chip).
+  const largeGap = hasFreshPrice && Math.abs(deltaPct) > 5;
   return (
-    <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground/80 mb-2">
-      <span>
-        🗓️ <strong className="text-foreground/80">{asOf}</strong> 분석 ·
-        종가 <span className="font-mono">{formatPrice(analyzedClose, ticker)}</span>
-      </span>
-      {hasFreshPrice && (
-        <span className="rounded-full border border-current/20 px-1.5 py-0.5 font-mono">
-          현재 {formatPrice(currentPrice!, ticker)}
-          <span className={deltaPct >= 0 ? "text-emerald-600 dark:text-emerald-300 ml-1" : "text-rose-600 dark:text-rose-300 ml-1"}>
-            {deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(1)}%
-          </span>
-          {days != null && days >= 1 && (
-            <span className="ml-1 opacity-70">· {days}일 전</span>
-          )}
+    <div className="text-[11px] text-muted-foreground/80 mb-2 space-y-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span>
+          🗓️ <strong className="text-foreground/80">{asOf}</strong> 분석 ·
+          종가 <span className="font-mono">{formatPrice(analyzedClose, ticker)}</span>
         </span>
+        {hasFreshPrice && (
+          <span className="rounded-full border border-current/20 px-1.5 py-0.5 font-mono">
+            현재 {formatPrice(currentPrice!, ticker)}
+            <span className={deltaPct >= 0 ? "text-emerald-600 dark:text-emerald-300 ml-1" : "text-rose-600 dark:text-rose-300 ml-1"}>
+              {deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(1)}%
+            </span>
+            {days != null && days >= 1 && (
+              <span className="ml-1 opacity-70">· {days}일 전</span>
+            )}
+          </span>
+        )}
+      </div>
+      {largeGap && (
+        <div className="text-[11px] leading-relaxed opacity-80">
+          진입/손절/목표 수치는 <strong>분석 시점 종가 기준</strong> —
+          최신가가 진입가 ±5 % 안이면 그대로 유효, 너무 멀어졌으면 추격 매수 ✗.
+        </div>
       )}
     </div>
   );
@@ -144,6 +169,14 @@ function pickFreshBullishPattern(
     const bl = breakoutLevel(p);
     if (bl == null) continue;
     const runup = (last / bl - 1) * 100;
+    // Skip patterns where price has fallen back BELOW the breakout level
+    // — that's pattern invalidation territory, not "fresh entry". Surfacing
+    // them as fresh produced the 088350.KS bug: 장대양봉 catalyst at
+    // breakout 5,390 vs last 5,300 → runup −1.7%, picked as fresher than
+    // the +47% 쌍바닥, then narrated as "🟢 강한 매수 — 돌파선 아래 −2%
+    // 패턴 무효 가능" (self-contradictory verdict). Real fresh = above the
+    // breakout level (small positive buffer for round-off).
+    if (runup < 0) continue;
     if (!best || runup < best.runupPct) {
       best = { kind: p.kind, breakout: bl, runupPct: runup };
     }
@@ -165,16 +198,28 @@ function formatPrice(v: number, ticker: string): string {
   return `${Math.round(v).toLocaleString("ko-KR")}원`;
 }
 
-export function BookVerdict({ result, currentPrice, currentBarDate }: Props) {
+export function BookVerdict({
+  result,
+  currentPrice,
+  currentBarDate,
+  analyzedAt,
+}: Props) {
   const r = result;
   const monthly = r.trend.monthly;
   const weekly = r.trend.weekly;
   const last = r.last_close;
   const ticker = r.ticker;
   const warnings = collectWarnings(r);
+  // Prefer `analyzedAt` (analyze_results.updated_at — actual run time).
+  // Both `as_of` and `last_candle.date` are future-stamped by the
+  // analyzer with the next Friday settlement; using either reads as
+  // "분석 시점이 미래" on the page. Truncate ISO timestamp to date.
+  const analyzedDate = analyzedAt
+    ? analyzedAt.slice(0, 10)
+    : (r.last_candle?.date ?? r.as_of);
   const analyzedAtChip = (
     <AnalyzedAtChip
-      asOf={r.as_of}
+      asOf={analyzedDate}
       analyzedClose={last}
       currentPrice={currentPrice}
       currentBarDate={currentBarDate}
@@ -540,6 +585,21 @@ function isAmbushSetup(r: AnalysisResult): boolean {
   // absorbed in the box"; a chart at 95 % of 52w is past that phase.
   const pos = r.position_in_52w;
   if (typeof pos === "number" && pos >= 0.85) return false;
+
+  // Disqualify when price has already cleared 주봉 10MA meaningfully
+  // (> +5 %). 매복 narrative is "포킹 트리거 위로 터질 때까지 매복" —
+  // if last_close is already +5 % above the ma_10w trigger, the
+  // trigger has effectively fired, not still pending. 088350.KS
+  // 2026-05-20 reported case: last_close 5,300, ma_10w 4,944 (+7.2 %),
+  // 매복 분기 fired with narrative "4,944원 위로 매복" → contradicts
+  // the visible price. Threshold tuned to +5 %: 국보디자인 case
+  // (+4.2 % over ma_10w with tight box + drying volume + indecision
+  // candle) still classifies as 매복 (book: 자리만 약간 벗어난 box
+  // 상태), while 088350.KS-style clear breakouts route to BUY proper.
+  const ma10w = r.trend.weekly?.ma_10;
+  if (typeof ma10w === "number" && ma10w > 0 && r.last_close > ma10w * 1.05) {
+    return false;
+  }
 
   const hasSetupPattern = (r.patterns ?? []).some(
     (p) => typeof p.kind === "string" && p.kind.includes("수렴 매복"),

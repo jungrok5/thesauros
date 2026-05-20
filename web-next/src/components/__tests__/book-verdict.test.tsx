@@ -668,4 +668,157 @@ describe("BookVerdict — currentPrice (analysis-vs-now) header chip + trigger-c
     // as_of date still renders, but no "현재" delta chip.
     expect(screen.queryByText(/현재 /)).toBeNull();
   });
+
+  it("088350.KS reported case: catalyst -2 % is NOT picked as fresh; 쌍바닥 +47 % drives stale verdict", () => {
+    // Live data dump 2026-05-20:
+    //   last_close 5,300 · weekly ma_10 4,943.5 (+7.2 %)
+    //   patterns: 쌍바닥 (neckline 3,610 → +47 % runup)
+    //             장대양봉 catalyst (catalyst_close 5,390 → -1.7 % runup)
+    // Old picker preferred the catalyst (-2 %) as "freshest" → narrative
+    //   said "🟢 강한 매수 · 돌파선 아래 -2 % — 패턴 무효 가능" (self
+    //   contradicting). With runup<0 skipped, 쌍바닥 (+47 %) wins →
+    //   stale-pattern verdict "추세 유효 · 진입 자리 지남" — coherent.
+    // Also the +5 % 매복 guard means this won't misfire as 매복 either.
+    const r = makeResult({
+      ticker: "088350.KS",
+      as_of: "2026-05-22",
+      last_close: 5300,
+      action: "STRONG_BUY",
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 5300, ma_10: 4943.5,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 2943.9, above_ma_240: true,
+          alignment_score: 0.6, overall_score: 0.85, label: "강세",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      patterns: [
+        {
+          kind: "쌍바닥", direction: "bullish", confidence: 0.75,
+          completed: true, detected_at: "2026-05-22",
+          entry: 5300, stop: 4700, target: 7500, reason: "쌍바닥 완성",
+          timeframe: "weekly", extra: { neckline: 3610 },
+        },
+        {
+          kind: "장대양봉 catalyst", direction: "bullish", confidence: 0.7,
+          completed: true, detected_at: "2026-05-22",
+          entry: 5390, stop: 4800, target: 7670, reason: "catalyst",
+          timeframe: "weekly", extra: { catalyst_close: 5390, q25: 4958.75 },
+        },
+      ],
+      volume_case: {
+        case: 3, label_kr: "바닥권 거래량 폭증",
+        direction: "bullish", confidence: 0.7, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-22", open: 5390, high: 5400, low: 5250, close: 5300,
+        volume: 200000, body_pct: 0.30, upper_wick_pct: 0.55, lower_wick_pct: 0.15,
+        close_position: 0.25, is_bullish: false,
+        tags: ["주고받고"], in_safe_zone_75: true,
+      },
+      consolidation_ratio: 0.08,
+    });
+    render(<BookVerdict result={r} currentPrice={5300} analyzedAt="2026-05-20T14:53:00Z" />);
+    // Coherent stale-pattern verdict, not the self-contradicting one
+    expect(screen.getByText(/추세 유효.*진입 자리 지남/)).toBeInTheDocument();
+    expect(screen.getByText(/쌍바닥.*47%.*위/)).toBeInTheDocument();
+    // Must NOT fire 매복 (+7.2 % above ma_10w) and must NOT fire bare 강한 매수
+    expect(screen.queryByText(/매복.*포킹 대기/)).toBeNull();
+    expect(screen.queryByText(/한 줄 평 · 강한 매수/)).toBeNull();
+    // Must NOT say "패턴 무효 가능" — catalyst was the negative-runup
+    // pattern, now correctly skipped.
+    expect(screen.queryByText(/패턴 무효 가능/)).toBeNull();
+    // Chip uses analyzedAt (not as_of/last_candle.date which are future)
+    expect(screen.getByText("2026-05-20")).toBeInTheDocument();
+    expect(screen.queryByText("2026-05-22")).toBeNull();
+  });
+
+  it("국보디자인 +4.2 % over ma_10w still classifies as 매복 (gate is +5 %)", () => {
+    // Defensive: regression for the +5 % threshold — 24,450 / 23,465
+    // = +4.2 %, below the gate, so 매복 still fires.
+    const r = makeResult({
+      ticker: "066620.KQ",
+      action: "STRONG_BUY",
+      last_close: 24450,
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 24450, ma_10: 23465,
+          above_ma_10: true, ma_10_slope_up: true,
+          ma_240: 18085, above_ma_240: true,
+          alignment_score: 1.0, overall_score: 1.0, label: "강세",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      patterns: [],
+      volume_case: {
+        case: 7, label_kr: "급등 중 거래량 감소",
+        direction: "bullish", confidence: 0.78, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-22", open: 24600, high: 24800, low: 23700, close: 24450,
+        volume: 21778, body_pct: 0.14, upper_wick_pct: 0.18, lower_wick_pct: 0.68,
+        close_position: 0.32, is_bullish: false, tags: ["교수형"],
+        in_safe_zone_75: null,
+      },
+      consolidation_ratio: 0.041,
+    });
+    render(<BookVerdict result={r} />);
+    expect(screen.getByText(/매복.*포킹 대기/)).toBeInTheDocument();
+  });
+
+  it("renders the large-gap entry/stop/target hint only when |delta| > 5 %", () => {
+    const r = makeResult({
+      ticker: "088350.KS",
+      as_of: "2026-05-16",
+      last_close: 4944,
+      action: "STRONG_BUY",
+      patterns: [
+        {
+          kind: "MA 수렴 매복", direction: "neutral", confidence: 0.55,
+          completed: false, detected_at: "2026-05-16",
+          entry: 4944, stop: 4500, target: null, reason: "",
+          timeframe: "weekly", extra: {},
+        },
+      ],
+      trend: {
+        daily: null,
+        weekly: {
+          timeframe: "weekly", price: 4944, ma_10: 4944,
+          above_ma_10: true, ma_10_slope_up: false,
+          ma_240: 4200, above_ma_240: true,
+          alignment_score: 0.4, overall_score: 0.75, label: "박스권",
+        },
+        monthly: null,
+        book_signal: "BUY", book_reason: "",
+      },
+      volume_case: {
+        case: 12, label_kr: "수렴기 거래량 감소",
+        direction: "bullish", confidence: 0.65, reason: "",
+      },
+      last_candle: {
+        date: "2026-05-16", open: 4900, high: 4960, low: 4870, close: 4944,
+        volume: 100000, body_pct: 0.15, upper_wick_pct: 0.20, lower_wick_pct: 0.55,
+        close_position: 0.40, is_bullish: true, tags: ["도지"], in_safe_zone_75: null,
+      },
+      consolidation_ratio: 0.04,
+    });
+    // Large gap (+7.2 %) → hint visible
+    render(
+      <BookVerdict result={r} currentPrice={5300} currentBarDate="2026-05-20" />,
+    );
+    expect(screen.getByText(/진입\/손절\/목표/)).toBeInTheDocument();
+    expect(screen.getByText(/추격 매수/)).toBeInTheDocument();
+    cleanup();
+
+    // Small gap (+2 %) → no hint
+    render(
+      <BookVerdict result={r} currentPrice={5043} currentBarDate="2026-05-20" />,
+    );
+    expect(screen.queryByText(/진입\/손절\/목표/)).toBeNull();
+  });
 });

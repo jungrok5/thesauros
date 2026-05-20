@@ -50,20 +50,26 @@ function fmtEokFromMillion(n: number | null | undefined): string {
 
 export function ConsensusCard({
   consensus,
-  lastClose,
+  currentPrice,
 }: {
   consensus: AnalystConsensusRow[];
-  lastClose?: number | null;
+  /** Latest bar close — used for the "현재가 대비 +X%" upside label.
+   *  Was previously `lastClose` from analyze_results, which is frozen
+   *  at the analyzer's run time (Friday 17 KST for KR) and produced
+   *  a stale upside (088350.KS 2026-05-20: target 12k vs analyzed
+   *  4944 reported +143%, but vs today's 5300 actually +126%).
+   *  Fall back to `null` upstream when bars data is missing. */
+  currentPrice?: number | null;
 }) {
   if (!consensus || consensus.length === 0) return null;
 
   // 가장 가까운 forward year (어차피 ingest 가 미래만 씀).
   const primary = consensus[0];
   const targetUpside =
-    primary.target_price && lastClose && lastClose > 0
-      ? ((primary.target_price - lastClose) / lastClose) * 100
+    primary.target_price && currentPrice && currentPrice > 0
+      ? ((primary.target_price - currentPrice) / currentPrice) * 100
       : null;
-  const actionLine = consensusActionLine(primary.target_price ?? null, lastClose ?? null);
+  const actionLine = consensusActionLine(primary.target_price ?? null, currentPrice ?? null);
 
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-3">
