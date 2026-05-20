@@ -14,7 +14,7 @@ data it needs:
   bars (W)        5 years  (≈260 weekly rows per ticker; book MAs go up to 240)
   bars (M)        5 years  (≈60 monthly rows per ticker)
   investor_flow   14 days  (site shows last 5; 14 buffers any drill-down)
-  disclosures     1 year + engagement set
+  disclosures     180 days + engagement set
   fundamentals    engagement set only (5 years rolling per ticker)
   scan_results    inactive ≥ 30 days  (active signals stay; cron toggles flags)
 
@@ -100,8 +100,8 @@ POLICIES: list[Policy] = [
     ),
     (
         "disclosures",
-        "DELETE FROM disclosures WHERE filed_date < CURRENT_DATE - INTERVAL '1 year'",
-        "1 year",
+        "DELETE FROM disclosures WHERE filed_date < CURRENT_DATE - INTERVAL '180 days'",
+        "180 days",
     ),
     (
         "scan_results",
@@ -113,12 +113,13 @@ POLICIES: list[Policy] = [
     # theme_daily retention removed 2026-05-19 — tables dropped along
     # with /themes page in the search-only pivot.
     # Alerts pile up at ~1-3 rows per user per signal-bearing ticker per
-    # day. 90 days of history is plenty for "did I get notified about
-    # this?" — older rows are dead weight.
+    # day. 60 days of history is plenty for "did I get notified about
+    # this?" — older rows are dead weight. Tightened from 90 to 60 days
+    # (2026-05-20) to keep DB under 90% of Supabase 500MB cap.
     (
         "alerts",
-        "DELETE FROM alerts WHERE created_at < CURRENT_DATE - INTERVAL '90 days'",
-        "90 days",
+        "DELETE FROM alerts WHERE created_at < CURRENT_DATE - INTERVAL '60 days'",
+        "60 days",
     ),
     # ──────────────────────────────────────────────────────────────────
     # Generated-data TTL via engagement. The `active set` is the union
@@ -449,7 +450,65 @@ def main(argv: list[str] | None = None) -> int:
                         log.info("VACUUM %s done", tbl)
                     except Exception as e:
                         log.warning("VACUUM %s failed: %s", tbl, e)
+
+    # DB size gate — Supabase free tier hard cap = 500MB. We can't
+    # silently approach that line because Supabase puts the DB in
+    # read-only mode mid-cron when it trips, leaving inconsistent
+    # state. After retention we measure + escalate:
+    #   < 85%  → quiet (normal headroom)
+    #   85-90% → WARN log (telegram-able)
+    #   90%+   → ERR log + run VACUUM FULL bars (biggest table) to
+    #            reclaim bloat. If that still doesn't bring it under
+    #            90%, exit non-zero so the cron step fails and we get
+    #            a GitHub Actions notification.
+    SOFT_LIMIT = 0.85
+    HARD_LIMIT = 0.90
+    SUPABASE_FREE_BYTES = 500_000_000
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_database_size(current_database())")
+            size = cur.fetchone()[0]
+    pct = size / SUPABASE_FREE_BYTES
+    log.info("DB size: %s (%.1f%% of 500MB cap)",
+             _human(size), pct * 100)
+    if pct < SOFT_LIMIT:
+        return 0
+    if pct < HARD_LIMIT:
+        log.warning("DB size %.1f%% — approaching Supabase free cap, "
+                    "consider tightening retention windows", pct * 100)
+        return 0
+
+    # HARD_LIMIT crossed — run VACUUM FULL on bars (biggest table) to
+    # reclaim disk. VACUUM FULL locks the table for the duration but
+    # bars writes only happen during the cron itself (we're at the
+    # retention step which runs LAST), so the lock is safe here.
+    log.error("DB size %.1f%% — running emergency VACUUM FULL bars", pct * 100)
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("VACUUM FULL bars")
+            log.info("VACUUM FULL bars done")
+            cur.execute("SELECT pg_database_size(current_database())")
+            size_after = cur.fetchone()[0]
+    pct_after = size_after / SUPABASE_FREE_BYTES
+    log.info("DB size after VACUUM FULL: %s (%.1f%%)",
+             _human(size_after), pct_after * 100)
+    if pct_after >= HARD_LIMIT:
+        log.error("STILL above %d%% after VACUUM FULL — exiting "
+                  "non-zero so cron fails and admin is notified",
+                  int(HARD_LIMIT * 100))
+        return 2
     return 0
+
+
+def _human(b: int) -> str:
+    """Bytes → '123 MB' style. Matches pg_size_pretty enough for logs."""
+    if b >= 1 << 30:
+        return f"{b / (1 << 30):.1f} GB"
+    if b >= 1 << 20:
+        return f"{b / (1 << 20):.0f} MB"
+    if b >= 1 << 10:
+        return f"{b / (1 << 10):.0f} KB"
+    return f"{b} B"
 
 
 if __name__ == "__main__":

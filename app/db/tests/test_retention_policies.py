@@ -163,6 +163,27 @@ def test_policy_descriptions_present():
         assert desc, f"{tbl} policy has empty description"
 
 
+def test_db_size_thresholds_present():
+    """retention.main MUST measure DB size at the end and escalate
+    once it crosses the Supabase 500MB hard cap. Regression guard:
+    the 2026-05-20 incident saw the DB hit 497MB (99.4%) — without
+    this monitoring step there's no warning before Supabase puts
+    the DB in read-only mode mid-cron.
+    """
+    src = (Path(__file__).resolve().parents[1] / "retention.py").read_text(
+        encoding="utf-8",
+    )
+    # Must reference both thresholds
+    assert "0.85" in src or "SOFT_LIMIT" in src, "soft limit missing"
+    assert "0.90" in src or "HARD_LIMIT" in src, "hard limit missing"
+    # Must measure pg_database_size after retention runs
+    assert "pg_database_size" in src
+    # Must call VACUUM FULL bars on emergency (biggest table)
+    assert "VACUUM FULL bars" in src
+    # Must exit non-zero if still over hard limit
+    assert "return 2" in src, "no non-zero exit when retention can't recover"
+
+
 def test_no_new_table_silently_skips_retention():
     """Auto-discovery: every table CREATE'd by a migration must EITHER
     have a retention rule OR be on the exempt list with a documented
