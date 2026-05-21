@@ -146,13 +146,20 @@ function Brand() {
   );
 }
 
-/** Desktop sidebar — visible at md+ only. */
+/** Desktop sidebar — visible at md+ only.
+ *  Sticky to viewport so the nav stays visible on long pages, and the
+ *  inner nav scrolls independently when group list exceeds the height
+ *  (admins on small viewports). */
 export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   return (
-    <aside className="w-56 border-r border-border bg-background px-3 py-6 hidden md:flex md:flex-col gap-6">
-      <Brand />
-      <NavList groups={navGroups(isAdmin)} pathname={pathname} />
+    <aside className="w-56 shrink-0 border-r border-border bg-background hidden md:block">
+      <div className="sticky top-0 h-screen flex flex-col gap-6 px-3 py-6 overflow-hidden">
+        <Brand />
+        <div className="flex-1 overflow-y-auto -mr-3 pr-3">
+          <NavList groups={navGroups(isAdmin)} pathname={pathname} />
+        </div>
+      </div>
     </aside>
   );
 }
@@ -229,9 +236,10 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
             aria-modal="true"
             aria-label="메뉴"
             data-testid="mobile-nav-drawer"
-            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-card text-card-foreground border-r border-border px-3 py-6 flex flex-col gap-6 md:hidden shadow-2xl"
+            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-card text-card-foreground border-r border-border md:hidden shadow-2xl flex flex-col"
           >
-            <div className="flex items-center justify-between">
+            {/* Brand + close — sticky at top, never scrolled out of view. */}
+            <div className="flex items-center justify-between shrink-0 px-3 pt-6 pb-3">
               <Brand />
               <button
                 type="button"
@@ -243,11 +251,16 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <NavList
-              groups={navGroups(isAdmin)}
-              pathname={pathname}
-              onNavigate={() => setOpen(false)}
-            />
+            {/* Nav — scrollable when the group list exceeds drawer height.
+                Without this, admin (last group) gets cut off on short
+                mobile viewports + many groups. (2026-05-21) */}
+            <div className="flex-1 overflow-y-auto px-3 pb-6">
+              <NavList
+                groups={navGroups(isAdmin)}
+                pathname={pathname}
+                onNavigate={() => setOpen(false)}
+              />
+            </div>
           </aside>
         </>
       )}
