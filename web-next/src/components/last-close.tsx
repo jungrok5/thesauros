@@ -10,6 +10,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { priceLabelFor, classifySession } from "@/lib/market-session";
 
 interface Quote {
   ticker: string;
@@ -89,7 +90,12 @@ export function LastClose({ ticker }: Props) {
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
           <div className="text-xs text-muted-foreground">
-            최종 종가 ({quote.as_of})
+            {priceLabelFor(ticker, quote.as_of)} ({quote.as_of})
+            {classifySession(ticker, quote.as_of) === "intraday" && (
+              <span className="ml-1 text-amber-700 dark:text-amber-300">
+                · 장중
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-baseline gap-2 flex-wrap">
             <span className="text-2xl font-mono">{fmt(quote.price, 2)}</span>

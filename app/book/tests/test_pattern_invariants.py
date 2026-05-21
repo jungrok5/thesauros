@@ -220,6 +220,53 @@ def test_double_bottom_detects_and_invariant():
     _check_plan_invariant(p, "synthetic-double-bottom")
 
 
+def test_double_bottom_NEVER_completed_below_neckline():
+    """Regression for 068930.KQ 2026-05-21: 쌍바닥 검출 후 last_close 가
+    neckline 한참 아래 (8460 vs 9180 = -8 %) 인데도 completed=True 로
+    stamp 되어 STRONG_BUY + entry_plan 이 빌드됐던 케이스. 책 정신 (p254):
+    쌍바닥 완성 = 네크라인 돌파.
+
+    Invariant 검증: 어떤 input 으로도 detector 가 fire 했다면
+        last_close <= neckline → completed=False
+    가 반드시 성립.
+
+    Random-walk 50개 chart 로 fuzz 검사 — `completed=True` 인 모든
+    케이스에서 last_close > neckline 도 만족하는지 확인.
+    """
+    rng = np.random.default_rng(seed=42)
+    violations: list[str] = []
+    for trial in range(50):
+        n = 130
+        dates = pd.date_range("2024-01-01", periods=n, freq="W-FRI")
+        # Random walk + W-shape bias
+        walk = np.cumsum(rng.normal(0, 1, n)) + 100
+        for i in range(n):
+            if 50 <= i < 70:  # bias down to low1
+                walk[i] -= 8
+            elif 80 <= i < 100:  # bias down to low2
+                walk[i] -= 6
+        walk = np.clip(walk, 50, 200)
+        df = pd.DataFrame({
+            "date": dates,
+            "open": walk, "high": walk * 1.01, "low": walk * 0.99,
+            "close": walk, "volume": rng.integers(50_000, 200_000, n),
+        })
+        p = detect_double_bottom(df)
+        if p is None or not p.completed:
+            continue
+        neckline = (p.extra or {}).get("neckline")
+        last_close = float(df["close"].iloc[-1])
+        if neckline is not None and last_close <= neckline:
+            violations.append(
+                f"trial {trial}: completed=True with close {last_close:.1f} "
+                f"<= neckline {neckline:.1f}"
+            )
+    assert not violations, (
+        f"쌍바닥 completed 가 네크라인 돌파 조건 미준수 ({len(violations)} 건):\n"
+        + "\n".join(violations[:5])
+    )
+
+
 def test_double_top_detects_and_invariant():
     df = make_double_top()
     p = detect_double_top(df)

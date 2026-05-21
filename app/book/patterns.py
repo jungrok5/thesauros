@@ -134,8 +134,17 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
     last_idx = len(df) - 1
     ma_10 = _ma_value(df, 10)
 
-    # Completion: 10MA hookline candle
-    completed = ma_10 is not None and last_close > ma_10 and last_close > b.price * 1.02
+    # Completion — book 정신은 명확: 쌍바닥은 네크라인 돌파해야 완성. 이전엔
+    # ma_10 + 2nd-bottom 위만 보고 "완성" 처리해서 last_close 가 neckline
+    # 한참 아래여도 STRONG_BUY entry_plan 빌드됨 (068930.KQ 2026-05-21:
+    # last_close 8460 vs neckline 9180 = -8 % 인데 "쌍바닥 완성" 표시).
+    # neckline 돌파 조건 추가로 진짜 완성만 completed=True.
+    completed = (
+        ma_10 is not None
+        and last_close > ma_10
+        and last_close > b.price * 1.02
+        and last_close > neckline   # 책 p254: 네크라인 돌파가 진짜 완성
+    )
 
     # Volume rule (book p256): 2차 브레이킹 거래량 = 1차의 70-200 %.
     # Outside that range = "페이크 캔들" — confidence is halved to

@@ -159,7 +159,7 @@ function breakoutLevel(p: AnalysisResult["patterns"][number]): number | null {
   return p.entry && p.entry > 0 ? p.entry : null;
 }
 
-function pickFreshBullishPattern(
+export function pickFreshBullishPattern(
   result: AnalysisResult,
 ): { kind: string; breakout: number; runupPct: number } | null {
   const last = result.last_close;
@@ -570,7 +570,7 @@ function nextDecisionLine(ma10w: number | null | undefined, ticker: string): str
  *   - the last candle has an upper-wick rejection signal
  *     (그레이브스톤도지 / 유성형 / 역망치형) OR a tight 4-bar box
  */
-function isPostRallyCaution(r: AnalysisResult): boolean {
+export function isPostRallyCaution(r: AnalysisResult): boolean {
   const pos = r.position_in_52w;
   const rally = r.rally_8w_pct;
   if (typeof pos !== "number" || pos < 0.85) return false;
@@ -587,7 +587,7 @@ function isPostRallyCaution(r: AnalysisResult): boolean {
   return upperWickReversal || tightBox;
 }
 
-function isAmbushSetup(r: AnalysisResult): boolean {
+export function isAmbushSetup(r: AnalysisResult): boolean {
   // Disqualify when price is near 52-week high — that's post-rally
   // caution territory (different verdict above), not pre-breakout
   // accumulation. 매복's whole semantic is "supply still being

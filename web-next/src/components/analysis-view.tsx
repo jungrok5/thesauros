@@ -6,7 +6,12 @@ import {
   InvestorFlowChip,
   type FlowSummary,
 } from "@/components/investor-flow-chip";
-import { BookVerdict } from "@/components/book-verdict";
+import {
+  BookVerdict,
+  isAmbushSetup,
+  isPostRallyCaution,
+  pickFreshBullishPattern,
+} from "@/components/book-verdict";
 import { BookSummaryTable } from "@/components/book-summary-table";
 import { formatNumber, cn } from "@/lib/utils";
 
@@ -190,8 +195,11 @@ export function AnalysisView({
 
       {/* 초보자 한 줄 결론 — BookVerdict 본문은 책 정신 용어 (매복/포킹/
           4등분선/catalyst 등) 가 들어가 있어 처음 보는 사람은 어려움.
-          그 위에 평이한 한국어로 매수 자격 1줄. (2026-05-21) */}
-      <NoviceVerdict action={r.action} />
+          그 위에 평이한 한국어로 매수 자격 1줄. action 단독으로 결정하면
+          매복/stale-pattern 분기에서 모순 ("✅ 매수 자격 가능" + "🟡 매복"
+          동시) — 그래서 BookVerdict 의 분기 가드를 같이 호출해서
+          downgrade. (2026-05-21) */}
+      <NoviceVerdict result={r} />
 
       <BookVerdict
         result={r}
@@ -332,8 +340,55 @@ export function AnalysisView({
 
 /** NoviceVerdict — BookVerdict 위에 평이한 한국어 1줄 callout.
  *  책 정신 용어 0개. 초보자가 페이지 보고 "이 종목 사도 돼?" 답이
- *  즉시 나오게. */
-function NoviceVerdict({ action }: { action: string }) {
+ *  즉시 나오게.
+ *
+ *  IMPORTANT: action 단독으로 결정하면 매복/stale-pattern/post-rally
+ *  분기 (BookVerdict 가 STRONG_BUY 여도 다운그레이드) 와 모순.
+ *  068930.KQ 2026-05-21 reported case: action=STRONG_BUY 인데 BookVerdict
+ *  는 매복 narrative — NoviceVerdict 가 "✅ 매수 자격 가능" 표시하면 모순.
+ *  → BookVerdict 의 가드를 같이 호출해서 일관성 보장.
+ */
+function NoviceVerdict({ result }: { result: AnalysisResult }) {
+  const action = result.action;
+  // BookVerdict 가 갈 분기를 미리 계산 → 같은 결정을 NoviceVerdict 도 따름.
+  const bullishAction = action === "BUY" || action === "STRONG_BUY";
+  const stalePattern = bullishAction
+    ? (() => {
+        const p = pickFreshBullishPattern(result);
+        return p != null && p.runupPct > 30;
+      })()
+    : false;
+  const postRally = bullishAction && isPostRallyCaution(result);
+  const ambush = bullishAction && !stalePattern && !postRally && isAmbushSetup(result);
+  const stretchHold = result.action === "HOLD" && !!result.stretch_reason;
+  const reaper = (action === "SELL" || action === "SELL_OR_SHORT")
+    && typeof result.stretch_reason === "string"
+    && /저승사자/.test(result.stretch_reason);
+
+  // 1) bullish action 인데 BookVerdict 가 다운그레이드하는 경우 →
+  //    NoviceVerdict 도 다운그레이드.
+  if (bullishAction && (ambush || stalePattern || postRally)) {
+    const reason =
+      ambush ? "박스권 횡보 중 (포킹 발사 대기)"
+        : stalePattern ? "이미 매수 자리 한참 지남"
+          : "랠리 후 조정 (반전 위험)";
+    return (
+      <section className="rounded-lg border-2 border-amber-500/40 bg-amber-500/5 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <span className="text-xl shrink-0">⚠️</span>
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold">오늘 매수 자격: 조건부 — 지금은 자리 X</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {reason}. 시스템이 STRONG_BUY 라벨 줬지만 실제 진입 자리는 아닙니다 —
+              아래 한 줄 평 본문 참고 (책 정신상 매수 X).
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // 2) 일반 mapping.
   const config = {
     STRONG_BUY: {
       cls: "border-emerald-500/40 bg-emerald-500/5",
@@ -347,24 +402,38 @@ function NoviceVerdict({ action }: { action: string }) {
       headline: "오늘 매수 자격: 가능 (매수)",
       body: "책 정신상 매수 자리. 본인 차트 + 펀더 검증 통과 시에만 진입.",
     },
-    HOLD: {
-      cls: "border-zinc-500/30 bg-zinc-500/5",
-      icon: "⏸",
-      headline: "오늘 매수 자격: 관망",
-      body: "보유 중이면 유지 OK, 신규 매수는 자격 X. 다음 주봉 마감까지 대기.",
-    },
+    HOLD: stretchHold
+      ? {
+        cls: "border-amber-500/40 bg-amber-500/5",
+        icon: "⚠️",
+        headline: "오늘 매수 자격: 조건부 — 자리 지남",
+        body: "추세는 살아있지만 신규 매수 자리는 한참 지남. 보유 중이면 유지, 신규는 X.",
+      }
+      : {
+        cls: "border-zinc-500/30 bg-zinc-500/5",
+        icon: "⏸",
+        headline: "오늘 매수 자격: 관망",
+        body: "보유 중이면 유지 OK, 신규 매수는 자격 X. 다음 주봉 마감까지 대기.",
+      },
     AVOID: {
       cls: "border-rose-500/40 bg-rose-500/5",
       icon: "❌",
       headline: "오늘 매수 자격: 없음 (회피)",
       body: "장기 추세가 죽은 차트. 책 정신상 신규 매수 자격 X — 다른 종목 찾는 게 좋습니다.",
     },
-    SELL: {
-      cls: "border-rose-500/40 bg-rose-500/5",
-      icon: "🔴",
-      headline: "오늘 매수 자격: 없음 (매도 신호)",
-      body: "추세 종료 / 청산 신호. 보유 중이면 매도, 신규 매수 자격 X.",
-    },
+    SELL: reaper
+      ? {
+        cls: "border-rose-500/40 bg-rose-500/5",
+        icon: "🔴",
+        headline: "오늘 매수 자격: 없음 (저승사자 — 즉시 청산)",
+        body: "장대음봉이 주봉 10MA 동시 깬 상태. 보유 중이면 즉시 청산, 신규 매수 자격 0%.",
+      }
+      : {
+        cls: "border-rose-500/40 bg-rose-500/5",
+        icon: "🔴",
+        headline: "오늘 매수 자격: 없음 (매도 신호)",
+        body: "추세 종료 / 청산 신호. 보유 중이면 매도, 신규 매수 자격 X.",
+      },
     SELL_OR_SHORT: {
       cls: "border-rose-500/40 bg-rose-500/5",
       icon: "🔴",
