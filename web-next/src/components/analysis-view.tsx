@@ -434,12 +434,19 @@ function NoviceVerdict({ result }: { result: AnalysisResult }) {
         headline: "오늘 매수 자격: 없음 (매도 신호)",
         body: "추세 종료 / 청산 신호. 보유 중이면 매도, 신규 매수 자격 X.",
       },
-    SELL_OR_SHORT: {
-      cls: "border-rose-500/40 bg-rose-500/5",
-      icon: "🔴",
-      headline: "오늘 매수 자격: 없음 (청산 또는 인버스)",
-      body: "추세 강하게 꺾임. 보유 중이면 매도 — 인버스 진입은 본인 판단.",
-    },
+    SELL_OR_SHORT: reaper
+      ? {
+        cls: "border-rose-500/40 bg-rose-500/5",
+        icon: "🔴",
+        headline: "오늘 매수 자격: 없음 (저승사자 — 즉시 청산)",
+        body: "장대음봉이 주봉 10MA 동시 깬 상태. 보유 중이면 즉시 청산, 신규 매수 자격 0%.",
+      }
+      : {
+        cls: "border-rose-500/40 bg-rose-500/5",
+        icon: "🔴",
+        headline: "오늘 매수 자격: 없음 (청산 또는 인버스)",
+        body: "추세 강하게 꺾임. 보유 중이면 매도 — 인버스 진입은 본인 판단.",
+      },
   }[action] ?? null;
 
   if (!config) return null;
