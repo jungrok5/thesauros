@@ -21,6 +21,7 @@ import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 import { SubScoreChips } from "@/components/sub-score-chips";
 import { PresetCardsClient } from "./preset-cards-client";
+import { SubScoreControlsClient } from "./sub-score-controls-client";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
 async function fetchLatestAnalysisRun(): Promise<string | null> {
@@ -366,31 +367,17 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                 으로 차트 + 펀더 동시 통과 종목을 보세요.
               </div>
             )}
-            {/* 정렬 + 필터 안내 */}
-            <div className="flex items-baseline justify-between gap-2 flex-wrap text-[11px] text-muted-foreground">
-              <span>
-                <strong>정렬:</strong> 책 점수 (book_score) 높은 순 → ROE 높은 순.
-                {!preset.filter.actionIn && !preset.filter.action && (
-                  <> 같은 점수면 <strong>1위가 강매수가 아닐 수 있음</strong> — 차트 chip 확인 필수.</>
-                )}
-              </span>
-              <Link
-                href={`/screener?preset=${preset.slug}${buyOnly ? "" : "&buy_only=1"}`}
-                className="rounded-md border border-border bg-background px-2 py-1 hover:bg-accent transition-colors"
-              >
-                {buyOnly ? "✓ 강매수/매수만 보는 중 (클릭=해제)" : "강매수/매수만 보기"}
-              </Link>
+            {/* 정렬 안내 — buy_only 토글 + filter/sort2 chip 은 모두
+                SubScoreControlsClient 안에 통합. 클라이언트에서 즉시
+                active state + isPending 표시. */}
+            <div className="text-[11px] text-muted-foreground">
+              <strong>정렬:</strong> 책 점수 (book_score) 높은 순 → ROE 높은 순.
+              {!preset.filter.actionIn && !preset.filter.action && (
+                <> 같은 점수면 <strong>1위가 강매수가 아닐 수 있음</strong> — 차트 chip 확인 필수.</>
+              )}
             </div>
 
-            {/* Sub-score 필터 + 2차 정렬 — book_score 동률 종목 안에서
-                "거래량 폭증 / safe75 / catalyst 직후" 같은 진짜 매수
-                자리만 골라내거나 위로 올림. (2026-05-21) */}
-            <SubScoreControls
-              preset={preset.slug}
-              buyOnly={buyOnly}
-              sub={subFilters}
-              sort2={sort2}
-            />
+            <SubScoreControlsClient preset={preset.slug} />
 
             {/* chip 의미 가이드 — default open (2026-05-21). 사용자가
                 익숙해지면 직접 접고, 페이지 reload 시는 다시 펼침
@@ -594,132 +581,9 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   );
 }
 
-// ActionPill moved to @/components/action-pill so /themes/[id] can use the
-// same chip — keeps the two stock-list pages from drifting again.
-
-/** Static (module-scope) chip — React 16 strict-purity rule: components
- *  cannot be created inside render. Defined once and reused by both
- *  filter and sort2 rows. */
-function FilterChip({
-  href,
-  active,
-  title,
-  children,
-}: {
-  href: string;
-  active: boolean;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      title={title}
-      className={
-        "rounded-full border px-2 py-0.5 transition-colors " +
-        (active
-          ? "border-foreground/40 bg-foreground/10 text-foreground"
-          : "border-border bg-card text-muted-foreground hover:bg-muted")
-      }
-    >
-      {children}
-    </Link>
-  );
-}
-
-/** Chip row for sub-score filters (universe-wide via RPC) + secondary
- *  sort (JS re-order within same book_score band). Each chip toggles a
- *  URL param so the state is shareable + bookmarkable. */
-function SubScoreControls({
-  preset,
-  buyOnly,
-  sub,
-  sort2,
-}: {
-  preset: string;
-  buyOnly: boolean;
-  sub: SubFilters;
-  sort2: string | null;
-}) {
-  function url(overrides: Record<string, string | null>): string {
-    const params = new URLSearchParams();
-    params.set("preset", preset);
-    if (buyOnly) params.set("buy_only", "1");
-    if (sub.volSurge) params.set("vol_surge", "1");
-    if (sub.zone) params.set("zone", sub.zone);
-    if (sub.catalystMax != null) params.set("catalyst_max", String(sub.catalystMax));
-    if (sort2) params.set("sort2", sort2);
-    for (const [k, v] of Object.entries(overrides)) {
-      if (v == null) params.delete(k);
-      else params.set(k, v);
-    }
-    return `/screener?${params.toString()}`;
-  }
-
-  return (
-    <div className="space-y-1.5 pt-1">
-      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-        <span className="text-muted-foreground mr-1">필터:</span>
-        <FilterChip
-          href={url({ vol_surge: sub.volSurge ? null : "1" })}
-          active={sub.volSurge}
-          title="거래량 case 3 (바닥 폭증) + case 9 (급등 양봉) 만"
-        >
-          📊 거래량 폭증
-        </FilterChip>
-        <FilterChip
-          href={url({ zone: sub.zone === "safe75" ? null : "safe75" })}
-          active={sub.zone === "safe75"}
-          title="4등분선 75% 안전지대"
-        >
-          🎯 safe75
-        </FilterChip>
-        <FilterChip
-          href={url({ zone: sub.zone === "warn50" ? null : "warn50" })}
-          active={sub.zone === "warn50"}
-          title="4등분선 50% 경계"
-        >
-          🎯 warn50
-        </FilterChip>
-        <FilterChip
-          href={url({ catalyst_max: sub.catalystMax === 4 ? null : "4" })}
-          active={sub.catalystMax === 4}
-          title="장대양봉 catalyst 4주 이내 종목만"
-        >
-          🔥 catalyst 4주 이내
-        </FilterChip>
-      </div>
-      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-        <span className="text-muted-foreground mr-1">2차 정렬:</span>
-        <FilterChip
-          href={url({ sort2: null })}
-          active={!sort2}
-          title="기본 정렬 — book_score → action → ROE"
-        >
-          기본
-        </FilterChip>
-        <FilterChip
-          href={url({ sort2: "vol" })}
-          active={sort2 === "vol"}
-          title="같은 book_score 안에서 거래량 폭증 위로"
-        >
-          거래량
-        </FilterChip>
-        <FilterChip
-          href={url({ sort2: "catalyst" })}
-          active={sort2 === "catalyst"}
-          title="같은 book_score 안에서 catalyst 최근일수록 위로"
-        >
-          catalyst 직후
-        </FilterChip>
-        <FilterChip
-          href={url({ sort2: "zone" })}
-          active={sort2 === "zone"}
-          title="같은 book_score 안에서 4등분선 safe75 위로"
-        >
-          4등분선
-        </FilterChip>
-      </div>
-    </div>
-  );
-}
+// ActionPill moved to @/components/action-pill so /themes/[id] can use
+// the same chip — keeps the two stock-list pages from drifting again.
+//
+// SubScoreControls + FilterChip moved to sub-score-controls-client.tsx
+// (client component) so chips switch instantly + show pending state
+// while the new RPC result streams in. (2026-05-21)

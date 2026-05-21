@@ -19,6 +19,7 @@ import Link from "next/link";
 import { ArrowLeft, Hash } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { ThemeSortChipsClient } from "./sort-chips-client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600; // 1시간 ISR
@@ -97,13 +98,8 @@ function sortBy(rows: ThemeRow[], key: SortKey): ThemeRow[] {
   return cp;
 }
 
-const SORT_LABELS: Array<{ key: SortKey; label: string; hint: string }> = [
-  { key: "hot",   label: "🔥 핫",       hint: "평균 등락률 + 강매수 비중" },
-  { key: "up",    label: "🟢 상승",     hint: "평균 등락률 높은 순" },
-  { key: "down",  label: "🔴 하락",     hint: "평균 등락률 낮은 순" },
-  { key: "buys",  label: "💡 매수 우위", hint: "강매수+매수 종목 많은 순" },
-  { key: "size",  label: "📦 종목수",   hint: "종목 수 많은 순" },
-];
+// SORT_LABELS moved into sort-chips-client.tsx (single source of truth
+// for chip definitions). Server uses sortKey value only.
 
 interface PageProps {
   searchParams: Promise<{ sort?: string }>;
@@ -148,25 +144,9 @@ export default async function ThemesPage({ searchParams }: PageProps) {
         </ul>
       </section>
 
-      {/* 정렬 옵션 — 카드 그리드 위 chip row */}
-      <div className="flex items-center gap-2 flex-wrap text-xs">
-        <span className="text-muted-foreground">정렬:</span>
-        {SORT_LABELS.map((s) => (
-          <Link
-            key={s.key}
-            href={s.key === "hot" ? "/themes" : `/themes?sort=${s.key}`}
-            title={s.hint}
-            className={cn(
-              "rounded-full border px-2.5 py-1 transition-colors",
-              sortKey === s.key
-                ? "border-foreground/30 bg-foreground/5 text-foreground"
-                : "border-border bg-card text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {s.label}
-          </Link>
-        ))}
-      </div>
+      {/* 정렬 옵션 — client component 로 즉시 active state + isPending
+          spinner (2026-05-21 — /screener PresetCardsClient 동일 패턴). */}
+      <ThemeSortChipsClient />
 
       {themes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
