@@ -16,6 +16,7 @@ import {
 } from "@/lib/screener-presets";
 import { HelpTip } from "@/components/help-tip";
 import { DataFreshness } from "@/components/data-freshness";
+import { ActionPill } from "@/components/action-pill";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
 async function fetchLatestAnalysisRun(): Promise<string | null> {
@@ -425,44 +426,5 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   );
 }
 
-function ActionPill({
-  action,
-  score,
-}: {
-  action: string | null;
-  score: number | null;
-}) {
-  if (!action) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[10px]">
-        대기
-      </span>
-    );
-  }
-  const isAvoid =
-    action === "AVOID" || action === "SELL" || action === "SELL_OR_SHORT";
-  const tone =
-    action === "STRONG_BUY"
-      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-      : action === "BUY"
-        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-        : isAvoid
-          ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-          : "bg-muted text-muted-foreground";
-  const label: Record<string, string> = {
-    STRONG_BUY: "🟢 강매수",
-    BUY: "🟡 매수",
-    HOLD: "⚪ 보류",
-    AVOID: "🔴 회피",
-    SELL: "🔴 청산",
-    SELL_OR_SHORT: "🔴 매도/숏",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${tone}`}
-    >
-      {label[action] ?? action}
-      {score != null && ` · ${(score * 10).toFixed(1)}/10`}
-    </span>
-  );
-}
+// ActionPill moved to @/components/action-pill so /themes/[id] can use the
+// same chip — keeps the two stock-list pages from drifting again.

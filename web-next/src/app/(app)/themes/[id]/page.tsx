@@ -4,11 +4,12 @@
  * 추천 X — 사용자가 발견 → 종목 페이지에서 본인 검증.
  */
 import Link from "next/link";
-import { ArrowLeft, Hash } from "lucide-react";
+import { ArrowLeft, ArrowRight, Hash } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getServerClient } from "@/lib/supabase";
 import { HelpTip } from "@/components/help-tip";
 import { DataFreshness } from "@/components/data-freshness";
+import { ActionPill } from "@/components/action-pill";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -23,18 +24,16 @@ type ThemeMember = {
   per: number | null;
   pbr: number | null;
   roe: number | null;
+  debt_ratio: number | null;
+  op_margin: number | null;
   action: string | null;
   book_score: number | null;
 };
 
-const ACTION_LABEL: Record<string, { label: string; cls: string }> = {
-  STRONG_BUY:    { label: "🟢 강매수", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-  BUY:           { label: "🟡 매수",   cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
-  HOLD:          { label: "⚪ 보류",   cls: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300" },
-  AVOID:         { label: "🔴 회피",   cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300" },
-  SELL:          { label: "🔴 청산",   cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300" },
-  SELL_OR_SHORT: { label: "🔴 매도/숏", cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300" },
-};
+function fmtPct(v: number | null, digits = 1): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${(v * 100).toFixed(digits)}%`;
+}
 
 async function fetchThemeMembers(themeId: number) {
   const sb = getServerClient();
@@ -56,11 +55,22 @@ async function fetchThemeMembers(themeId: number) {
   }
   const [{ data: names }, { data: facts }, { data: an }] = await Promise.all([
     sb.from("tickers").select("ticker, name").in("ticker", tickers).limit(500),
-    sb.from("factors_eval").select("ticker, per, pbr, roe").in("ticker", tickers).limit(500),
+    sb.from("factors_eval")
+      .select("ticker, per, pbr, roe, debt_ratio, op_margin")
+      .in("ticker", tickers)
+      .limit(500),
     sb.from("analyze_results").select("ticker, result").in("ticker", tickers).limit(500),
   ]);
   const nameMap = new Map(((names ?? []) as unknown as Array<{ ticker: string; name: string | null }>).map((r) => [r.ticker, r.name]));
-  const facMap = new Map(((facts ?? []) as unknown as Array<{ ticker: string; per: number | null; pbr: number | null; roe: number | null }>).map((r) => [r.ticker, r]));
+  type FacRow = {
+    ticker: string;
+    per: number | null;
+    pbr: number | null;
+    roe: number | null;
+    debt_ratio: number | null;
+    op_margin: number | null;
+  };
+  const facMap = new Map(((facts ?? []) as unknown as FacRow[]).map((r) => [r.ticker, r]));
   const anMap = new Map(((an ?? []) as unknown as Array<{ ticker: string; result: { action?: string; book_score?: number } | null }>).map((r) => [r.ticker, r.result]));
   const members: ThemeMember[] = tickers.map((t) => {
     const f = facMap.get(t);
@@ -71,6 +81,8 @@ async function fetchThemeMembers(themeId: number) {
       per: f?.per ?? null,
       pbr: f?.pbr ?? null,
       roe: f?.roe ?? null,
+      debt_ratio: f?.debt_ratio ?? null,
+      op_margin: f?.op_margin ?? null,
       action: a?.action ?? null,
       book_score: a?.book_score ?? null,
     };
@@ -126,7 +138,8 @@ export default async function ThemeDetailPage({ params }: PageProps) {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
-          {/* Desktop */}
+          {/* Desktop — same column set as /screener (2026-05-21):
+              종목 / PER / PBR / ROE / 부채 / 영업이익률 / 매수 신호 / 상세 */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -141,82 +154,90 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">
                     <HelpTip term="roe">ROE</HelpTip>
                   </th>
-                  <th className="px-3 py-2 text-center font-medium text-muted-foreground">차트 신호</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">책 점수 (/10)</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">부채</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">영업이익률</th>
+                  <th className="px-3 py-2 text-center font-medium text-muted-foreground">매수 신호</th>
+                  <th className="px-3 py-2 text-center font-medium text-muted-foreground"></th>
                 </tr>
               </thead>
               <tbody>
-                {members.map((m, i) => {
-                  const actionInfo = m.action ? ACTION_LABEL[m.action] : null;
-                  return (
-                    <tr
-                      key={m.ticker}
-                      className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}
-                    >
-                      <td className="px-3 py-2">
-                        <Link
-                          href={`/stocks/${encodeURIComponent(m.ticker)}`}
-                          className="block hover:underline"
-                        >
-                          <div className="font-medium">{m.name ?? m.ticker}</div>
-                          <div className="text-[10px] font-mono text-muted-foreground">{m.ticker}</div>
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {m.per != null ? Number(m.per).toFixed(1) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {m.pbr != null ? Number(m.pbr).toFixed(2) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {m.roe != null ? `${(Number(m.roe) * 100).toFixed(1)}%` : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {actionInfo ? (
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${actionInfo.cls}`}>
-                            {actionInfo.label}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground">분석 대기</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {m.book_score != null
-                          ? `${(Number(m.book_score) * 10).toFixed(1)}/10`
-                          : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {members.map((m, i) => (
+                  <tr
+                    key={m.ticker}
+                    className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}
+                  >
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/stocks/${encodeURIComponent(m.ticker)}`}
+                        className="block hover:underline"
+                      >
+                        <div className="font-medium">{m.name ?? m.ticker}</div>
+                        <div className="text-[10px] font-mono text-muted-foreground">{m.ticker}</div>
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {m.per != null ? Number(m.per).toFixed(1) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {m.pbr != null ? Number(m.pbr).toFixed(2) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtPct(m.roe)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtPct(m.debt_ratio, 0)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtPct(m.op_margin)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <ActionPill action={m.action} score={m.book_score} />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <Link
+                        href={`/stocks/${encodeURIComponent(m.ticker)}`}
+                        className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        상세 <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          {/* Mobile cards */}
+
+          {/* Mobile cards — same grid layout as /screener mobile cards. */}
           <ul className="md:hidden divide-y divide-border">
-            {members.map((m) => {
-              const actionInfo = m.action ? ACTION_LABEL[m.action] : null;
-              return (
-                <li key={m.ticker} className="p-3">
-                  <Link href={`/stocks/${encodeURIComponent(m.ticker)}`} className="block space-y-1">
-                    <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                      <span className="text-sm font-medium">{m.name ?? m.ticker}</span>
-                      {actionInfo && (
-                        <span className={`text-[10px] rounded-full px-2 py-0.5 ${actionInfo.cls}`}>
-                          {actionInfo.label}
-                        </span>
-                      )}
+            {members.map((m) => (
+              <li key={m.ticker} className="p-3">
+                <Link href={`/stocks/${encodeURIComponent(m.ticker)}`} className="flex flex-col gap-2">
+                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="text-sm font-medium">{m.name ?? m.ticker}</div>
+                      <div className="text-[10px] font-mono text-muted-foreground">{m.ticker}</div>
                     </div>
-                    <div className="text-[11px] font-mono text-muted-foreground">{m.ticker}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      PER {m.per != null ? Number(m.per).toFixed(1) : "—"} ·
-                      PBR {m.pbr != null ? Number(m.pbr).toFixed(2) : "—"} ·
-                      ROE {m.roe != null ? `${(Number(m.roe) * 100).toFixed(1)}%` : "—"} ·
-                      책점수 {m.book_score != null ? `${(Number(m.book_score) * 10).toFixed(1)}/10` : "—"}
+                    <ActionPill action={m.action} score={m.book_score} />
+                  </div>
+                  <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
+                    <div>
+                      <dt className="text-muted-foreground">PER</dt>
+                      <dd className="font-mono">{m.per != null ? Number(m.per).toFixed(1) : "—"}</dd>
                     </div>
-                  </Link>
-                </li>
-              );
-            })}
+                    <div>
+                      <dt className="text-muted-foreground">PBR</dt>
+                      <dd className="font-mono">{m.pbr != null ? Number(m.pbr).toFixed(2) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">ROE</dt>
+                      <dd className="font-mono">{fmtPct(m.roe)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">부채</dt>
+                      <dd className="font-mono">{fmtPct(m.debt_ratio, 0)}</dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-muted-foreground">영업이익률</dt>
+                      <dd className="font-mono">{fmtPct(m.op_margin)}</dd>
+                    </div>
+                  </dl>
+                </Link>
+              </li>
+            ))}
           </ul>
         </div>
       )}
