@@ -94,7 +94,14 @@ jobs:
           # 효과: analyze_results 가 매일 fresh → 폭증/스크리너/검색 페이지의
           # 가격 / action / score 가 항상 최신. 그동안 search-only pivot
           # 으로 watchlist 외 종목 며칠~주 stale 던 문제 근본 해결.
-          python -m app.db.scan_daily
+          #
+          # 2026-05-21: --sp500-only 추가 → US universe 가 광활 (NASDAQ +
+          # NYSE + AMEX ~10K) 인데 Naver weekCandle fetch 가 invalid US
+          # ticker 들에서 10s timeout × 3 suffix (.O/.K/.A) 누적 → 75 분
+          # workflow 한도 초과 → cancelled. S&P 500 (~500) 으로 제한해서
+          # 안전한 universe 만 scan. 사용자 watchlist 의 non-S&P US 종목은
+          # _watchlist_tickers() 가 자동 추가하므로 영향 없음 (line 545-552).
+          python -m app.db.scan_daily --sp500-only
 
       - name: Publish macro state
         env:
