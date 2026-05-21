@@ -95,13 +95,22 @@ jobs:
           # 가격 / action / score 가 항상 최신. 그동안 search-only pivot
           # 으로 watchlist 외 종목 며칠~주 stale 던 문제 근본 해결.
           #
-          # 2026-05-21: --sp500-only 추가 → US universe 가 광활 (NASDAQ +
-          # NYSE + AMEX ~10K) 인데 Naver weekCandle fetch 가 invalid US
-          # ticker 들에서 10s timeout × 3 suffix (.O/.K/.A) 누적 → 75 분
-          # workflow 한도 초과 → cancelled. S&P 500 (~500) 으로 제한해서
-          # 안전한 universe 만 scan. 사용자 watchlist 의 non-S&P US 종목은
-          # _watchlist_tickers() 가 자동 추가하므로 영향 없음 (line 545-552).
-          python -m app.db.scan_daily --sp500-only
+          # 2026-05-21 v2: --markets KOSPI KOSDAQ — US universe 자체 제외.
+          # 이유: 처음엔 --sp500-only (S&P 500 만) 시도했지만 같은 timeout
+          # 발생. log 분석 결과 Naver weekCandle 가 ABBV/ABT/ACN/ADM 같은
+          # **정상 S&P 500 대형주** 에서도 모두 10s timeout. 즉 invalid
+          # ticker 가 아니라 Naver 가 GH Actions Azure IP 자체 block 시작
+          # (메모리 project_us_yfinance_blocked.md 의 issue 가 yfinance →
+          # Naver 까지 확장). cloud IP block 은 코드로 해결 X.
+          #
+          # 해법: KR universe (KOSPI + KOSDAQ) 만 base scan. US 분석은
+          # _watchlist_tickers() 가 user watchlist 의 US 종목 (8 개) 만
+          # 자동 추가 — 그 8 개의 bars 는 별도 step (ingest_bars) 가 미리
+          # watchlist-only 로 fetch 해뒀고, scan_daily 는 DB bars 만 읽음
+          # (fetch 안 함). watchlist 외 US 종목 (예: 일반 S&P) 의
+          # analyze_results 는 stale 가능 — 사용자가 그 종목 page 열면
+          # /api/quote (client-side, residential IP) 가 fresh 데이터 보여줌.
+          python -m app.db.scan_daily --markets KOSPI KOSDAQ
 
       - name: Publish macro state
         env:
