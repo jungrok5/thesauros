@@ -12,6 +12,7 @@ import { DataFreshness } from "@/components/data-freshness";
 import { ActionPill } from "@/components/action-pill";
 import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices } from "@/lib/latest-prices";
+import { SubScoreChips } from "@/components/sub-score-chips";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -30,6 +31,9 @@ type ThemeMember = {
   op_margin: number | null;
   action: string | null;
   book_score: number | null;
+  volume_case_num: number | null;
+  quarter_zone: string | null;
+  catalyst_bars_since: number | null;
 };
 
 function fmtPct(v: number | null, digits = 1): string {
@@ -78,7 +82,27 @@ async function fetchThemeMembers(themeId: number) {
     op_margin: number | null;
   };
   const facMap = new Map(((facts ?? []) as unknown as FacRow[]).map((r) => [r.ticker, r]));
-  const anMap = new Map(((an ?? []) as unknown as Array<{ ticker: string; result: { action?: string; book_score?: number } | null }>).map((r) => [r.ticker, r.result]));
+  type AnResult = {
+    action?: string;
+    book_score?: number;
+    quarter_zone?: string;
+    volume_case?: { case?: number };
+    patterns?: Array<{ kind?: string; extra?: { bars_since?: number } }>;
+  };
+  const anMap = new Map(((an ?? []) as unknown as Array<{ ticker: string; result: AnResult | null }>).map((r) => [r.ticker, r.result]));
+
+  function catalystBarsSince(result: AnResult | null | undefined): number | null {
+    if (!result?.patterns) return null;
+    let best: number | null = null;
+    for (const p of result.patterns) {
+      const kind = p?.kind ?? "";
+      if (!/catalyst/i.test(kind)) continue;
+      const b = p.extra?.bars_since;
+      if (typeof b === "number" && (best == null || b < best)) best = b;
+    }
+    return best;
+  }
+
   const members: ThemeMember[] = tickers.map((t) => {
     const f = facMap.get(t);
     const a = anMap.get(t);
@@ -92,6 +116,9 @@ async function fetchThemeMembers(themeId: number) {
       op_margin: f?.op_margin ?? null,
       action: a?.action ?? null,
       book_score: a?.book_score ?? null,
+      volume_case_num: a?.volume_case?.case ?? null,
+      quarter_zone: a?.quarter_zone ?? null,
+      catalyst_bars_since: catalystBarsSince(a),
     };
   });
   // Sort: action priority desc → book_score desc → ROE desc (스크리너와 동일)
@@ -166,6 +193,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">부채</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">영업이익률</th>
                   <th className="px-3 py-2 text-center font-medium text-muted-foreground">매수 신호</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">세부</th>
                   <th className="px-3 py-2 text-center font-medium text-muted-foreground"></th>
                 </tr>
               </thead>
@@ -198,6 +226,13 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                     <td className="px-3 py-2 text-right font-mono">{fmtPct(m.op_margin)}</td>
                     <td className="px-3 py-2 text-center">
                       <ActionPill action={m.action} score={m.book_score} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <SubScoreChips
+                        volumeCase={m.volume_case_num}
+                        quarterZone={m.quarter_zone}
+                        catalystBarsSince={m.catalyst_bars_since}
+                      />
                     </td>
                     <td className="px-3 py-2 text-center">
                       <Link
@@ -250,6 +285,11 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                       <dd className="font-mono">{fmtPct(m.op_margin)}</dd>
                     </div>
                   </dl>
+                  <SubScoreChips
+                    volumeCase={m.volume_case_num}
+                    quarterZone={m.quarter_zone}
+                    catalystBarsSince={m.catalyst_bars_since}
+                  />
                 </Link>
               </li>
             ))}

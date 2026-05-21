@@ -19,6 +19,7 @@ import { DataFreshness } from "@/components/data-freshness";
 import { ActionPill } from "@/components/action-pill";
 import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
+import { SubScoreChips } from "@/components/sub-score-chips";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
 async function fetchLatestAnalysisRun(): Promise<string | null> {
@@ -40,6 +41,12 @@ interface SearchParams {
   // 차트 약해서 HOLD 인 케이스를 사용자가 "강매수 1위" 로 오해하는
   // 사고가 있어서, 페이지 자체에 토글 추가 (2026-05-20).
   buy_only?: string;
+  // 2026-05-21 sub-score filters (universe-wide via RPC):
+  vol_surge?: string;       // "1" → volume_case in (3, 9)
+  zone?: string;            // "safe75" | "warn50" | "danger25" | "broken"
+  catalyst_max?: string;    // "4" → catalyst_bars_since <= 4
+  // 2026-05-21 secondary sort (within same book_score):
+  sort2?: string;           // "vol" | "catalyst" | "zone"
 }
 
 interface PageProps {
@@ -57,16 +64,30 @@ type Hit = {
   // book-side signals
   action: string | null;
   book_score: number | null;
+  // sub-score data (migration 043, 2026-05-21)
+  volume_case_num: number | null;
+  volume_label: string | null;
+  volume_dir: string | null;
+  quarter_zone: string | null;
+  catalyst_bars_since: number | null;
 };
 
-async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
+type SubFilters = {
+  volSurge: boolean;
+  zone: string | null;
+  catalystMax: number | null;
+};
+
+async function runPreset(
+  preset: ScreenerPreset,
+  sub: SubFilters,
+): Promise<Hit[]> {
   const sb = getServerClient();
   const f = preset.filter;
 
   // Single RPC — DB-side LEFT JOIN factors_eval × tickers × analyze_results,
-  // WHERE + ORDER + LIMIT 다 처리해서 ~50 rows 만 응답. 옛 방식 (200 raw
-  // fetch + 3 query + JS filter/sort) 대비 wire traffic 95% 감소 + JSONB
-  // action 필터링도 DB-side 인덱스 사용. (migration 034, 2026-05-20)
+  // WHERE + ORDER + LIMIT 다 처리해서 ~50 rows 만 응답. (migration 034
+  // base + 043 sub-score 확장, 2026-05-21)
   const { data, error } = await sb.rpc("screener_results", {
     p_per_min: f.perMin ?? null,
     p_per_max: f.perMax ?? null,
@@ -83,6 +104,9 @@ async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
     p_action_in: f.actionIn ?? null,
     p_book_score_min: f.bookScoreMin ?? null,
     p_limit: 50,
+    p_quarter_zone: sub.zone,
+    p_volume_surge: sub.volSurge ? true : null,
+    p_catalyst_max_weeks: sub.catalystMax,
   });
   if (error || !data) {
     console.error("screener_results rpc:", error?.message);
@@ -99,6 +123,11 @@ async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
     revenue_growth: string | number | null;
     action: string | null;
     book_score: string | number | null;
+    volume_case_num: number | null;
+    volume_label: string | null;
+    volume_dir: string | null;
+    quarter_zone: string | null;
+    catalyst_bars_since: number | null;
   };
   const rpcRows = data as unknown as RpcRow[];
   return rpcRows.map((r) => ({
@@ -111,7 +140,66 @@ async function runPreset(preset: ScreenerPreset): Promise<Hit[]> {
     op_margin: numOrNull(r.op_margin),
     action: r.action,
     book_score: numOrNull(r.book_score),
+    volume_case_num: r.volume_case_num,
+    volume_label: r.volume_label,
+    volume_dir: r.volume_dir,
+    quarter_zone: r.quarter_zone,
+    catalyst_bars_since: r.catalyst_bars_since,
   }));
+}
+
+/** Secondary sort within the same book_score band. Default sort within
+ *  the RPC is already (book_score, action priority, ROE, ticker); this
+ *  applies a stable JS re-sort to bubble the requested dimension up. */
+function applySort2(hits: Hit[], sort2: string | null): Hit[] {
+  if (!sort2) return hits;
+  // Group by (book_score rounded to 0.01, action priority) — then sort
+  // within each group by the chosen secondary key. Keeps the top-level
+  // RPC ordering intact.
+  const buckets = new Map<string, Hit[]>();
+  const order: string[] = [];
+  for (const h of hits) {
+    const key = `${(h.book_score ?? 0).toFixed(2)}|${h.action ?? ""}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+      order.push(key);
+    }
+    buckets.get(key)!.push(h);
+  }
+  const compare: Record<string, (a: Hit, b: Hit) => number> = {
+    // 거래량 폭증 (case 3/9 우선) → 매집 (7/12) → 분배 (8/10/11) → 기타
+    vol: (a, b) => volumeRank(b.volume_case_num) - volumeRank(a.volume_case_num),
+    // catalyst 가장 최근 직후 우선 (null = 가장 뒤)
+    catalyst: (a, b) =>
+      (a.catalyst_bars_since ?? 999) - (b.catalyst_bars_since ?? 999),
+    // safe75 > warn50 > 그외 > danger25/broken
+    zone: (a, b) => zoneRank(b.quarter_zone) - zoneRank(a.quarter_zone),
+  };
+  const cmp = compare[sort2];
+  if (!cmp) return hits;
+  const out: Hit[] = [];
+  for (const k of order) {
+    const arr = buckets.get(k)!;
+    arr.sort(cmp);
+    out.push(...arr);
+  }
+  return out;
+}
+
+function volumeRank(c: number | null): number {
+  if (c === 3 || c === 9) return 5;     // 매수 폭증
+  if (c === 7 || c === 12) return 4;    // 매집 감소
+  if (c === 0) return 3;                // 미분류
+  if (c === 8 || c === 10 || c === 11) return 1;  // 분배
+  return 2;
+}
+
+function zoneRank(z: string | null): number {
+  if (z === "safe75") return 4;
+  if (z === "warn50") return 3;
+  if (z === "danger25") return 2;
+  if (z === "broken") return 1;
+  return 2;
 }
 
 /** Action distribution via RPC. */
@@ -165,31 +253,40 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const preset = findPreset(sp.preset);
   const buyOnly = sp.buy_only === "1";
-  // Two RPC calls in parallel — results (≤50 rows) + full-universe
-  // distribution (whole-preset counts even when buy_only=1 filters
-  // the visible list). Old code computed distribution from a JS
-  // counter over the same 50 rows — same numbers in normal flow.
+  const subFilters: SubFilters = {
+    volSurge: sp.vol_surge === "1",
+    zone:
+      sp.zone === "safe75" || sp.zone === "warn50"
+        || sp.zone === "danger25" || sp.zone === "broken"
+        ? sp.zone
+        : null,
+    catalystMax: sp.catalyst_max ? Number(sp.catalyst_max) : null,
+  };
+  const sort2 =
+    sp.sort2 === "vol" || sp.sort2 === "catalyst" || sp.sort2 === "zone"
+      ? sp.sort2
+      : null;
+
+  // Two RPC calls in parallel — results (≤50 rows, sub-filtered) +
+  // full-universe action distribution (whole-preset counts; ignores
+  // sub-filters so the header is stable when user toggles them).
   const [allHits, distribution, lastAnalysisAt] = preset
     ? await Promise.all([
-        runPreset(preset),
+        runPreset(preset, subFilters),
         fetchDistribution(preset),
         fetchLatestAnalysisRun(),
       ])
     : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }, null];
-  // Latest weekly close + 1-week change for each hit. Single bulk
-  // bars query — no per-row roundtrip.
   const priceMap: Map<string, LatestPrice> = allHits.length > 0
     ? await fetchLatestPrices(allHits.map((h) => h.ticker))
     : new Map();
-  // total = "펀더 통과 N 종목" header. With the new distribution RPC
-  // counting the FULL preset (not just the displayed top 50), the
-  // number now reflects real preset breadth.
   const totalPassing =
     distribution.strong_buy + distribution.buy + distribution.hold +
     distribution.avoid + distribution.none;
-  const hits = buyOnly
+  let hits = buyOnly
     ? allHits.filter((h) => h.action === "STRONG_BUY" || h.action === "BUY")
     : allHits;
+  hits = applySort2(hits, sort2);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -304,6 +401,16 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                 {buyOnly ? "✓ 강매수/매수만 보는 중 (클릭=해제)" : "강매수/매수만 보기"}
               </Link>
             </div>
+
+            {/* Sub-score 필터 + 2차 정렬 — book_score 동률 종목 안에서
+                "거래량 폭증 / safe75 / catalyst 직후" 같은 진짜 매수
+                자리만 골라내거나 위로 올림. (2026-05-21) */}
+            <SubScoreControls
+              preset={preset.slug}
+              buyOnly={buyOnly}
+              sub={subFilters}
+              sort2={sort2}
+            />
           </header>
 
           {hits.length === 0 ? (
@@ -331,6 +438,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground">부채</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground">영업이익률</th>
                       <th className="px-3 py-2 text-center font-medium text-muted-foreground">매수 신호</th>
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">세부</th>
                       <th className="px-3 py-2 text-center font-medium text-muted-foreground"></th>
                     </tr>
                   </thead>
@@ -369,6 +477,13 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                         </td>
                         <td className="px-3 py-2 text-center">
                           <ActionPill action={h.action} score={h.book_score} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <SubScoreChips
+                            volumeCase={h.volume_case_num}
+                            quarterZone={h.quarter_zone}
+                            catalystBarsSince={h.catalyst_bars_since}
+                          />
                         </td>
                         <td className="px-3 py-2 text-center">
                           <Link
@@ -428,6 +543,11 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                           <dd className="font-mono">{fmtPct(h.op_margin)}</dd>
                         </div>
                       </dl>
+                      <SubScoreChips
+                        volumeCase={h.volume_case_num}
+                        quarterZone={h.quarter_zone}
+                        catalystBarsSince={h.catalyst_bars_since}
+                      />
                     </Link>
                   </li>
                 ))}
@@ -442,3 +562,117 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
 
 // ActionPill moved to @/components/action-pill so /themes/[id] can use the
 // same chip — keeps the two stock-list pages from drifting again.
+
+/** Chip row for sub-score filters (universe-wide via RPC) + secondary
+ *  sort (JS re-order within same book_score band). Each chip toggles a
+ *  URL param so the state is shareable + bookmarkable. */
+function SubScoreControls({
+  preset,
+  buyOnly,
+  sub,
+  sort2,
+}: {
+  preset: string;
+  buyOnly: boolean;
+  sub: SubFilters;
+  sort2: string | null;
+}) {
+  function url(overrides: Record<string, string | null>): string {
+    const params = new URLSearchParams();
+    params.set("preset", preset);
+    if (buyOnly) params.set("buy_only", "1");
+    if (sub.volSurge) params.set("vol_surge", "1");
+    if (sub.zone) params.set("zone", sub.zone);
+    if (sub.catalystMax != null) params.set("catalyst_max", String(sub.catalystMax));
+    if (sort2) params.set("sort2", sort2);
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v == null) params.delete(k);
+      else params.set(k, v);
+    }
+    return `/screener?${params.toString()}`;
+  }
+
+  const Chip = ({ href, active, children, title }: {
+    href: string; active: boolean; children: React.ReactNode; title?: string;
+  }) => (
+    <Link
+      href={href}
+      title={title}
+      className={
+        "rounded-full border px-2 py-0.5 transition-colors " +
+        (active
+          ? "border-foreground/40 bg-foreground/10 text-foreground"
+          : "border-border bg-card text-muted-foreground hover:bg-muted")
+      }
+    >
+      {children}
+    </Link>
+  );
+
+  return (
+    <div className="space-y-1.5 pt-1">
+      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+        <span className="text-muted-foreground mr-1">필터:</span>
+        <Chip
+          href={url({ vol_surge: sub.volSurge ? null : "1" })}
+          active={sub.volSurge}
+          title="거래량 case 3 (바닥 폭증) + case 9 (급등 양봉) 만"
+        >
+          📊 거래량 폭증
+        </Chip>
+        <Chip
+          href={url({ zone: sub.zone === "safe75" ? null : "safe75" })}
+          active={sub.zone === "safe75"}
+          title="4등분선 75% 안전지대"
+        >
+          🎯 safe75
+        </Chip>
+        <Chip
+          href={url({ zone: sub.zone === "warn50" ? null : "warn50" })}
+          active={sub.zone === "warn50"}
+          title="4등분선 50% 경계"
+        >
+          🎯 warn50
+        </Chip>
+        <Chip
+          href={url({ catalyst_max: sub.catalystMax === 4 ? null : "4" })}
+          active={sub.catalystMax === 4}
+          title="장대양봉 catalyst 4주 이내 종목만"
+        >
+          🔥 catalyst 4주 이내
+        </Chip>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+        <span className="text-muted-foreground mr-1">2차 정렬:</span>
+        <Chip
+          href={url({ sort2: null })}
+          active={!sort2}
+          title="기본 정렬 — book_score → action → ROE"
+        >
+          기본
+        </Chip>
+        <Chip
+          href={url({ sort2: "vol" })}
+          active={sort2 === "vol"}
+          title="같은 book_score 안에서 거래량 폭증 위로"
+        >
+          거래량
+        </Chip>
+        <Chip
+          href={url({ sort2: "catalyst" })}
+          active={sort2 === "catalyst"}
+          title="같은 book_score 안에서 catalyst 최근일수록 위로"
+        >
+          catalyst 직후
+        </Chip>
+        <Chip
+          href={url({ sort2: "zone" })}
+          active={sort2 === "zone"}
+          title="같은 book_score 안에서 4등분선 safe75 위로"
+        >
+          4등분선
+        </Chip>
+      </div>
+    </div>
+  );
+}
