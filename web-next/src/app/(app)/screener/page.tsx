@@ -563,6 +563,36 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
 // ActionPill moved to @/components/action-pill so /themes/[id] can use the
 // same chip — keeps the two stock-list pages from drifting again.
 
+/** Static (module-scope) chip — React 16 strict-purity rule: components
+ *  cannot be created inside render. Defined once and reused by both
+ *  filter and sort2 rows. */
+function FilterChip({
+  href,
+  active,
+  title,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      title={title}
+      className={
+        "rounded-full border px-2 py-0.5 transition-colors " +
+        (active
+          ? "border-foreground/40 bg-foreground/10 text-foreground"
+          : "border-border bg-card text-muted-foreground hover:bg-muted")
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
 /** Chip row for sub-score filters (universe-wide via RPC) + secondary
  *  sort (JS re-order within same book_score band). Each chip toggles a
  *  URL param so the state is shareable + bookmarkable. */
@@ -592,86 +622,69 @@ function SubScoreControls({
     return `/screener?${params.toString()}`;
   }
 
-  const Chip = ({ href, active, children, title }: {
-    href: string; active: boolean; children: React.ReactNode; title?: string;
-  }) => (
-    <Link
-      href={href}
-      title={title}
-      className={
-        "rounded-full border px-2 py-0.5 transition-colors " +
-        (active
-          ? "border-foreground/40 bg-foreground/10 text-foreground"
-          : "border-border bg-card text-muted-foreground hover:bg-muted")
-      }
-    >
-      {children}
-    </Link>
-  );
-
   return (
     <div className="space-y-1.5 pt-1">
       <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
         <span className="text-muted-foreground mr-1">필터:</span>
-        <Chip
+        <FilterChip
           href={url({ vol_surge: sub.volSurge ? null : "1" })}
           active={sub.volSurge}
           title="거래량 case 3 (바닥 폭증) + case 9 (급등 양봉) 만"
         >
           📊 거래량 폭증
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ zone: sub.zone === "safe75" ? null : "safe75" })}
           active={sub.zone === "safe75"}
           title="4등분선 75% 안전지대"
         >
           🎯 safe75
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ zone: sub.zone === "warn50" ? null : "warn50" })}
           active={sub.zone === "warn50"}
           title="4등분선 50% 경계"
         >
           🎯 warn50
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ catalyst_max: sub.catalystMax === 4 ? null : "4" })}
           active={sub.catalystMax === 4}
           title="장대양봉 catalyst 4주 이내 종목만"
         >
           🔥 catalyst 4주 이내
-        </Chip>
+        </FilterChip>
       </div>
       <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
         <span className="text-muted-foreground mr-1">2차 정렬:</span>
-        <Chip
+        <FilterChip
           href={url({ sort2: null })}
           active={!sort2}
           title="기본 정렬 — book_score → action → ROE"
         >
           기본
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ sort2: "vol" })}
           active={sort2 === "vol"}
           title="같은 book_score 안에서 거래량 폭증 위로"
         >
           거래량
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ sort2: "catalyst" })}
           active={sort2 === "catalyst"}
           title="같은 book_score 안에서 catalyst 최근일수록 위로"
         >
           catalyst 직후
-        </Chip>
-        <Chip
+        </FilterChip>
+        <FilterChip
           href={url({ sort2: "zone" })}
           active={sort2 === "zone"}
           title="같은 book_score 안에서 4등분선 safe75 위로"
         >
           4등분선
-        </Chip>
+        </FilterChip>
       </div>
     </div>
   );
