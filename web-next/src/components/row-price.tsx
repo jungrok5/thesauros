@@ -9,14 +9,20 @@
  */
 import type { LatestPrice } from "@/lib/latest-prices";
 import { formatRowPrice } from "@/lib/latest-prices";
+import { RowSparkline } from "@/components/row-sparkline";
 import { cn } from "@/lib/utils";
 
 export function RowPrice({
   price,
   ticker,
+  showSparkline = true,
 }: {
   price: LatestPrice | null | undefined;
   ticker: string;
+  /** When true (default), renders a small inline sparkline of trailing
+   *  weekly closes above the price. Set false to drop it (e.g. for very
+   *  narrow contexts). */
+  showSparkline?: boolean;
 }) {
   if (!price) {
     return <span className="text-[10px] text-muted-foreground">—</span>;
@@ -25,6 +31,9 @@ export function RowPrice({
   const pctStr = pct != null ? `${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%` : "—";
   return (
     <div className="text-right font-mono leading-tight">
+      {showSparkline && price.series && price.series.length >= 2 && (
+        <RowSparkline series={price.series} className="block ml-auto" />
+      )}
       <div className="text-foreground">{formatRowPrice(price.close, ticker)}</div>
       <div
         className={cn(

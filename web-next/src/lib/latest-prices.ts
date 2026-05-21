@@ -22,7 +22,16 @@ export type LatestPrice = {
   changePct: number | null;
   /** YYYY-MM-DD of the latest weekly bar. */
   barDate: string;
+  /** Trailing weekly closes, oldest → newest. Up to SPARKLINE_BARS rows
+   *  (currently 13 weeks). Used by <RowSparkline /> for the inline chart;
+   *  same fetch as `close`/`changePct` so no extra round-trip. */
+  series: number[];
 };
+
+/** How many weeks of close to pull for the sparkline. 13 = ~3 months —
+ *  long enough to read direction, short enough that 50 tickers × 13 =
+ *  650 rows stays under PostgREST's 1000-row cap. */
+export const SPARKLINE_BARS = 13;
 
 export async function fetchLatestPrices(
   tickers: string[],
@@ -31,12 +40,11 @@ export async function fetchLatestPrices(
   if (tickers.length === 0) return out;
 
   const sb = getServerClient();
-  // Fetch the most recent 2 bars per ticker. Without window-function
-  // partitioning over the wire, we get the 2 newest WITHIN each ticker
-  // by ordering DESC and capping per-ticker in JS. PostgREST's flat
-  // .order() + .limit() can't do "top-N per group" — so we over-fetch
-  // (1000 cap = 500 tickers × 2) and group.
-  const limit = Math.min(1000, tickers.length * 2);
+  // Fetch the most recent SPARKLINE_BARS rows per ticker. PostgREST's
+  // flat .order() + .limit() can't do "top-N per group", so we over-
+  // fetch up to the 1000-row cap and group in JS. 50 tickers × 13 =
+  // 650 rows comfortably fits; we cap defensively below.
+  const limit = Math.min(1000, tickers.length * SPARKLINE_BARS);
   const { data, error } = await sb
     .from("bars")
     .select("ticker, bar_date, close")
@@ -53,7 +61,7 @@ export async function fetchLatestPrices(
   const grouped = new Map<string, Row[]>();
   for (const r of data as unknown as Row[]) {
     const arr = grouped.get(r.ticker) ?? [];
-    if (arr.length < 2) {
+    if (arr.length < SPARKLINE_BARS) {
       arr.push(r);
       grouped.set(r.ticker, arr);
     }
@@ -68,11 +76,18 @@ export async function fetchLatestPrices(
       prevClose != null && prevClose > 0
         ? close / prevClose - 1
         : null;
+    // Series oldest → newest (reverse of the DESC fetch). SPARKLINE uses
+    // chronological order to draw left-to-right.
+    const series = rows
+      .map((r) => Number(r.close))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .reverse();
     out.set(ticker, {
       close,
       prevClose,
       changePct,
       barDate: latest.bar_date,
+      series,
     });
   }
   return out;
