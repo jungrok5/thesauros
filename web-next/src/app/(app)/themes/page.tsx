@@ -1,99 +1,122 @@
 /**
- * /themes — Naver Finance 테마 list. 추천/점수 X — 단순 list.
+ * /themes — Naver Finance 테마 list.
  *
  * 사용자가 테마 클릭 → /themes/[id] 에서 종목 list. 각 종목 클릭 →
  * /stocks/[ticker] 에서 책 정신 자동 분석. 사용자가 직접 검증.
  *
- * 2026-05-20 부활. 이전 (search-only pivot 시 dropped) 의
- * 추천/점수/시계열 (theme_daily) 은 완전 제거 — false-positive 우려 X.
+ * 2026-05-21 enhanced: theme_metrics() RPC 추가로 테마별 평균 1주
+ * 등락률 + 상승/하락 종목 수 + 대표 종목 3개 노출. 추가 ingest 없이
+ * 기존 bars + theme_members + analyze_results JOIN.
+ *
+ * 정렬 옵션 (URL ?sort=...):
+ *   - hot (default): 평균 등락률 desc → STRONG_BUY 비율 desc
+ *   - up:    평균 등락률 desc
+ *   - down:  평균 등락률 asc
+ *   - buys:  강매수+매수 종목 수 desc
+ *   - size:  종목 수 desc
  */
 import Link from "next/link";
 import { ArrowLeft, Hash } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 3600; // 1시간 ISR — weekly cron 으로 갱신
+export const revalidate = 3600; // 1시간 ISR
 
 type ThemeRow = {
   theme_id: number;
   name: string;
   members: number;
-  strong_buy: number;  // 이 테마 안의 STRONG_BUY 종목 수
+  avg_change_pct: number | null;
+  up_count: number;
+  down_count: number;
+  strong_buy: number;
   buy: number;
   hold: number;
   avoid: number;
+  top_tickers: string[] | null;
 };
+
+type SortKey = "hot" | "up" | "down" | "buys" | "size";
 
 async function fetchThemes(): Promise<ThemeRow[]> {
   const sb = getServerClient();
-  // 1) 테마 + members
-  const { data: themes, error } = await sb
-    .from("themes")
-    .select("theme_id, name, members")
-    .order("members", { ascending: false })
-    .limit(300);
-  if (error || !themes) {
-    console.error("themes read:", error?.message);
+  const { data, error } = await sb.rpc("theme_metrics");
+  if (error || !data) {
+    console.error("theme_metrics rpc:", error?.message);
     return [];
   }
-  // 2) 테마 ID 별 종목 action 분포 — theme_members JOIN analyze_results
-  //    한 query 로 받아서 JS aggregate.
-  const themeIds = (themes as unknown as Array<{ theme_id: number }>).map((t) => t.theme_id);
-  if (themeIds.length === 0) return [];
-  const { data: members } = await sb
-    .from("theme_members")
-    .select("theme_id, ticker")
-    .in("theme_id", themeIds)
-    .limit(50000);
-  type MemberRow = { theme_id: number; ticker: string };
-  const memberRows = (members ?? []) as unknown as MemberRow[];
-  const allTickers = Array.from(new Set(memberRows.map((m) => m.ticker)));
-  // analyze_results 의 action 만 batch fetch
-  const { data: anRows } = allTickers.length > 0
-    ? await sb.from("analyze_results")
-        .select("ticker, result")
-        .in("ticker", allTickers)
-        .limit(50000)
-    : { data: [] };
-  const actionByTicker = new Map<string, string | null>();
-  for (const r of (anRows ?? []) as unknown as Array<{ ticker: string; result: { action?: string } | null }>) {
-    actionByTicker.set(r.ticker, r.result?.action ?? null);
-  }
-  // theme_id → 분포 집계
-  const distByTheme = new Map<number, { sb: number; b: number; h: number; av: number }>();
-  for (const m of memberRows) {
-    const cur = distByTheme.get(m.theme_id) ?? { sb: 0, b: 0, h: 0, av: 0 };
-    const action = actionByTicker.get(m.ticker);
-    if (action === "STRONG_BUY") cur.sb += 1;
-    else if (action === "BUY") cur.b += 1;
-    else if (action === "HOLD") cur.h += 1;
-    else if (action === "AVOID" || action === "SELL" || action === "SELL_OR_SHORT") cur.av += 1;
-    distByTheme.set(m.theme_id, cur);
-  }
-  const out = (themes as unknown as Array<{ theme_id: number; name: string; members: number }>).map((t) => {
-    const d = distByTheme.get(t.theme_id) ?? { sb: 0, b: 0, h: 0, av: 0 };
-    return {
-      theme_id: t.theme_id,
-      name: t.name,
-      members: t.members,
-      strong_buy: d.sb,
-      buy: d.b,
-      hold: d.h,
-      avoid: d.av,
-    };
-  });
-  // Sort: 강매수+매수 많은 순 → members 순 (테마 자체가 \"뜨거운\" 정도).
-  out.sort((a, b) => {
-    const aBuys = a.strong_buy * 2 + a.buy;
-    const bBuys = b.strong_buy * 2 + b.buy;
-    if (bBuys !== aBuys) return bBuys - aBuys;
-    return b.members - a.members;
-  });
-  return out;
+  type RpcRow = {
+    theme_id: number;
+    name: string;
+    members: number;
+    avg_change_pct: string | number | null;
+    up_count: number;
+    down_count: number;
+    strong_buy: number;
+    buy: number;
+    hold: number;
+    avoid: number;
+    top_tickers: string[] | null;
+  };
+  return (data as unknown as RpcRow[]).map((r) => ({
+    theme_id: r.theme_id,
+    name: r.name,
+    members: r.members,
+    avg_change_pct:
+      r.avg_change_pct == null ? null : Number(r.avg_change_pct),
+    up_count: r.up_count,
+    down_count: r.down_count,
+    strong_buy: r.strong_buy,
+    buy: r.buy,
+    hold: r.hold,
+    avoid: r.avoid,
+    top_tickers: r.top_tickers,
+  }));
 }
 
-export default async function ThemesPage() {
-  const themes = await fetchThemes();
+function sortBy(rows: ThemeRow[], key: SortKey): ThemeRow[] {
+  const cp = [...rows];
+  if (key === "up") {
+    cp.sort((a, b) => (b.avg_change_pct ?? -Infinity) - (a.avg_change_pct ?? -Infinity));
+  } else if (key === "down") {
+    cp.sort((a, b) => (a.avg_change_pct ?? Infinity) - (b.avg_change_pct ?? Infinity));
+  } else if (key === "buys") {
+    cp.sort((a, b) => (b.strong_buy * 2 + b.buy) - (a.strong_buy * 2 + a.buy));
+  } else if (key === "size") {
+    cp.sort((a, b) => b.members - a.members);
+  } else {
+    // hot: 평균 등락률 + STRONG_BUY weighting — "오르는 테마이면서 책
+    // 정신상 강매수 종목이 많은 곳" 우선.
+    cp.sort((a, b) => {
+      const ah = (a.avg_change_pct ?? 0) + (a.strong_buy / Math.max(a.members, 1)) * 0.1;
+      const bh = (b.avg_change_pct ?? 0) + (b.strong_buy / Math.max(b.members, 1)) * 0.1;
+      return bh - ah;
+    });
+  }
+  return cp;
+}
+
+const SORT_LABELS: Array<{ key: SortKey; label: string; hint: string }> = [
+  { key: "hot",   label: "🔥 핫",       hint: "평균 등락률 + 강매수 비중" },
+  { key: "up",    label: "🟢 상승",     hint: "평균 등락률 높은 순" },
+  { key: "down",  label: "🔴 하락",     hint: "평균 등락률 낮은 순" },
+  { key: "buys",  label: "💡 매수 우위", hint: "강매수+매수 종목 많은 순" },
+  { key: "size",  label: "📦 종목수",   hint: "종목 수 많은 순" },
+];
+
+interface PageProps {
+  searchParams: Promise<{ sort?: string }>;
+}
+
+export default async function ThemesPage({ searchParams }: PageProps) {
+  const sp = await searchParams;
+  const sortKey: SortKey =
+    (["hot", "up", "down", "buys", "size"] as SortKey[]).includes(sp.sort as SortKey)
+      ? (sp.sort as SortKey)
+      : "hot";
+  const all = await fetchThemes();
+  const themes = sortBy(all, sortKey);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -109,7 +132,7 @@ export default async function ThemesPage() {
           <Hash className="h-6 w-6" /> 테마
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          Naver Finance 기반 한국 시장 테마 분류. 종목수가 많은 순.
+          Naver Finance 기반 한국 시장 테마 분류. 테마별 평균 등락률 + 강매수 비중.
           테마 클릭 → 종목 list. 각 종목의 책 정신 분석은 종목 페이지에서.
         </p>
       </header>
@@ -125,6 +148,26 @@ export default async function ThemesPage() {
         </ul>
       </section>
 
+      {/* 정렬 옵션 — 카드 그리드 위 chip row */}
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <span className="text-muted-foreground">정렬:</span>
+        {SORT_LABELS.map((s) => (
+          <Link
+            key={s.key}
+            href={s.key === "hot" ? "/themes" : `/themes?sort=${s.key}`}
+            title={s.hint}
+            className={cn(
+              "rounded-full border px-2.5 py-1 transition-colors",
+              sortKey === s.key
+                ? "border-foreground/30 bg-foreground/5 text-foreground"
+                : "border-border bg-card text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {s.label}
+          </Link>
+        ))}
+      </div>
+
       {themes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
           테마 데이터 없음 — weekly cron 으로 동기화 됩니다.
@@ -135,45 +178,72 @@ export default async function ThemesPage() {
             총 <strong className="text-foreground">{themes.length}</strong> 테마
           </div>
           <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-            {themes.map((t) => (
-              <li key={t.theme_id}>
-                <Link
-                  href={`/themes/${t.theme_id}`}
-                  className="block rounded-lg border border-border bg-card p-3 hover:bg-muted/30 transition-colors space-y-1.5"
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium truncate">{t.name}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {t.members}종목
-                    </span>
-                  </div>
-                  {/* 테마 안의 종목 action 분포 — 강매수/매수 비중이 높으면
-                      그 테마 자체가 \"오르는 흐름\" 인 신호. 추천 아님, 단순 통계. */}
-                  <div className="flex gap-1.5 text-[10px]">
-                    {t.strong_buy > 0 && (
-                      <span className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5">
-                        🟢 {t.strong_buy}
+            {themes.map((t) => {
+              const pct = t.avg_change_pct;
+              const pctStr =
+                pct == null
+                  ? "—"
+                  : `${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%`;
+              const pctCls =
+                pct == null
+                  ? "text-muted-foreground"
+                  : pct >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400";
+              return (
+                <li key={t.theme_id}>
+                  <Link
+                    href={`/themes/${t.theme_id}`}
+                    className="block rounded-lg border border-border bg-card p-3 hover:bg-muted/30 transition-colors space-y-1.5"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium truncate">{t.name}</span>
+                      <span className={cn("shrink-0 text-[11px] font-mono font-semibold", pctCls)}>
+                        {pctStr}
                       </span>
+                    </div>
+
+                    {/* 상승/하락 종목 카운트 + 전체 종목수 */}
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span>{t.members}종목</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">▲ {t.up_count}</span>
+                      <span className="text-rose-600 dark:text-rose-400">▼ {t.down_count}</span>
+                    </div>
+
+                    {/* 대표 종목 3개 — STRONG_BUY → BUY → 나머지, book_score desc 정렬 */}
+                    {t.top_tickers && t.top_tickers.length > 0 && (
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {t.top_tickers.join(" · ")}
+                      </div>
                     )}
-                    {t.buy > 0 && (
-                      <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
-                        🟡 {t.buy}
-                      </span>
-                    )}
-                    {t.hold > 0 && (
-                      <span className="rounded-full bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5">
-                        ⚪ {t.hold}
-                      </span>
-                    )}
-                    {t.avoid > 0 && (
-                      <span className="rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5">
-                        🔴 {t.avoid}
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            ))}
+
+                    {/* 종목 action 분포 chip — 0 인 카테고리는 안 보임 */}
+                    <div className="flex gap-1.5 text-[10px]">
+                      {t.strong_buy > 0 && (
+                        <span className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5">
+                          🟢 {t.strong_buy}
+                        </span>
+                      )}
+                      {t.buy > 0 && (
+                        <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
+                          🟡 {t.buy}
+                        </span>
+                      )}
+                      {t.hold > 0 && (
+                        <span className="rounded-full bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 px-1.5 py-0.5">
+                          ⚪ {t.hold}
+                        </span>
+                      )}
+                      {t.avoid > 0 && (
+                        <span className="rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5">
+                          🔴 {t.avoid}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
