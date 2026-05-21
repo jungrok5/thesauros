@@ -16,7 +16,7 @@ data it needs:
   investor_flow   14 days  (site shows last 5; 14 buffers any drill-down)
   disclosures     180 days + engagement set
   fundamentals    engagement set only (5 years rolling per ticker)
-  scan_results    inactive ≥ 30 days  (active signals stay; cron toggles flags)
+  scan_results    inactive ≥ 14 days  (active signals stay; cron toggles flags)
 
 `macro_series`, `tickers`, `analyze_results`, `financials_eval`,
 `factors_eval` are either bounded by universe size or already
@@ -107,8 +107,14 @@ POLICIES: list[Policy] = [
         "scan_results",
         "DELETE FROM scan_results "
         "WHERE is_active = false "
-        "AND detected_at < CURRENT_DATE - INTERVAL '30 days'",
-        "inactive ≥ 30 days",
+        "AND detected_at < CURRENT_DATE - INTERVAL '14 days'",
+        # Tightened 30→14d on 2026-05-22 — DB hit 89.5% of the 500MB
+        # Supabase free cap and scan_results is the fastest-growing
+        # table (~5,000 inactive rows/cron). 14d still covers the
+        # default "지난 2주" buckets the screener exposes; older
+        # is_active=false rows are dead weight (kept only for the
+        # detected_at preservation logic which always reads active=true).
+        "inactive ≥ 14 days",
     ),
     # theme_daily retention removed 2026-05-19 — tables dropped along
     # with /themes page in the search-only pivot.
