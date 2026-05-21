@@ -1,12 +1,18 @@
 name: Daily Book-Rule Scan
 # Runs the daily book-rule scan against the canonical universe and publishes
-# results to Supabase. Cron is in UTC; 07:00 UTC = 16:00 KST (after KR close).
+# results to Supabase.
+#
+# Triggering (2026-05-21 — moved from GH schedule to Vercel Cron):
+#   GH `schedule:` cron was best-effort on free tier and observed to
+#   miss the 17:00 KST run during high-traffic windows. We now trigger
+#   from Vercel Cron (web-next/vercel.json) which hits
+#   /api/cron/daily-scan → GitHub workflow_dispatch endpoint here.
+#   Vercel Cron runs on independent infra with ~100% trigger reliability.
+#
+# Manual invocation: workflow_dispatch UI / gh CLI still works for ad-hoc
+# re-runs. No `schedule:` block here intentionally — single trigger source
+# avoids the "duplicate run via both Vercel and GH" problem.
 on:
-  schedule:
-    # 08:00 UTC = 17:00 KST. Naver Finance's frgn (외국인·기관) page
-    # only fully populates ~1 hour after KRX close (15:30 KST), so
-    # 17:00 catches same-day investor flow data; 16:00 missed it.
-    - cron: "0 8 * * 1-5"
   workflow_dispatch:
 
 concurrency:
