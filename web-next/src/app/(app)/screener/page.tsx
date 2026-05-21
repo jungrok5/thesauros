@@ -17,6 +17,8 @@ import {
 import { HelpTip } from "@/components/help-tip";
 import { DataFreshness } from "@/components/data-freshness";
 import { ActionPill } from "@/components/action-pill";
+import { RowPrice } from "@/components/row-price";
+import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
 async function fetchLatestAnalysisRun(): Promise<string | null> {
@@ -174,6 +176,11 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
         fetchLatestAnalysisRun(),
       ])
     : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }, null];
+  // Latest weekly close + 1-week change for each hit. Single bulk
+  // bars query — no per-row roundtrip.
+  const priceMap: Map<string, LatestPrice> = allHits.length > 0
+    ? await fetchLatestPrices(allHits.map((h) => h.ticker))
+    : new Map();
   // total = "펀더 통과 N 종목" header. With the new distribution RPC
   // counting the FULL preset (not just the displayed top 50), the
   // number now reflects real preset breadth.
@@ -311,6 +318,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground">종목</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">종가</th>
                       <th className="px-3 py-2 text-right font-medium text-muted-foreground">
                         <HelpTip term="per">PER</HelpTip>
                       </th>
@@ -342,6 +350,9 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                               {h.ticker}
                             </div>
                           </Link>
+                        </td>
+                        <td className="px-3 py-2">
+                          <RowPrice price={priceMap.get(h.ticker) ?? null} ticker={h.ticker} />
                         </td>
                         <td className="px-3 py-2 text-right font-mono">
                           {h.per?.toFixed(1) ?? "—"}
@@ -390,7 +401,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                             {h.ticker}
                           </div>
                         </div>
-                        <ActionPill action={h.action} score={h.book_score} />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <RowPrice price={priceMap.get(h.ticker) ?? null} ticker={h.ticker} />
+                          <ActionPill action={h.action} score={h.book_score} />
+                        </div>
                       </div>
                       <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
                         <div>

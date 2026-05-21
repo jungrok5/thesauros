@@ -10,6 +10,8 @@ import { getServerClient } from "@/lib/supabase";
 import { HelpTip } from "@/components/help-tip";
 import { DataFreshness } from "@/components/data-freshness";
 import { ActionPill } from "@/components/action-pill";
+import { RowPrice } from "@/components/row-price";
+import { fetchLatestPrices } from "@/lib/latest-prices";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -51,15 +53,20 @@ async function fetchThemeMembers(themeId: number) {
     .eq("theme_id", themeId);
   const tickers = ((mem ?? []) as unknown as { ticker: string }[]).map((r) => r.ticker);
   if (tickers.length === 0) {
-    return { theme: theme as unknown as { theme_id: number; name: string; members: number; updated_at: string }, members: [] };
+    return {
+      theme: theme as unknown as { theme_id: number; name: string; members: number; updated_at: string },
+      members: [],
+      priceMap: new Map(),
+    };
   }
-  const [{ data: names }, { data: facts }, { data: an }] = await Promise.all([
+  const [{ data: names }, { data: facts }, { data: an }, priceMap] = await Promise.all([
     sb.from("tickers").select("ticker, name").in("ticker", tickers).limit(500),
     sb.from("factors_eval")
       .select("ticker, per, pbr, roe, debt_ratio, op_margin")
       .in("ticker", tickers)
       .limit(500),
     sb.from("analyze_results").select("ticker, result").in("ticker", tickers).limit(500),
+    fetchLatestPrices(tickers),
   ]);
   const nameMap = new Map(((names ?? []) as unknown as Array<{ ticker: string; name: string | null }>).map((r) => [r.ticker, r.name]));
   type FacRow = {
@@ -100,6 +107,7 @@ async function fetchThemeMembers(themeId: number) {
   return {
     theme: theme as unknown as { theme_id: number; name: string; members: number; updated_at: string },
     members,
+    priceMap,
   };
 }
 
@@ -109,7 +117,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
   if (!Number.isInteger(themeId) || themeId <= 0) notFound();
   const data = await fetchThemeMembers(themeId);
   if (!data) notFound();
-  const { theme, members } = data;
+  const { theme, members, priceMap } = data;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -145,6 +153,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">종목</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">종가</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">
                     <HelpTip term="per">PER</HelpTip>
                   </th>
@@ -174,6 +183,9 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                         <div className="font-medium">{m.name ?? m.ticker}</div>
                         <div className="text-[10px] font-mono text-muted-foreground">{m.ticker}</div>
                       </Link>
+                    </td>
+                    <td className="px-3 py-2">
+                      <RowPrice price={priceMap.get(m.ticker) ?? null} ticker={m.ticker} />
                     </td>
                     <td className="px-3 py-2 text-right font-mono">
                       {m.per != null ? Number(m.per).toFixed(1) : "—"}
@@ -211,7 +223,10 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                       <div className="text-sm font-medium">{m.name ?? m.ticker}</div>
                       <div className="text-[10px] font-mono text-muted-foreground">{m.ticker}</div>
                     </div>
-                    <ActionPill action={m.action} score={m.book_score} />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <RowPrice price={priceMap.get(m.ticker) ?? null} ticker={m.ticker} />
+                      <ActionPill action={m.action} score={m.book_score} />
+                    </div>
                   </div>
                   <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
                     <div>

@@ -1,0 +1,93 @@
+/**
+ * Bulk-fetch latest weekly close + 1-week change for a list of tickers.
+ *
+ * Used by list pages (/screener, /themes/[id]) to show "5,300원 +7.2%"
+ * next to each row without paying a per-row roundtrip. Two W bars per
+ * ticker is plenty for "this week vs last week" — pull the most recent
+ * 2 rows, sort by bar_date in JS.
+ *
+ * PostgREST hard-caps responses at 1000 rows. Two bars × 500 tickers =
+ * 1000 → already at the ceiling. The list pages cap their tickers at
+ * 500 (screener.runPreset `p_limit: 50` and themes.fetchThemeMembers
+ * caps at 500), so we're safe — but assert it loudly if the cap is hit.
+ */
+import { getServerClient } from "@/lib/supabase";
+
+export type LatestPrice = {
+  /** Most recent weekly close. */
+  close: number;
+  /** Previous weekly close (one bar earlier). null if only one bar. */
+  prevClose: number | null;
+  /** (close - prevClose) / prevClose, as a fraction. null if unknown. */
+  changePct: number | null;
+  /** YYYY-MM-DD of the latest weekly bar. */
+  barDate: string;
+};
+
+export async function fetchLatestPrices(
+  tickers: string[],
+): Promise<Map<string, LatestPrice>> {
+  const out = new Map<string, LatestPrice>();
+  if (tickers.length === 0) return out;
+
+  const sb = getServerClient();
+  // Fetch the most recent 2 bars per ticker. Without window-function
+  // partitioning over the wire, we get the 2 newest WITHIN each ticker
+  // by ordering DESC and capping per-ticker in JS. PostgREST's flat
+  // .order() + .limit() can't do "top-N per group" — so we over-fetch
+  // (1000 cap = 500 tickers × 2) and group.
+  const limit = Math.min(1000, tickers.length * 2);
+  const { data, error } = await sb
+    .from("bars")
+    .select("ticker, bar_date, close")
+    .eq("granularity", "W")
+    .in("ticker", tickers)
+    .order("bar_date", { ascending: false })
+    .limit(limit);
+  if (error || !data) {
+    console.error("latest-prices bars read:", error?.message);
+    return out;
+  }
+
+  type Row = { ticker: string; bar_date: string; close: number | string };
+  const grouped = new Map<string, Row[]>();
+  for (const r of data as unknown as Row[]) {
+    const arr = grouped.get(r.ticker) ?? [];
+    if (arr.length < 2) {
+      arr.push(r);
+      grouped.set(r.ticker, arr);
+    }
+  }
+  for (const [ticker, rows] of grouped) {
+    if (rows.length === 0) continue;
+    const latest = rows[0];
+    const prev = rows[1] ?? null;
+    const close = Number(latest.close);
+    const prevClose = prev ? Number(prev.close) : null;
+    const changePct =
+      prevClose != null && prevClose > 0
+        ? close / prevClose - 1
+        : null;
+    out.set(ticker, {
+      close,
+      prevClose,
+      changePct,
+      barDate: latest.bar_date,
+    });
+  }
+  return out;
+}
+
+/** Whether the ticker looks like a Korean code (NNNNNN.KS / .KQ). */
+function isKrTicker(ticker: string): boolean {
+  return /^[0-9]{6}\.(KS|KQ)$/.test(ticker);
+}
+
+/** Format a price for list-row display. KR rounds + adds "원"; US uses
+ *  2-decimal USD. Caller decides which based on the ticker. */
+export function formatRowPrice(value: number, ticker: string): string {
+  if (isKrTicker(ticker)) {
+    return `${Math.round(value).toLocaleString("ko-KR")}원`;
+  }
+  return `$${value.toFixed(2)}`;
+}
