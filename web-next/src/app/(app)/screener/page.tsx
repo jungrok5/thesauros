@@ -411,6 +411,59 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
               sub={subFilters}
               sort2={sort2}
             />
+
+            {/* 사용자 피드백 (2026-05-21): chip 라벨 짧아서 무슨 의미인지
+                모름. 한 곳에 정리해서 펼침형 details 로 노출. */}
+            <details className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] leading-relaxed">
+              <summary className="cursor-pointer font-medium text-muted-foreground select-none">
+                💡 chip + 필터 의미 — 무엇을 뜻하는지 펼쳐서 보기
+              </summary>
+              <div className="mt-2 space-y-2.5 text-muted-foreground">
+                <div>
+                  <div className="font-semibold text-foreground mb-1">📊 거래량 chip (세부 column)</div>
+                  <ul className="space-y-0.5 pl-2">
+                    <li>· <strong>📊 바닥 폭증</strong> / <strong>급등 폭증</strong> — 거래량이 평소 대비 폭증한 양봉. 책: 세력이 들어오는 자리.</li>
+                    <li>· <strong>💧 매집 감소</strong> / <strong>수렴 감소</strong> — 상승 중인데 거래량 감소. 책: 매물 소진 = 다음 발사 자리.</li>
+                    <li>· <strong>🌪️ 분배 의심</strong> — 천장 폭증/세력 위임. 책: 매도 신호 — 매수 자격 X.</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground mb-1">🎯 4등분선 chip — 직전 장대양봉을 4등분한 매매 자리</div>
+                  <ul className="space-y-0.5 pl-2">
+                    <li>· <strong>🎯 safe75</strong> — 75% 위 안전지대. 책: 다음 봉 상승 확률 75%. 매수 자리.</li>
+                    <li>· <strong>🎯 warn50</strong> — 50% 경계. 안전지대 살짝 벗어남. 조정 중.</li>
+                    <li>· <strong>🎯 danger25</strong> — 25~50% 매입원가 영역. 적신호.</li>
+                    <li>· <strong>🎯 broken</strong> — 25% 깨짐 = catalyst 부정, 매도 시그널.</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground mb-1">🔥 catalyst chip</div>
+                  <ul className="space-y-0.5 pl-2">
+                    <li>· <strong>🔥 catalyst-Nw</strong> — 장대양봉 N주 전 발생. N 작을수록 신선한 진입 자리. 8주 초과는 stale 로 표시 안 함.</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground mb-1">🔍 필터 (universe-wide)</div>
+                  <ul className="space-y-0.5 pl-2">
+                    <li>· <strong>거래량 폭증</strong> — 위 📊 바닥/급등 폭증 case 만 추림.</li>
+                    <li>· <strong>safe75 / warn50</strong> — 해당 4등분선 zone 종목만.</li>
+                    <li>· <strong>catalyst 4주 이내</strong> — 신선한 장대양봉 직후만.</li>
+                  </ul>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground mb-1">🔃 2차 정렬 (같은 book_score 안에서)</div>
+                  <ul className="space-y-0.5 pl-2">
+                    <li>· <strong>거래량</strong> — 폭증 종목을 동률 그룹 안에서 위로.</li>
+                    <li>· <strong>catalyst 직후</strong> — 가장 최근 catalyst 종목 위로.</li>
+                    <li>· <strong>4등분선</strong> — safe75 종목 위로.</li>
+                  </ul>
+                </div>
+                <p className="text-[10px] pt-1 border-t border-border/50">
+                  💡 이 모든 chip 은 같은 1.00 만점 종목 안에서도 &ldquo;세력 진입 + 안전지대 + 신선한 자리&rdquo; 같은
+                  세부 차이를 보여주려는 용도. 책 정신: 진짜 매수 자리는 다축 모두 OK 인 곳.
+                </p>
+              </div>
+            </details>
           </header>
 
           {hits.length === 0 ? (
