@@ -46,6 +46,7 @@ export type AnalystConsensusRow = {
   consensus_revenue: number | null;
   consensus_op_income: number | null;
   target_price: number | null;
+  updated_at?: string | null;
 };
 
 export type InstitutionalOwnershipRow = {
@@ -124,7 +125,7 @@ export async function fetchStockContext(ticker: string): Promise<StockContext> {
       .eq("ticker", ticker)
       .maybeSingle(),
     sb.from("analyst_consensus")
-      .select("fiscal_year, consensus_eps, consensus_revenue, consensus_op_income, target_price")
+      .select("fiscal_year, consensus_eps, consensus_revenue, consensus_op_income, target_price, updated_at")
       .eq("ticker", ticker)
       .order("fiscal_year", { ascending: true })
       .limit(5),

@@ -15,6 +15,19 @@ import {
   type ScreenerPreset,
 } from "@/lib/screener-presets";
 import { HelpTip } from "@/components/help-tip";
+import { DataFreshness } from "@/components/data-freshness";
+
+/** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
+async function fetchLatestAnalysisRun(): Promise<string | null> {
+  const sb = getServerClient();
+  const { data } = await sb
+    .from("analyze_results")
+    .select("updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.updated_at as string | undefined) ?? null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -153,9 +166,13 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   // distribution (whole-preset counts even when buy_only=1 filters
   // the visible list). Old code computed distribution from a JS
   // counter over the same 50 rows — same numbers in normal flow.
-  const [allHits, distribution] = preset
-    ? await Promise.all([runPreset(preset), fetchDistribution(preset)])
-    : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }];
+  const [allHits, distribution, lastAnalysisAt] = preset
+    ? await Promise.all([
+        runPreset(preset),
+        fetchDistribution(preset),
+        fetchLatestAnalysisRun(),
+      ])
+    : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }, null];
   // total = "펀더 통과 N 종목" header. With the new distribution RPC
   // counting the FULL preset (not just the displayed top 50), the
   // number now reflects real preset breadth.
@@ -176,9 +193,12 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Filter className="h-6 w-6" /> 종목 스크리너
-        </h1>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Filter className="h-6 w-6" /> 종목 스크리너
+          </h1>
+          <DataFreshness asOf={lastAnalysisAt} cadence="weekly" label="분석" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           KOSPI / KOSDAQ 약 2,700 종목 중 조건에 맞는 후보 발굴.
           아래 검색 중 하나 선택하면 즉시 결과 표시. 톤 일관: 종목만 보여주는 게

@@ -19,6 +19,7 @@ import {
   earningsActionLine,
   daysFromToday,
 } from "@/lib/investor-intel-actions";
+import { DataFreshness } from "@/components/data-freshness";
 
 const NUMBER_FMT = new Intl.NumberFormat("ko-KR");
 const PCT_FMT = new Intl.NumberFormat("ko-KR", {
@@ -51,6 +52,7 @@ function fmtEokFromMillion(n: number | null | undefined): string {
 export function ConsensusCard({
   consensus,
   currentPrice,
+  asOf,
 }: {
   consensus: AnalystConsensusRow[];
   /** Latest bar close — used for the "현재가 대비 +X%" upside label.
@@ -60,6 +62,9 @@ export function ConsensusCard({
    *  4944 reported +143%, but vs today's 5300 actually +126%).
    *  Fall back to `null` upstream when bars data is missing. */
   currentPrice?: number | null;
+  /** ISO timestamp of the latest analyst_consensus row for this ticker
+   *  (weekly ingest). Drives the freshness chip. */
+  asOf?: string | null;
 }) {
   if (!consensus || consensus.length === 0) return null;
 
@@ -73,13 +78,16 @@ export function ConsensusCard({
 
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <h3 className="text-sm font-semibold tracking-tight">
           🎯 애널리스트 컨센서스
         </h3>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          {primary.fiscal_year}년 예상
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <DataFreshness asOf={asOf ?? null} cadence="weekly" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            {primary.fiscal_year}년 예상
+          </span>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Tile
@@ -157,13 +165,18 @@ export function HoldersCard({ holders }: { holders: InstitutionalOwnershipRow[] 
 
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <h3 className="text-sm font-semibold tracking-tight">
           🐳 큰손 지분 (5% 보고)
         </h3>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          최근 18 개월
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 최신 5% 보고 일자. event-driven 이라 "monthly" 임계값 정도
+              가 합리적 — 6 개월 안 들어오면 amber. */}
+          <DataFreshness asOf={rows[0]?.reported_date ?? null} cadence="monthly" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            최근 18 개월
+          </span>
+        </div>
       </div>
       <ul className="space-y-1.5">
         {rows.map((r) => {

@@ -11,6 +11,20 @@
 import Link from "next/link";
 import { ArrowLeft, Volume2 } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
+import { DataFreshness } from "@/components/data-freshness";
+
+/** Latest weekly bar date (when the surge ratios were last computed). */
+async function fetchLatestWeeklyBar(): Promise<string | null> {
+  const sb = getServerClient();
+  const { data } = await sb
+    .from("bars")
+    .select("bar_date")
+    .eq("granularity", "W")
+    .order("bar_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.bar_date as string | undefined) ?? null;
+}
 import {
   interpretSurge,
   fmtVol,
@@ -74,7 +88,10 @@ async function fetchSurges(): Promise<Hit[]> {
 }
 
 export default async function VolumeSurgePage() {
-  const hits = await fetchSurges();
+  const [hits, latestBarDate] = await Promise.all([
+    fetchSurges(),
+    fetchLatestWeeklyBar(),
+  ]);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -86,9 +103,12 @@ export default async function VolumeSurgePage() {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Volume2 className="h-6 w-6" /> 거래량 폭증 모니터
-        </h1>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Volume2 className="h-6 w-6" /> 거래량 폭증 모니터
+          </h1>
+          <DataFreshness asOf={latestBarDate} cadence="weekly" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           이번 주 거래량이 직전 8 주 평균의 <strong>2 배 이상</strong> 인 종목.
           큰 손이 들어오거나 빠지는 중 — 추세 전환 신호.

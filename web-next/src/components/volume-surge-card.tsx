@@ -10,6 +10,7 @@
  */
 import { interpretSurge } from "@/lib/volume-surge";
 import type { VolumeSurgeRow } from "@/lib/stock-context";
+import { DataFreshness } from "@/components/data-freshness";
 
 function fmtVol(v: number): string {
   if (v >= 1e8) return `${(v / 1e8).toFixed(1)}억`;
@@ -18,7 +19,15 @@ function fmtVol(v: number): string {
   return v.toLocaleString("ko-KR");
 }
 
-export function VolumeSurgeCard({ surge }: { surge: VolumeSurgeRow | null }) {
+export function VolumeSurgeCard({
+  surge,
+  asOf,
+}: {
+  surge: VolumeSurgeRow | null;
+  /** Latest weekly bar date that the surge metric was computed against
+   *  (bars W granularity). Drives the freshness chip. */
+  asOf?: string | null;
+}) {
   if (!surge || !Number.isFinite(surge.ratio) || surge.ratio <= 0) return null;
 
   // Reuse the same interpretation as /volume-surge — 5 buckets.
@@ -55,7 +64,10 @@ export function VolumeSurgeCard({ surge }: { surge: VolumeSurgeRow | null }) {
         <h3 className="text-sm font-semibold tracking-tight">
           📊 이번주 거래량 신호
         </h3>
-        <span className="text-xs font-medium">{label}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <DataFreshness asOf={asOf ?? null} cadence="weekly" />
+          <span className="text-xs font-medium">{label}</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

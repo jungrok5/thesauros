@@ -24,6 +24,7 @@ import type {
   FinancialsEvalRow,
   FactorsEvalRow,
 } from "@/lib/supabase";
+import { DataFreshness } from "@/components/data-freshness";
 
 interface Props {
   fin: FinancialsEvalRow | null;
@@ -70,6 +71,7 @@ export function FundamentalVerdicts({ fin, fac }: Props) {
           subLabel="DART / SEC 재무 → 성장 · 수익 · 안전 가중 평가"
           interp={interpretFinancials(fin)}
           deepLink="📋 재무제표 탭에서 3년 추이 + 룰별 평가"
+          asOf={fin.updated_at}
         />
       ) : (
         <Empty label="재무 건전성" />
@@ -80,6 +82,7 @@ export function FundamentalVerdicts({ fin, fac }: Props) {
           subLabel="PER · PBR · 4축 + 4대 스크리닝 (강환국 · 그레이엄 · 마법공식 · 버핏)"
           interp={interpretFactors(fac)}
           deepLink="🎯 팩터 탭에서 4축 점수 + 게이트 통과 여부"
+          asOf={fac.updated_at}
         />
       ) : (
         <Empty label="가치투자 통과" />
@@ -93,11 +96,14 @@ function VerdictCard({
   subLabel,
   interp,
   deepLink,
+  asOf,
 }: {
   label: string;
   subLabel: string;
   interp: Interpretation;
   deepLink: string;
+  /** financials_eval/factors_eval row 의 updated_at — quarterly cron. */
+  asOf?: string | null;
 }) {
   const c = TONE[interp.tone];
   return (
@@ -105,11 +111,14 @@ function VerdictCard({
       <header className="space-y-1">
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <h3 className="text-sm font-semibold tracking-tight">{label}</h3>
-          <span
-            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${c.border} ${c.text} bg-background/40`}
-          >
-            {interp.label}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <DataFreshness asOf={asOf ?? null} cadence="quarterly" />
+            <span
+              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${c.border} ${c.text} bg-background/40`}
+            >
+              {interp.label}
+            </span>
+          </div>
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           {subLabel}

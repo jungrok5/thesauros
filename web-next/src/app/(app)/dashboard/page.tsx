@@ -18,6 +18,7 @@ import { indicatorVerdict } from "@/lib/macro-interpret";
 import { GLOSSARY } from "@/lib/glossary";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { getServerClient } from "@/lib/supabase";
+import { DataFreshness } from "@/components/data-freshness";
 
 // macro_state.macro_indicators 에는 'KOSPI 지수' / '환율' / 'VIX' 같은
 // 실시간성 지표도 섞여 들어옵니다 (publish_macro 가 yfinance/FRED 일괄
@@ -178,9 +179,12 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Compass className="h-6 w-6" /> 거시 (Macro)
-        </h1>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Compass className="h-6 w-6" /> 거시 (Macro)
+          </h1>
+          <DataFreshness asOf={row.updated_at} cadence="daily" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           탑다운 1 단계 — 시장 전체 분위기 진단. 매크로가 약세면 개별 종목
           아무리 좋아도 진입 자제. 실시간 시세는 위쪽 띠, 월/분기 지표는 카드로.

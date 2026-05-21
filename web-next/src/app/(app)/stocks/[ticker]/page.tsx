@@ -418,7 +418,7 @@ export default async function StockDetailPage({ params }: PageProps) {
               💸 시장 흐름 (수급 · 거래량)
             </h2>
             <InvestorFlow ticker={ticker} />
-            <VolumeSurgeCard surge={ctx.volumeSurge} />
+            <VolumeSurgeCard surge={ctx.volumeSurge} asOf={ctx.latestBar?.bar_date ?? null} />
           </section>
 
           {/* ─────────────────────────────────────────────────────────
@@ -449,6 +449,7 @@ export default async function StockDetailPage({ params }: PageProps) {
             <ConsensusCard
               consensus={ctx.consensus}
               currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
+              asOf={ctx.consensus[0]?.updated_at ?? null}
             />
             <HoldersCard holders={ctx.holders} />
             <EarningsCalendarCard earnings={ctx.earnings} />

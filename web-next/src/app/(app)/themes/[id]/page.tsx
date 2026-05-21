@@ -8,6 +8,7 @@ import { ArrowLeft, Hash } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getServerClient } from "@/lib/supabase";
 import { HelpTip } from "@/components/help-tip";
+import { DataFreshness } from "@/components/data-freshness";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -40,7 +41,7 @@ async function fetchThemeMembers(themeId: number) {
   // 1) Theme metadata
   const { data: theme } = await sb
     .from("themes")
-    .select("theme_id, name, members")
+    .select("theme_id, name, members, updated_at")
     .eq("theme_id", themeId)
     .maybeSingle();
   if (!theme) return null;
@@ -51,7 +52,7 @@ async function fetchThemeMembers(themeId: number) {
     .eq("theme_id", themeId);
   const tickers = ((mem ?? []) as unknown as { ticker: string }[]).map((r) => r.ticker);
   if (tickers.length === 0) {
-    return { theme: theme as unknown as { theme_id: number; name: string; members: number }, members: [] };
+    return { theme: theme as unknown as { theme_id: number; name: string; members: number; updated_at: string }, members: [] };
   }
   const [{ data: names }, { data: facts }, { data: an }] = await Promise.all([
     sb.from("tickers").select("ticker, name").in("ticker", tickers).limit(500),
@@ -85,7 +86,7 @@ async function fetchThemeMembers(themeId: number) {
     return (Number(b.book_score) || 0) - (Number(a.book_score) || 0);
   });
   return {
-    theme: theme as unknown as { theme_id: number; name: string; members: number },
+    theme: theme as unknown as { theme_id: number; name: string; members: number; updated_at: string },
     members,
   };
 }
@@ -108,9 +109,12 @@ export default async function ThemeDetailPage({ params }: PageProps) {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Hash className="h-6 w-6" /> {theme.name}
-        </h1>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Hash className="h-6 w-6" /> {theme.name}
+          </h1>
+          <DataFreshness asOf={theme.updated_at} cadence="weekly" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           총 {members.length} 종목 (Naver Finance 기준). 강매수/매수 우선 정렬.
         </p>

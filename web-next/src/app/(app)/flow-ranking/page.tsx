@@ -11,6 +11,19 @@ import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { getServerClient } from "@/lib/supabase";
 import { fmtKRW } from "@/lib/flow-aggregate";
+import { DataFreshness } from "@/components/data-freshness";
+
+/** Latest day for which investor_flow rows exist (daily ingest). */
+async function fetchLatestFlowDay(): Promise<string | null> {
+  const sb = getServerClient();
+  const { data } = await sb
+    .from("investor_flow")
+    .select("day")
+    .order("day", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.day as string | undefined) ?? null;
+}
 
 export const dynamic = "force-dynamic";
 export const revalidate = 600;  // 10 min — investor_flow updates daily
@@ -75,9 +88,10 @@ async function fetchTopRows(direction: "buy" | "sell", limit = 30): Promise<Row[
 }
 
 export default async function FlowRankingPage() {
-  const [topBuy, topSell] = await Promise.all([
+  const [topBuy, topSell, latestDay] = await Promise.all([
     fetchTopRows("buy", 20),
     fetchTopRows("sell", 20),
+    fetchLatestFlowDay(),
   ]);
 
   return (
@@ -90,9 +104,12 @@ export default async function FlowRankingPage() {
       </Link>
 
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <TrendingUp className="h-6 w-6" /> 큰손 매매 랭킹
-        </h1>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <TrendingUp className="h-6 w-6" /> 큰손 매매 랭킹
+          </h1>
+          <DataFreshness asOf={latestDay} cadence="daily" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           최근 14 일간 <strong>외국인 투자자 + 기관 (자산운용·연기금 등)</strong> 가
           가장 많이 산 종목 (위) / 판 종목 (아래). 큰 손 자금이 어디로
