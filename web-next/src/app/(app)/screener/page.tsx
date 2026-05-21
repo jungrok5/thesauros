@@ -412,11 +412,12 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
               sort2={sort2}
             />
 
-            {/* 사용자 피드백 (2026-05-21): chip 라벨 짧아서 무슨 의미인지
-                모름. 한 곳에 정리해서 펼침형 details 로 노출. */}
-            <details className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] leading-relaxed">
+            {/* chip 의미 가이드 — default open (2026-05-21). 사용자가
+                익숙해지면 직접 접고, 페이지 reload 시는 다시 펼침
+                (localStorage 추적 비용 vs UX 가치 비교 후 단순 open 유지). */}
+            <details open className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] leading-relaxed">
               <summary className="cursor-pointer font-medium text-muted-foreground select-none">
-                💡 chip + 필터 의미 — 무엇을 뜻하는지 펼쳐서 보기
+                💡 chip + 필터 의미 — 클릭하면 접기
               </summary>
               <div className="mt-2 space-y-2.5 text-muted-foreground">
                 <div>

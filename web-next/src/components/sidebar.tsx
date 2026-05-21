@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  BookOpen,
   Compass,
   Filter,
   Hash,
@@ -20,64 +21,116 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { href: "/guide", label: "절세·연금 가이드", icon: Map },
-  { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
-  { href: "/stocks", label: "종목 검색", icon: Search },
-  { href: "/screener", label: "종목 스크리너", icon: Filter },
-  { href: "/themes", label: "테마", icon: Hash },
-  { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
-  { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
-  { href: "/watchlist", label: "관심 종목", icon: Star },
-  { href: "/feedback", label: "버그·건의", icon: MessageSquare },
-  { href: "/settings", label: "설정", icon: Settings },
-  // /tax (세금 시뮬레이터) 는 1년에 1번 쓰는 12월 한정 도구라
-  // 사이드바 상시 노출에서 제외 (2026-05-20). 페이지 자체는 살아있고
-  // /guide 의 "12월 절세 매도 시뮬" 박스에서 링크로 발견 가능.
+type NavItem = { href: string; label: string; icon: typeof Compass };
+type NavGroup = { heading: string; items: NavItem[] };
+
+/** 그룹별 navigation (2026-05-21):
+ *  - 가이드: 처음 시작 + 절세
+ *  - 시장 분위기: 거시 (macro)
+ *  - 종목 발견: 검색 / 스크리너 / 테마
+ *  - 시장 모니터: 큰손 / 거래량
+ *  - 내 종목: 관심·보유
+ *  - 시스템: 버그·설정
+ *
+ *  /tax (세금 시뮬레이터) 는 1년에 1번 쓰는 12월 한정 도구라 사이드바
+ *  상시 노출 제외. /guide 안의 "12월 절세 매도 시뮬" 박스에서 link 로
+ *  발견 가능 (2026-05-20).
+ */
+const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: "📖 가이드",
+    items: [
+      { href: "/welcome", label: "시작하기", icon: BookOpen },
+      { href: "/guide", label: "절세·연금", icon: Map },
+    ],
+  },
+  {
+    heading: "📍 시장 분위기",
+    items: [
+      { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
+    ],
+  },
+  {
+    heading: "🔎 종목 발견",
+    items: [
+      { href: "/stocks", label: "종목 검색", icon: Search },
+      { href: "/screener", label: "스크리너", icon: Filter },
+      { href: "/themes", label: "테마", icon: Hash },
+    ],
+  },
+  {
+    heading: "📊 시장 모니터",
+    items: [
+      { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
+      { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
+    ],
+  },
+  {
+    heading: "⭐ 내 종목",
+    items: [
+      { href: "/watchlist", label: "관심·보유 종목", icon: Star },
+    ],
+  },
+  {
+    heading: "⚙️ 시스템",
+    items: [
+      { href: "/feedback", label: "버그·건의", icon: MessageSquare },
+      { href: "/settings", label: "설정", icon: Settings },
+    ],
+  },
 ];
 
-const ADMIN_NAV = [
-  { href: "/admin/access", label: "관리자 — 접근", icon: Shield },
-  { href: "/admin/feedback", label: "관리자 — 피드백", icon: MessageSquare },
-];
+const ADMIN_GROUP: NavGroup = {
+  heading: "🔒 관리자",
+  items: [
+    { href: "/admin/access", label: "접근 요청", icon: Shield },
+    { href: "/admin/feedback", label: "피드백 관리", icon: MessageSquare },
+  ],
+};
 
-function navItems(isAdmin: boolean) {
-  return isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
+function navGroups(isAdmin: boolean): NavGroup[] {
+  return isAdmin ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
 }
 
 function NavList({
-  items,
+  groups,
   pathname,
   onNavigate,
 }: {
-  items: typeof NAV;
+  groups: NavGroup[];
   pathname: string;
   onNavigate?: () => void;
 }) {
   return (
-    <nav className="flex flex-col gap-0.5" data-testid="sidebar-nav">
-      {items.map((item) => {
-        const active =
-          pathname === item.href || pathname.startsWith(item.href + "/");
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              // larger touch target on mobile (44px+ recommended), normal on desktop
-              "flex items-center gap-2 rounded-md px-3 py-3 md:py-2 text-sm transition-colors",
-              active
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="flex flex-col gap-3" data-testid="sidebar-nav">
+      {groups.map((group) => (
+        <div key={group.heading} className="flex flex-col gap-0.5">
+          <div className="px-3 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium">
+            {group.heading}
+          </div>
+          {group.items.map((item) => {
+            const active =
+              pathname === item.href || pathname.startsWith(item.href + "/");
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onNavigate}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-3 py-3 md:py-2 text-sm transition-colors",
+                  active
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
@@ -99,7 +152,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   return (
     <aside className="w-56 border-r border-border bg-background px-3 py-6 hidden md:flex md:flex-col gap-6">
       <Brand />
-      <NavList items={navItems(isAdmin)} pathname={pathname} />
+      <NavList groups={navGroups(isAdmin)} pathname={pathname} />
     </aside>
   );
 }
@@ -191,7 +244,7 @@ export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
               </button>
             </div>
             <NavList
-              items={navItems(isAdmin)}
+              groups={navGroups(isAdmin)}
               pathname={pathname}
               onNavigate={() => setOpen(false)}
             />

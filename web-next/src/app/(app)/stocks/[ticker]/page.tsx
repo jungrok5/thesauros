@@ -295,6 +295,7 @@ export default async function StockDetailPage({ params }: PageProps) {
             ticker={ticker}
             initiallyAdded={watch.added}
             initialCategory={watch.category}
+            action={result?.action ?? null}
           />
         )}
       </div>

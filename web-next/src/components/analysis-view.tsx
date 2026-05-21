@@ -188,6 +188,11 @@ export function AnalysisView({
         <ActionBadge action={r.action} score={r.book_score} size="lg" />
       </header>
 
+      {/* 초보자 한 줄 결론 — BookVerdict 본문은 책 정신 용어 (매복/포킹/
+          4등분선/catalyst 등) 가 들어가 있어 처음 보는 사람은 어려움.
+          그 위에 평이한 한국어로 매수 자격 1줄. (2026-05-21) */}
+      <NoviceVerdict action={r.action} />
+
       <BookVerdict
         result={r}
         currentPrice={currentPrice}
@@ -322,5 +327,63 @@ export function AnalysisView({
         );
       })()}
     </div>
+  );
+}
+
+/** NoviceVerdict — BookVerdict 위에 평이한 한국어 1줄 callout.
+ *  책 정신 용어 0개. 초보자가 페이지 보고 "이 종목 사도 돼?" 답이
+ *  즉시 나오게. */
+function NoviceVerdict({ action }: { action: string }) {
+  const config = {
+    STRONG_BUY: {
+      cls: "border-emerald-500/40 bg-emerald-500/5",
+      icon: "✅",
+      headline: "오늘 매수 자격: 가능 (강한 매수)",
+      body: "책 정신상 매수해도 되는 자리. 단, 본인 차트 검증 후 진입 — 자동 추천 아님.",
+    },
+    BUY: {
+      cls: "border-emerald-500/40 bg-emerald-500/5",
+      icon: "✅",
+      headline: "오늘 매수 자격: 가능 (매수)",
+      body: "책 정신상 매수 자리. 본인 차트 + 펀더 검증 통과 시에만 진입.",
+    },
+    HOLD: {
+      cls: "border-zinc-500/30 bg-zinc-500/5",
+      icon: "⏸",
+      headline: "오늘 매수 자격: 관망",
+      body: "보유 중이면 유지 OK, 신규 매수는 자격 X. 다음 주봉 마감까지 대기.",
+    },
+    AVOID: {
+      cls: "border-rose-500/40 bg-rose-500/5",
+      icon: "❌",
+      headline: "오늘 매수 자격: 없음 (회피)",
+      body: "장기 추세가 죽은 차트. 책 정신상 신규 매수 자격 X — 다른 종목 찾는 게 좋습니다.",
+    },
+    SELL: {
+      cls: "border-rose-500/40 bg-rose-500/5",
+      icon: "🔴",
+      headline: "오늘 매수 자격: 없음 (매도 신호)",
+      body: "추세 종료 / 청산 신호. 보유 중이면 매도, 신규 매수 자격 X.",
+    },
+    SELL_OR_SHORT: {
+      cls: "border-rose-500/40 bg-rose-500/5",
+      icon: "🔴",
+      headline: "오늘 매수 자격: 없음 (청산 또는 인버스)",
+      body: "추세 강하게 꺾임. 보유 중이면 매도 — 인버스 진입은 본인 판단.",
+    },
+  }[action] ?? null;
+
+  if (!config) return null;
+
+  return (
+    <section className={`rounded-lg border-2 ${config.cls} px-4 py-3`}>
+      <div className="flex items-start gap-3">
+        <span className="text-xl shrink-0">{config.icon}</span>
+        <div className="space-y-0.5">
+          <div className="text-sm font-semibold">{config.headline}</div>
+          <p className="text-xs text-muted-foreground leading-relaxed">{config.body}</p>
+        </div>
+      </div>
+    </section>
   );
 }
