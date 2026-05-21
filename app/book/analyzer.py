@@ -681,7 +681,19 @@ def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:
     # 2) Live Naver weekly — only meaningful for non-KR tickers (KR is
     #    fully populated by the FDR cron). For US watchlist adds before
     #    the next cron pass this gives ~2y weekly bars instantly.
+    #
+    # Batch context (cron's scan_daily) sets THESAUROS_DISABLE_LIVE_FETCH=1
+    # to opt out of this fallback. Why: scan_daily iterates the full
+    # ticker universe; if some US tickers have no bars yet, the fallback
+    # would issue a Naver request PER missing ticker — a few hundred
+    # missing US names × ~10s timeout (when Naver rate-limits) = the
+    # workflow's 75-min step ceiling. ingest_bars is the *only* place
+    # that should hit Naver in bulk; it has token-bucket + circuit-breaker
+    # + Stooq fallback. scan_daily must read DB-only.
     if not _looks_kr(ticker):
+        import os
+        if os.environ.get("THESAUROS_DISABLE_LIVE_FETCH") == "1":
+            return None
         try:
             from app.data.naver_bars import fetch_weekly
         except Exception:

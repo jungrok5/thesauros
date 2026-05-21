@@ -236,38 +236,56 @@ def fetch_kr_ticker(ticker: str, start: date, end: date) -> List[Tuple[Any, ...]
 # US fetcher — Naver weekCandle + monthCandle (no resample needed)
 # ────────────────────────────────────────────────────────────────────────
 
-def fetch_us_ticker(ticker: str) -> List[Tuple[Any, ...]]:
-    """Fetch US weekly + monthly bars via Naver. Naver caps each
-    response at 110 rows — that's ~2y weekly + ~9y monthly. Retention
-    later caps monthly at 5y per policy."""
-    from app.data.naver_bars import fetch_weekly, fetch_monthly
+def _rows_from_df(ticker: str, granularity: str, df) -> List[Tuple[Any, ...]]:
     out: List[Tuple[Any, ...]] = []
-    wdf = fetch_weekly(ticker, years=YEARS_HISTORY)
-    if wdf is not None and not wdf.empty:
-        for _, row in wdf.iterrows():
-            close = _num(row["close"])
-            if close is None or close == 0:
-                continue
-            out.append((
-                ticker, "W", row["date"].date(),
-                _num(row.get("open")), _num(row.get("high")),
-                _num(row.get("low")), close,
-                _num(row.get("adj_close")) or close,
-                _int(row.get("volume")),
-            ))
-    mdf = fetch_monthly(ticker, years=YEARS_HISTORY)
-    if mdf is not None and not mdf.empty:
-        for _, row in mdf.iterrows():
-            close = _num(row["close"])
-            if close is None or close == 0:
-                continue
-            out.append((
-                ticker, "M", row["date"].date(),
-                _num(row.get("open")), _num(row.get("high")),
-                _num(row.get("low")), close,
-                _num(row.get("adj_close")) or close,
-                _int(row.get("volume")),
-            ))
+    if df is None or df.empty:
+        return out
+    for _, row in df.iterrows():
+        close = _num(row["close"])
+        if close is None or close == 0:
+            continue
+        out.append((
+            ticker, granularity, row["date"].date(),
+            _num(row.get("open")), _num(row.get("high")),
+            _num(row.get("low")), close,
+            _num(row.get("adj_close")) or close,
+            _int(row.get("volume")),
+        ))
+    return out
+
+
+def fetch_us_ticker(ticker: str) -> List[Tuple[Any, ...]]:
+    """Fetch US weekly + monthly bars. Naver is the primary source
+    (volume figures match what KR retail tools display, calibrating the
+    engine's volume signals). Stooq is fallback for when Naver is
+    blocked or returns empty — coverage is narrower but it doesn't get
+    cloud-IP rate-limited the way Naver does.
+
+    Naver caps each response at 110 rows (~2y weekly + ~9y monthly).
+    Stooq returns full history (typically 5+ years). Retention later
+    caps monthly at 5y per policy."""
+    from app.data import naver_bars
+    from app.data import stooq
+
+    # If Naver's circuit breaker is already open from prior failures in
+    # this run, skip straight to Stooq — pays no timeout cost.
+    skip_naver = naver_bars.is_circuit_open()
+    out: List[Tuple[Any, ...]] = []
+
+    wdf = None if skip_naver else naver_bars.fetch_weekly(ticker, years=YEARS_HISTORY)
+    if wdf is None or wdf.empty:
+        wdf = stooq.fetch_weekly(ticker, years=YEARS_HISTORY)
+        if wdf is not None and not wdf.empty:
+            log.debug("stooq fallback weekly %s rows=%d", ticker, len(wdf))
+    out.extend(_rows_from_df(ticker, "W", wdf))
+
+    mdf = None if skip_naver else naver_bars.fetch_monthly(ticker, years=YEARS_HISTORY)
+    if mdf is None or mdf.empty:
+        mdf = stooq.fetch_monthly(ticker, years=YEARS_HISTORY)
+        if mdf is not None and not mdf.empty:
+            log.debug("stooq fallback monthly %s rows=%d", ticker, len(mdf))
+    out.extend(_rows_from_df(ticker, "M", mdf))
+
     return out
 
 
