@@ -28,7 +28,7 @@ import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -377,12 +377,43 @@ def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
             ))
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # 1) Preserve detected_at for signals still active — same
+            #    (ticker, signal_type, timeframe) detected previously
+            #    stays at its ORIGINAL detection time (책 정신: signal
+            #    의 신선도 = 최초 발견 시점). 매 scan 마다 새 detected_at
+            #    stamp 하면 telegram_worker dedup 무효화 + 사용자에게
+            #    같은 신호 매일 새 알림 폭주.
+            #    (Bug 2026-05-21: jungrok5 에게 006400.KS enter alert 가
+            #     하루 9번 발송. fix = detected_at preservation.)
+            cur.execute(
+                """
+                SELECT ticker, signal_type, timeframe, detected_at
+                  FROM scan_results
+                 WHERE ticker = ANY(%s) AND is_active = true
+                """,
+                (tickers,),
+            )
+            preserved: Dict[Tuple[str, str, str], Any] = {
+                (r[0], r[1], r[2]): r[3] for r in cur.fetchall()
+            }
+            # 2) Deactivate prior active rows (history retained via
+            #    is_active=false so old detection times remain query-able).
             cur.execute(
                 "UPDATE scan_results SET is_active = false "
                 "WHERE ticker = ANY(%s) AND is_active = true",
                 (tickers,),
             )
+            # 3) Stamp with preserved detected_at when the same signal
+            #    keeps firing; otherwise use the analysis bar's as_of.
             if rows:
+                final_rows = [
+                    (
+                        r[0], r[1], r[2],
+                        preserved.get((r[0], r[1], r[2]), r[3]),  # preserve or new
+                        r[4], r[5], r[6],
+                    )
+                    for r in rows
+                ]
                 cur.executemany(
                     """
                     INSERT INTO scan_results
@@ -390,7 +421,7 @@ def _flush_chunk(chunk: List[Dict[str, Any]]) -> int:
                        strength, reason, params)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    rows,
+                    final_rows,
                 )
     return len(rows)
 
