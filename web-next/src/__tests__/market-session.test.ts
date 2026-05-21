@@ -13,29 +13,32 @@
 import { describe, it, expect } from "vitest";
 import { classifySession, priceLabelFor } from "@/lib/market-session";
 
-/** Build a Date that represents `YYYY-MM-DDTHH:MM` in the given IANA
- *  timezone. Used to inject `now` into classifySession with confidence.
- *  Works by computing the offset for that specific moment in that tz. */
+/** Build a Date representing `YYYY-MM-DDTHH:MM` in the given tz.
+ *  Direct UTC offset computation — no Intl.DateTimeFormat round-trip,
+ *  which had ICU-version differences between local dev (Windows Node)
+ *  and CI (Linux Node).
+ *
+ *  KR: UTC+9 (no DST).
+ *  US: UTC-4 (EDT, used Mar-Nov) or UTC-5 (EST, Nov-Mar). For our tests
+ *  we use May (2026-05-21) which is EDT → UTC-4. If you add winter
+ *  tests, adjust per-test. */
 function makeDateAt(
   isoLocal: string,    // "2026-05-21T11:00"
-  tz: string,          // "Asia/Seoul"
+  tz: "Asia/Seoul" | "America/New_York",
 ): Date {
-  // First guess: treat as UTC.
-  const guess = new Date(`${isoLocal}:00.000Z`);
-  // Format that UTC instant back in the target tz to see the offset.
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour12: false,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  }).formatToParts(guess);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const tzWall = `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
-  // Difference between intended local wall-clock and what tz showed.
-  const intended = new Date(`${isoLocal}:00.000Z`).getTime();
-  const shown = new Date(`${tzWall}:00.000Z`).getTime();
-  // Adjust by the difference to get the right UTC instant.
-  return new Date(guess.getTime() + (intended - shown));
+  const [datePart, timePart] = isoLocal.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [hh, mm] = timePart.split(":").map(Number);
+  let offsetHours: number;
+  if (tz === "Asia/Seoul") {
+    offsetHours = 9;
+  } else {
+    // US — EDT (UTC-4) for the 2026-05-21 test dates we use here.
+    // If a future test crosses DST boundary, pass the right offset.
+    offsetHours = -4;
+  }
+  // UTC time = local time - offsetHours.
+  return new Date(Date.UTC(y, m - 1, d, hh - offsetHours, mm));
 }
 
 describe("market-session.classifySession — KR ticker", () => {
