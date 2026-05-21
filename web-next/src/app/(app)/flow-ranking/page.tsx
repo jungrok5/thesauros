@@ -217,7 +217,7 @@ function FlowTable({
                 <td className="px-3 py-2 align-top text-muted-foreground">{i + 1}</td>
                 <td className="px-3 py-2 align-top">
                   <Link
-                    href={`/stocks/${encodeURIComponent(r.ticker)}`}
+                    href={`/stocks/${encodeURIComponent(r.ticker)}?from=flow-ranking`}
                     className="block hover:underline"
                   >
                     <div className="font-medium">{r.name ?? r.ticker}</div>
@@ -246,7 +246,7 @@ function FlowTable({
         {rows.map((r, i) => (
           <li key={r.ticker} className="p-3">
             <Link
-              href={`/stocks/${encodeURIComponent(r.ticker)}`}
+              href={`/stocks/${encodeURIComponent(r.ticker)}?from=flow-ranking`}
               className="flex flex-col gap-1"
             >
               <div className="flex items-baseline justify-between gap-2 flex-wrap">

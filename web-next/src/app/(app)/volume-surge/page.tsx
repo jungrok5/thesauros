@@ -182,7 +182,7 @@ export default async function VolumeSurgePage() {
                     >
                       <td className="px-3 py-2 align-top">
                         <Link
-                          href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                          href={`/stocks/${encodeURIComponent(h.ticker)}?from=volume-surge`}
                           className="block hover:underline"
                         >
                           <div className="font-medium">{h.name ?? h.ticker}</div>
@@ -232,7 +232,7 @@ export default async function VolumeSurgePage() {
               return (
                 <li key={h.ticker} className="p-3 space-y-2">
                   <Link
-                    href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                    href={`/stocks/${encodeURIComponent(h.ticker)}?from=volume-surge`}
                     className="flex items-baseline justify-between gap-2 flex-wrap"
                   >
                     <div>

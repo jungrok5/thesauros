@@ -1,41 +1,106 @@
 /**
  * Decide where a "back" link on a stock-detail-style page should point.
  *
- * Used by /stocks/[ticker] (and any future page that shares the same
- * "user came here from somewhere; show me the way back" pattern). Pure
- * function on Referer so it's trivially testable + so it works inside
- * a server component without grabbing a router.
+ * Two signal sources (in priority order):
+ *   1. Explicit URL param `?from=...` — the originating page sets this
+ *      on its stock-link <Link href> so the destination doesn't depend
+ *      on the Referer header (which Next.js client navigation can drop
+ *      or send the WRONG page).
+ *   2. Referer header — fallback for direct visits, shared links, etc.
+ *      Same matching as the param does.
+ *
+ * The param fix is critical: pre-2026-05-21, this function relied ONLY
+ * on Referer and a re-occurring regression was "스크리너 → 종목 상세
+ * → 뒤로가기가 종목 검색으로 감". Root cause: RSC navigation can fetch
+ * the page with no Referer, or with the upstream page (e.g. originating
+ * /screener) replaced by the in-app prefetch URL. Explicit `from=` puts
+ * the call-site in control.
  *
  * Behavior (first match wins):
- *   /watchlist*       → "관심 종목으로"
- *   /screener*        → "종목 스크리너로"      (preserves ?preset=…)
- *   /flow-ranking*    → "큰손 매매 랭킹으로"
- *   /volume-surge*    → "거래량 폭증 목록으로"
+ *   /watchlist        → "관심 종목으로"
+ *   /screener         → "스크리너로"       (preserves ?preset=…)
+ *   /themes/[id]      → "테마 종목 목록으로" (preserves theme id)
+ *   /flow-ranking     → "큰손 매매 랭킹으로"
+ *   /volume-surge     → "거래량 폭증 목록으로"
  *   anything else     → "종목 검색"  (default)
  *
- * We deliberately don't chain history. If the user came
- *   /watchlist → /stocks/AAPL → /stocks/MSFT
- * the Referer on MSFT is /stocks/AAPL, so the back link goes to /stocks
- * (search). That's the right "step out" destination; the user always
- * has the browser back button for true history walking.
+ * URL `?from=` values that the originating page should set:
+ *   from=watchlist
+ *   from=screener     (optionally + &preset=…)
+ *   from=themes&theme=NN
+ *   from=flow-ranking
+ *   from=volume-surge
+ *   from=stocks       (no-op — equals the default)
  */
 export type BackLink = { href: string; label: string };
 
 const DEFAULT_BACK: BackLink = { href: "/stocks", label: "종목 검색" };
 
-const RULES: Array<{ prefix: string; back: BackLink }> = [
+const PATH_RULES: Array<{ prefix: string; back: BackLink }> = [
   { prefix: "/watchlist",     back: { href: "/watchlist",     label: "관심 종목으로" } },
-  { prefix: "/screener",      back: { href: "/screener",      label: "종목 스크리너로" } },
+  { prefix: "/screener",      back: { href: "/screener",      label: "스크리너로" } },
+  { prefix: "/themes",        back: { href: "/themes",        label: "테마로" } },
   { prefix: "/flow-ranking",  back: { href: "/flow-ranking",  label: "큰손 매매 랭킹으로" } },
   { prefix: "/volume-surge",  back: { href: "/volume-surge",  label: "거래량 폭증 목록으로" } },
 ];
 
-export function decideBackLink(referer: string | null | undefined): BackLink {
+/** Explicit param-based decision — preferred path. Each rule maps a
+ *  `from` value (set by the originating page) to a label + URL,
+ *  optionally taking other search params (like ?preset=…) to
+ *  reconstruct the originating view. */
+function decideFromParam(
+  from: string,
+  search: URLSearchParams,
+): BackLink | null {
+  if (from === "watchlist") return { href: "/watchlist", label: "관심 종목으로" };
+  if (from === "flow-ranking") return { href: "/flow-ranking", label: "큰손 매매 랭킹으로" };
+  if (from === "volume-surge") return { href: "/volume-surge", label: "거래량 폭증 목록으로" };
+  if (from === "screener") {
+    const preset = search.get("preset");
+    return {
+      href: preset ? `/screener?preset=${encodeURIComponent(preset)}` : "/screener",
+      label: "스크리너로",
+    };
+  }
+  if (from === "themes") {
+    const themeId = search.get("theme");
+    return {
+      href: themeId ? `/themes/${encodeURIComponent(themeId)}` : "/themes",
+      label: themeId ? "테마 종목 목록으로" : "테마로",
+    };
+  }
+  return null;
+}
+
+export function decideBackLink(
+  referer: string | null | undefined,
+  searchParams?: URLSearchParams | Record<string, string | undefined>,
+): BackLink {
+  // 1) Explicit ?from= param (preferred — survives Next.js navigation).
+  if (searchParams) {
+    const sp =
+      searchParams instanceof URLSearchParams
+        ? searchParams
+        : new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(searchParams).filter(
+                ([, v]) => v != null,
+              ) as [string, string][],
+            ),
+          );
+    const from = sp.get("from");
+    if (from) {
+      const picked = decideFromParam(from, sp);
+      if (picked) return picked;
+    }
+  }
+
+  // 2) Fallback — Referer header.
   if (!referer) return DEFAULT_BACK;
   try {
     const url = new URL(referer);
     const path = url.pathname;
-    for (const { prefix, back } of RULES) {
+    for (const { prefix, back } of PATH_RULES) {
       const matches =
         path === prefix ||
         path.startsWith(prefix + "/") ||

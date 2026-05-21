@@ -52,6 +52,10 @@ const CANONICAL_TICKER_RE = /^[A-Z0-9]{1,12}(\.[A-Z]{1,4})?$/;
 
 interface PageProps {
   params: Promise<{ ticker: string }>;
+  /** Originating-page hint set by list pages on their stock <Link>.
+   *  Keys we honor: `from`, `preset` (for /screener), `theme` (for
+   *  /themes/[id]). Falls back to Referer header if absent. */
+  searchParams: Promise<Record<string, string | undefined>>;
 }
 
 type TickerInfo = { ticker: string; name: string | null; market: string | null };
@@ -221,12 +225,13 @@ async function getFlowSummary(ticker: string): Promise<
   return { foreignNet: f, institutionNet: i, latestDay: data[0].day };
 }
 
-export default async function StockDetailPage({ params }: PageProps) {
+export default async function StockDetailPage({ params, searchParams }: PageProps) {
   const { ticker: rawSegment } = await params;
   const raw = decodeURIComponent(rawSegment);
 
   const headersList = await headers();
-  const back = decideBackLink(headersList.get("referer"));
+  const sp = await searchParams;
+  const back = decideBackLink(headersList.get("referer"), sp);
 
   const resolved = await resolveTicker(raw);
 

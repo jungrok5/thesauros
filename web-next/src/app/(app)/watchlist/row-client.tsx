@@ -123,7 +123,7 @@ export function WatchlistRowClient({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 flex-wrap">
             <Link
-              href={`/stocks/${encodeURIComponent(row.ticker)}`}
+              href={`/stocks/${encodeURIComponent(row.ticker)}?from=watchlist`}
               className="font-mono text-sm font-semibold hover:underline"
             >
               {row.ticker}

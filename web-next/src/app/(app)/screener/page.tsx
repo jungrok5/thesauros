@@ -20,6 +20,7 @@ import { ActionPill } from "@/components/action-pill";
 import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 import { SubScoreChips } from "@/components/sub-score-chips";
+import { PresetCardsClient } from "./preset-cards-client";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
 async function fetchLatestAnalysisRun(): Promise<string | null> {
@@ -311,31 +312,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
         </p>
       </header>
 
-      {/* Preset 선택 — 카드 그리드 */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {PRESETS.map((p) => {
-          const active = preset?.slug === p.slug;
-          return (
-            <Link
-              key={p.slug}
-              href={`/screener?preset=${p.slug}`}
-              className={`rounded-lg border-2 p-4 transition-colors ${
-                active
-                  ? "border-foreground bg-accent"
-                  : "border-border bg-card hover:bg-accent/40"
-              }`}
-            >
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-lg">{p.emoji}</span>
-                <h2 className="text-sm font-semibold">{p.title}</h2>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {p.oneLiner}
-              </p>
-            </Link>
-          );
-        })}
-      </section>
+      {/* Preset 선택 — client component 로 분리. 클릭 즉시 active state
+          반영 + isPending 스피너 표시. 서버 RSC fetch 가 끝나면 결과
+          영역이 swap. (2026-05-21 — 반응 지연 사용자 보고 fix) */}
+      <PresetCardsClient presets={PRESETS} />
 
       {/* 결과 */}
       {preset && (
@@ -504,7 +484,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                       >
                         <td className="px-3 py-2">
                           <Link
-                            href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                            href={`/stocks/${encodeURIComponent(h.ticker)}?from=screener${preset ? `&preset=${preset.slug}` : ""}`}
                             className="block hover:underline"
                           >
                             <div className="font-medium">{h.name ?? h.ticker}</div>
@@ -541,7 +521,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                         </td>
                         <td className="px-3 py-2 text-center">
                           <Link
-                            href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                            href={`/stocks/${encodeURIComponent(h.ticker)}?from=screener${preset ? `&preset=${preset.slug}` : ""}`}
                             className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
                           >
                             상세 <ArrowRight className="h-3 w-3" />
@@ -558,7 +538,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                 {hits.map((h) => (
                   <li key={h.ticker} className="p-3">
                     <Link
-                      href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                      href={`/stocks/${encodeURIComponent(h.ticker)}?from=screener${preset ? `&preset=${preset.slug}` : ""}`}
                       className="flex flex-col gap-2"
                     >
                       <div className="flex items-baseline justify-between gap-2 flex-wrap">

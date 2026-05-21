@@ -205,7 +205,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                   >
                     <td className="px-3 py-2">
                       <Link
-                        href={`/stocks/${encodeURIComponent(m.ticker)}`}
+                        href={`/stocks/${encodeURIComponent(m.ticker)}?from=themes&theme=${theme.theme_id}`}
                         className="block hover:underline"
                       >
                         <div className="font-medium">{m.name ?? m.ticker}</div>
@@ -236,7 +236,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
                     </td>
                     <td className="px-3 py-2 text-center">
                       <Link
-                        href={`/stocks/${encodeURIComponent(m.ticker)}`}
+                        href={`/stocks/${encodeURIComponent(m.ticker)}?from=themes&theme=${theme.theme_id}`}
                         className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
                       >
                         상세 <ArrowRight className="h-3 w-3" />
@@ -252,7 +252,7 @@ export default async function ThemeDetailPage({ params }: PageProps) {
           <ul className="md:hidden divide-y divide-border">
             {members.map((m) => (
               <li key={m.ticker} className="p-3">
-                <Link href={`/stocks/${encodeURIComponent(m.ticker)}`} className="flex flex-col gap-2">
+                <Link href={`/stocks/${encodeURIComponent(m.ticker)}?from=themes&theme=${theme.theme_id}`} className="flex flex-col gap-2">
                   <div className="flex items-baseline justify-between gap-2 flex-wrap">
                     <div>
                       <div className="text-sm font-medium">{m.name ?? m.ticker}</div>
