@@ -7,8 +7,14 @@
   "regions": ["icn1"],
   "crons": [
     {
-      "path": "/api/cron/daily-scan",
+      "_comment": "daily-data: 매일 17 KST. retention + bars + macro + investor_flow + DART disclosure alerts. 데이터 적재 + 이벤트 알림.",
+      "path": "/api/cron/daily-data",
       "schedule": "0 8 * * 1-5"
+    },
+    {
+      "_comment": "weekly-scan: 금요일 17 KST. scan_daily + telegram (enter/exit 결정 알림). 책 정신: 주봉 종가 후 1회.",
+      "path": "/api/cron/weekly-scan",
+      "schedule": "0 8 * * 5"
     }
   ],
   "headers": [

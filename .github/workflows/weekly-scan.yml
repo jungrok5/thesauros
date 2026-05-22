@@ -1,0 +1,102 @@
+name: Weekly Book-Rule Scan
+# 책 정신의 매매 결정 cron — 주봉 종가 후 1회만 실행.
+#
+# 책 2부 3장:
+#   "주봉 = 매주 금요일 오후 2시 1회 확인"
+#   "매매는 안 할수록 좋다"
+#
+# Daily 데이터 적재 (bars / macro / investor_flow / disclosure 알림) 는
+# daily-data.yml. 이 workflow 는 분석 + 결정-grade 알림 전용.
+#
+# Responsibilities:
+#   - scan_daily (전체 KR universe 17 패턴 분석 + analyze_results 갱신
+#     + scan_results 의 active 신호 갱신)
+#   - telegram_worker (enter / pyramid / warn / exit / target / stop)
+#
+# Trigger: Vercel Cron → /api/cron/weekly-scan → workflow_dispatch.
+# 금요일 08:00 UTC = 17:00 KST. KRX 장 마감 (15:30 KST) 후 FDR/Naver
+# 데이터 publish 안정화 후 안전한 분석 타이밍.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # 30 min — scan_daily ~13 min + telegram_worker ~1 min + assertions
+    # ~2 min + ping ~1 min. 30 min 여유.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install supabase "psycopg[binary]"
+
+      - name: Notify admin — cron start
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m app.db.notify_admin_cron start --label "Weekly 분석 (주봉 종가)"
+
+      - name: Run scan_daily (full KR universe)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # KR (KOSPI + KOSDAQ ~2,700) + user watchlist 확장.
+          # 종목당 ~0.29s × 2,700 = ~13 min.
+          # 책 정신: 주봉 종가 후 분석 → enter/exit 결정. 매일 분석은
+          # 책-위반 (사용자가 매일 결정하게 만듦).
+          python -m app.db.scan_daily
+
+      - name: Send Telegram + Web Push alerts (decision-grade)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
+          WEB_BASE_URL: https://thesauros2026.vercel.app
+        run: |
+          # enter / pyramid / warn / exit / target / stop 알림.
+          # 주봉 마감 후만 발사 = 책 정신.
+          # alert_preferences.bedrest_mode=true 사용자는 short-circuit.
+          # eligibility CONDITIONAL (자리 X) 면 enter-class alert drop.
+          python -m app.db.telegram_worker
+
+      - name: Data-quality assertions
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          pip install pytest
+          python -m pytest app/db/tests/test_data_quality.py -v
+
+      - name: Notify admin — cron end
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m app.db.notify_admin_cron end --status ${{ job.status }} --label "Weekly 분석 (주봉 종가)"

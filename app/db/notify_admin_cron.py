@@ -139,9 +139,13 @@ def _post_to_admins(text: str, dry_run: bool) -> int:
 # Subcommands
 # ─────────────────────────────────────────────────────────────────────
 
-def cmd_start(dry_run: bool) -> int:
+def cmd_start(dry_run: bool, label: str = "Daily-scan") -> int:
     """Emit the start ping. Captures baseline counts to a side file so
-    the `end` command can compute deltas."""
+    the `end` command can compute deltas.
+
+    `label` differentiates pings when multiple cron workflows share the
+    same notification helper (daily-data vs weekly-scan vs ...).
+    """
     baseline = _capture_baseline()
     path = _snapshot_path()
     try:
@@ -155,7 +159,7 @@ def cmd_start(dry_run: bool) -> int:
     run_url = _run_url()
     pct = baseline["db_size_mb"] / 500 * 100
     text = (
-        "🤖 <b>Daily-scan 시작</b>\n"
+        f"🤖 <b>{label} 시작</b>\n"
         f"시각: {_now_kst()}\n"
         f"DB: {baseline['db_size_mb']:.1f} MB ({pct:.1f}%)\n"
         f"활성 신호: {baseline['active_signals']:,}건\n"
@@ -169,7 +173,7 @@ def cmd_start(dry_run: bool) -> int:
     return 0 if sent > 0 or dry_run else 2
 
 
-def cmd_end(status: str, dry_run: bool) -> int:
+def cmd_end(status: str, dry_run: bool, label: str = "Daily-scan") -> int:
     """Emit the end ping. `status` should be the GH Actions job.status
     value (success / failure / cancelled)."""
     path = _snapshot_path()
@@ -194,7 +198,7 @@ def cmd_end(status: str, dry_run: bool) -> int:
         head_icon, head_label = "🔵", f"종료 ({status or 'unknown'})"
 
     lines = [
-        f"{head_icon} <b>Daily-scan {head_label}</b>",
+        f"{head_icon} <b>{label} {head_label}</b>",
         f"시각: {_now_kst()}",
     ]
 
@@ -283,10 +287,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sp_start = sub.add_parser("start", help="emit cron-start ping")
     sp_start.add_argument("--dry-run", action="store_true")
+    sp_start.add_argument("--label", default="Daily-scan",
+                           help="cron 이름 (메시지 헤더용). 기본 'Daily-scan'.")
     sp_end = sub.add_parser("end", help="emit cron-end ping")
     sp_end.add_argument("--status", default="success",
                         help="GH Actions job.status (success / failure / cancelled)")
     sp_end.add_argument("--dry-run", action="store_true")
+    sp_end.add_argument("--label", default="Daily-scan",
+                         help="cron 이름 (메시지 헤더용). start 와 같은 값.")
     args = p.parse_args(argv)
 
     logging.basicConfig(
@@ -295,9 +303,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     if args.cmd == "start":
-        return cmd_start(args.dry_run)
+        return cmd_start(args.dry_run, args.label)
     if args.cmd == "end":
-        return cmd_end(args.status, args.dry_run)
+        return cmd_end(args.status, args.dry_run, args.label)
     p.print_help()
     return 1
 
