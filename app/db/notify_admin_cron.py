@@ -106,15 +106,19 @@ def _capture_baseline() -> Dict[str, Any]:
 
 def _alerts_in_window(since_iso: str) -> List[Dict[str, Any]]:
     """Alerts sent since the cron start. Used in the end ping so the
-    admin sees what fired this run."""
+    admin sees what fired this run.
+
+    sent_telegram 컬럼도 가져옴 — end-ping 의 deliver-rate observability
+    (회고 #48/#49) 에 활용. sent=false 비율 높으면 silent fail 의심.
+    """
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT ticker, alert_type, sent_at "
+                "SELECT ticker, alert_type, sent_at, "
+                "       COALESCE(sent_telegram, false) AS sent_telegram "
                 "  FROM alerts "
-                " WHERE sent_at >= %s "
-                "   AND sent_at IS NOT NULL "
-                " ORDER BY sent_at DESC LIMIT 50",
+                " WHERE created_at >= %s "
+                " ORDER BY created_at DESC LIMIT 100",
                 (since_iso,),
             )
             cols = [d[0] for d in cur.description]
@@ -261,13 +265,26 @@ def cmd_end(status: str, dry_run: bool, label: str = "Daily-scan") -> int:
         alerts = _alerts_in_window(baseline["captured_at"])
         # Group by alert_type for the summary line.
         by_type: Dict[str, int] = {}
+        sent_count = 0
         for a in alerts:
             by_type[a["alert_type"]] = by_type.get(a["alert_type"], 0) + 1
+            if a.get("sent_telegram"):
+                sent_count += 1
         if alerts:
             summary = " · ".join(
                 f"{t}={n}" for t, n in sorted(by_type.items())
             )
             lines.append(f"새 alert: {len(alerts)}건 · {summary}")
+            # 관찰성 (회고 #48/#49): sent_telegram=true 비율이 낮으면
+            # 모든 발송이 silent fail 중일 가능성. 50% 이하면 ⚠️ flag.
+            if len(alerts) >= 3:   # 충분한 표본
+                deliver_pct = sent_count / len(alerts) * 100
+                if deliver_pct < 50:
+                    lines.append(
+                        f"⚠️ Telegram 발송 성공률: {sent_count}/{len(alerts)} "
+                        f"({deliver_pct:.0f}%) — 토큰 / chat_id / Telegram "
+                        "장애 확인 필요"
+                    )
         else:
             lines.append("새 alert: 0건")
 

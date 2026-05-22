@@ -57,8 +57,11 @@ log = logging.getLogger("notify_disclosure_alerts")
 def _watchers_by_ticker() -> Dict[str, List[Tuple[str, str, str]]]:
     """Returns {ticker: [(user_id, telegram_chat_id, name)]} —
     only users whose alert_preferences.enable_disclosure = true
-    AND telegram_chat_id is set. Free tier of the alert; if the user
-    has no telegram link, no point processing them.
+    AND bedrest_mode = false AND telegram_chat_id is set.
+
+    bedrest_mode (회고 #3) — 책 정신상 와병투자 모드 ON 사용자는
+    모든 즉시 알림 OFF. disclosure 도 매일 발생 이벤트라 OFF 가
+    일관성 맞음. weekly digest 가 대신 모아서 전달.
     """
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
@@ -70,6 +73,7 @@ def _watchers_by_ticker() -> Dict[str, List[Tuple[str, str, str]]]:
                   JOIN alert_preferences ap ON ap.user_id = u.id
                   LEFT JOIN tickers t ON t.ticker = w.ticker
                  WHERE ap.enable_disclosure = true
+                   AND COALESCE(ap.bedrest_mode, false) = false
                    AND u.telegram_chat_id IS NOT NULL
                    AND u.telegram_chat_id <> ''
                    AND (w.ticker LIKE '%.KS' OR w.ticker LIKE '%.KQ')

@@ -35,9 +35,34 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[3]
 _MIGRATIONS = _ROOT / "migrations"
 
-# 토큰 단위 정규식 — 주석 안에 있는 거 제외.
-_DROP_TABLE_RE = re.compile(r"^\s*DROP\s+TABLE\b", re.IGNORECASE | re.MULTILINE)
-_TRUNCATE_RE = re.compile(r"^\s*TRUNCATE\b", re.IGNORECASE | re.MULTILINE)
+# Destructive 토큰 정규식 (회고 #44/#45 — 우회 가능성 확장 차단).
+# 주석 stripped 된 SQL 에서 anywhere 매치 — 한 줄 BEGIN; DROP TABLE foo;
+# 또는 multi-line DROP\nTABLE 둘 다 잡힘.
+#
+# 검사 대상:
+#   DROP TABLE              테이블 삭제
+#   DROP SCHEMA             스키마 통째 삭제
+#   DROP MATERIALIZED VIEW  마뷰 삭제 (데이터 손실)
+#   TRUNCATE                일괄 삭제
+#   DELETE FROM ... 일 때 WHERE 절이 없거나 trivially true (`WHERE true`,
+#                  `WHERE 1=1`) — 전체 행 삭제 사실상 TRUNCATE
+#
+# DROP INDEX / DROP COLUMN 은 행 손실 X (IF EXISTS 면 idempotent) — 미차단.
+_DESTRUCTIVE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("DROP TABLE",
+     re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE | re.DOTALL)),
+    ("DROP SCHEMA",
+     re.compile(r"\bDROP\s+SCHEMA\b", re.IGNORECASE | re.DOTALL)),
+    ("DROP MATERIALIZED VIEW",
+     re.compile(r"\bDROP\s+MATERIALIZED\s+VIEW\b", re.IGNORECASE | re.DOTALL)),
+    ("TRUNCATE",
+     re.compile(r"\bTRUNCATE\b", re.IGNORECASE)),
+    # DELETE FROM 은 합법적 사용 (retention 정책의 DELETE 같은 것) 가능
+    # 하지만 migrations 폴더 안에서는 DELETE FROM 자체가 위험. 명시 등록
+    # (045) 만 허용.
+    ("DELETE FROM",
+     re.compile(r"\bDELETE\s+FROM\b", re.IGNORECASE | re.DOTALL)),
+]
 
 # 정책 예외 — 새 destructive 가 정말 필요하면 여기 추가하고 PR 리뷰에서
 # 명시적 승인. 보통 비어있어야 정상.
@@ -50,7 +75,16 @@ _TRUNCATE_RE = re.compile(r"^\s*TRUNCATE\b", re.IGNORECASE | re.MULTILINE)
 #   - 영구 destructive 임이 분명하므로 ALLOWED 명시 — replay guard 의
 #     DELETE FROM 검사 (#45) 가 추가되면 이 migration 만 통과시킴.
 ALLOWED_DESTRUCTIVE: set[str] = {
+    # P_US — 의도된 영구 destructive. 045 SQL 헤더에 backup 절차 명시.
     "045_remove_us_universe.sql",
+    # 020 — 한 번 적용된 investor_flow 30일 retention DELETE. 재실행
+    # 시 idempotent (WHERE day < CURRENT_DATE - 30) — 그날 기준 30일
+    # 이상 행 삭제는 retention.py 의 일상 동작.
+    "020_drop_bars_date_index_shrink_investor.sql",
+    # 026 — search_history trim_search_history() trigger 내부 DELETE.
+    # 매 INSERT 시 자동 trim 의도. trigger 정의일 뿐 migration replay 시
+    # 데이터 손실 X.
+    "026_search_history_and_feedback.sql",
 }
 
 
@@ -65,54 +99,68 @@ def _strip_sql_comments(src: str) -> str:
     return src
 
 
-def _scan(path: Path) -> dict[str, bool]:
+def _scan(path: Path) -> list[str]:
+    """Return list of destructive token names found (주석 stripped)."""
     raw = path.read_text(encoding="utf-8")
     stripped = _strip_sql_comments(raw)
-    return {
-        "drop_table": bool(_DROP_TABLE_RE.search(stripped)),
-        "truncate": bool(_TRUNCATE_RE.search(stripped)),
-    }
+    return [name for name, pat in _DESTRUCTIVE_PATTERNS if pat.search(stripped)]
 
 
-def test_no_drop_table_in_migrations():
-    """모든 migrations/*.sql 에서 (주석 제외) DROP TABLE 발견되면 fail.
+def test_no_destructive_in_migrations():
+    """모든 migrations/*.sql 에서 (주석 제외) DROP TABLE / DROP SCHEMA /
+    DROP MATERIALIZED VIEW / TRUNCATE / DELETE FROM 발견 시 fail.
 
-    DROP TABLE 은 가장 위험한 op — IF EXISTS 라도 테이블이 (부활 등으로)
-    다시 생성된 상태면 prod 데이터 손실. _migrations replay 시 unintended
-    실행 위험. 우회: SQL 을 `SELECT 1` no-op 로 비우거나 ALLOWED_DESTRUCTIVE
-    에 명시.
+    이미 적용된 destructive 는 ALLOWED_DESTRUCTIVE 에 명시. 새 destructive
+    가 정말 필요하면 ops script 로 분리 + PR review.
     """
     if not _MIGRATIONS.exists():
         return
-    offenders: list[str] = []
+    offenders: dict[str, list[str]] = {}
     for sql in sorted(_MIGRATIONS.glob("*.sql")):
         if sql.name in ALLOWED_DESTRUCTIVE:
             continue
-        if _scan(sql)["drop_table"]:
-            offenders.append(sql.name)
+        found = _scan(sql)
+        if found:
+            offenders[sql.name] = found
     assert not offenders, (
-        "migrations 폴더에 DROP TABLE 이 남아있음 — replay 시 prod 데이터 "
-        f"손실 위험. 영향: {sorted(offenders)}. 조치: SQL 을 `SELECT 1` "
-        "no-op 으로 비우거나 (이미 적용된 destructive) ALLOWED_DESTRUCTIVE 에 "
-        "명시 (의도적 destructive). 2026-05-22 themes 사고 참조."
+        "migrations 폴더에 destructive SQL 이 남아있음 — replay 시 prod "
+        f"데이터 손실 위험. 영향: {dict(offenders)}. 조치: SQL 을 "
+        "`SELECT 1` no-op 으로 비우거나 (이미 적용된 destructive) "
+        "ALLOWED_DESTRUCTIVE 에 명시. 2026-05-22 themes 사고 참조."
     )
 
 
-def test_no_truncate_in_migrations():
-    """TRUNCATE 도 동일 — 데이터 wipe. migration 으로 하면 안 됨."""
-    if not _MIGRATIONS.exists():
-        return
-    offenders: list[str] = []
-    for sql in sorted(_MIGRATIONS.glob("*.sql")):
-        if sql.name in ALLOWED_DESTRUCTIVE:
-            continue
-        if _scan(sql)["truncate"]:
-            offenders.append(sql.name)
-    assert not offenders, (
-        "migrations 폴더에 TRUNCATE 가 있음. 데이터 wipe — replay 시 "
-        f"prod 손실. 영향: {sorted(offenders)}. ops script 로 분리하거나 "
-        "ALLOWED_DESTRUCTIVE 에 명시."
-    )
+def test_regex_catches_adversarial_forms():
+    """Bypass attempts the original DROP TABLE regex would miss.
+    회고 #44/#45 — multi-line DROP\\nTABLE, BEGIN; DROP TABLE x;, etc."""
+    fixtures = {
+        "multi_line": "BEGIN;\n\nDROP\nTABLE foo;\n",
+        "single_line": "BEGIN; DROP TABLE foo CASCADE; END;",
+        "drop_schema": "DROP SCHEMA public CASCADE;",
+        "drop_matview": "DROP MATERIALIZED VIEW theme_stats;",
+        "truncate": "TRUNCATE TABLE bars RESTART IDENTITY;",
+        "delete_from": "DELETE FROM bars WHERE bar_date < '2024-01-01';",
+    }
+    for case, sql in fixtures.items():
+        found = [name for name, pat in _DESTRUCTIVE_PATTERNS if pat.search(sql)]
+        assert found, f"adversarial fixture {case!r} not caught: {sql!r}"
+
+
+def test_safe_sql_is_not_caught():
+    """건강한 SQL — false positive 차단."""
+    safe = [
+        "CREATE TABLE foo (id INT);",
+        "ALTER TABLE foo ADD COLUMN bar INT;",
+        "DROP INDEX IF EXISTS idx_old;",
+        "DROP COLUMN IF EXISTS old_col;",
+        "SELECT 1;",
+        "-- DROP TABLE in comment shouldn't fire",
+        "/* TRUNCATE in block comment */",
+    ]
+    for sql in safe:
+        stripped = _strip_sql_comments(sql)
+        found = [name for name, pat in _DESTRUCTIVE_PATTERNS if pat.search(stripped)]
+        assert not found, f"safe SQL falsely flagged: {sql!r} → {found}"
 
 
 def test_historical_drops_are_now_noop():

@@ -127,3 +127,31 @@ def test_query_always_filters_is_active():
 
     sql, _ = executed[0]
     assert "is_active = true" in sql
+
+
+def test_signature_has_no_sp500_only_param():
+    """회고 #11 — `sp500_only` 와 US universe 분기는 P_US (2026-05-22)
+    에서 제거됨. accidentally 부활 시 fail. inspect.signature 로 정적
+    파악."""
+    import inspect
+    sig = inspect.signature(scan_daily._list_tickers)
+    assert "sp500_only" not in sig.parameters, (
+        "sp500_only 파라미터 부활됨 — P_US 워크어라운드 재도입 위험. "
+        "회고 #11 참조."
+    )
+    # markets / tickers / limit 만 남아있어야 정상.
+    expected = {"markets", "tickers", "limit"}
+    actual = set(sig.parameters.keys())
+    assert expected.issubset(actual), (
+        f"_list_tickers 시그니처 변경: {actual}, expected {expected} 포함"
+    )
+
+
+def test_kr_only_market_constants():
+    """KR_MARKETS / US_MARKETS 같은 module-level constant 가 ingest_bars
+    또는 scan_daily 에서 US 분기로 leak 되지 않는지. ingest_bars 의
+    KR_MARKETS = ('KOSPI','KOSDAQ') 만 active universe."""
+    import app.db.ingest_bars as ingest_bars
+    assert ingest_bars.KR_MARKETS == ("KOSPI", "KOSDAQ"), (
+        f"KR_MARKETS 변경됨: {ingest_bars.KR_MARKETS}"
+    )

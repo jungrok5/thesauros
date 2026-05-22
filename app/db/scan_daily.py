@@ -516,6 +516,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
+    # Stale-bar guard (회고 #21) — 휴장 (추석/설/공휴일 + 임시휴장) 으로
+    # FDR 가 today bars 가 못 들어왔으면 in-progress W bar 가 stale.
+    # weekly-scan 이 그 bars 로 분석 + alert 발사하면 사용자가 휴일에
+    # alert 받음. 가장 최근 W bar_date 가 today 이하 + 5일 이상 차이
+    # 나면 abort (Friday 17 KST cron 인데 마지막 W bar 가 지난 주거나
+    # 더 이전이면 휴장 의심).
+    from datetime import date as _date, timedelta as _td
+    try:
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT MAX(bar_date) FROM bars WHERE granularity='W'")
+                r = cur.fetchone()
+                latest_w = r[0] if r else None
+    except Exception:
+        latest_w = None
+    if latest_w is None:
+        log.warning("stale-bar guard: bars 테이블 비어있음 — scan_daily abort")
+        return 2
+    days_old = (_date.today() - latest_w).days
+    if days_old > 7:
+        log.warning(
+            "stale-bar guard: latest W bar %s is %d days old "
+            "(휴장 또는 ingest_bars 실패 의심) — scan_daily abort",
+            latest_w, days_old,
+        )
+        return 2
+
     if args.watchlist_only:
         # Search-only pivot: scan only what users actually care about —
         # tickers on any watchlist + recently-viewed (last_accessed_at

@@ -7,7 +7,7 @@
  * POST to /api/chart-vision/analyze and stream the result into view.
  * No state persisted across reloads (MVP).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Upload, Loader2, AlertCircle } from "lucide-react";
 
 type AnalysisResult = {
@@ -28,6 +28,16 @@ export function ChartVisionClient() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+
+  // Blob URL cleanup (회고 #34) — preview 가 바뀔 때 / 컴포넌트 unmount
+  // 시 이전 createObjectURL 의 메모리 해제. 모바일 safari 의 memory
+  // pressure 회피.
+  useEffect(() => {
+    if (!preview) return;
+    return () => {
+      try { URL.revokeObjectURL(preview); } catch { /* ignored */ }
+    };
+  }, [preview]);
 
   async function analyze(file: File) {
     setBusy(true);

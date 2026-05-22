@@ -39,6 +39,7 @@ type ThemeRow = {
   theme_id: number;
   name: string;
   members: number;
+  updated_at: string;   // cache + RPC 양쪽이 채움. UI 미사용 but schema sync.
   avg_change_pct: number | null;
   up_count: number;
   down_count: number;
@@ -113,6 +114,7 @@ function normalize(r: {
   theme_id: number;
   name: string;
   members: number;
+  updated_at?: string | Date | null;
   avg_change_pct: string | number | null;
   up_count: number;
   down_count: number;
@@ -126,6 +128,9 @@ function normalize(r: {
     theme_id: r.theme_id,
     name: r.name,
     members: r.members,
+    updated_at: r.updated_at instanceof Date
+      ? r.updated_at.toISOString()
+      : (typeof r.updated_at === "string" ? r.updated_at : ""),
     avg_change_pct: r.avg_change_pct == null ? null : Number(r.avg_change_pct),
     up_count: r.up_count,
     down_count: r.down_count,

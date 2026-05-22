@@ -192,28 +192,42 @@ def _user_prefs(user_id: str) -> Dict[str, bool]:
 
     `bedrest_mode` (migration 044) — 책 2부 3장 "한달 누워있다 1회만
     확인" 정신. ON 이면 run_once 가 이 user 의 모든 즉시 alert 를 skip.
+
+    Graceful degradation (회고 #2): migration 044 미적용 DB 시
+    (bedrest_mode 컬럼 자체 없을 때) UndefinedColumn 발생. fallback 으로
+    bedrest_mode 없는 SELECT 재시도 + bedrest 기본 False 처리.
     """
-    with get_conn(autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT enable_enter, enable_pyramid, enable_warn, "
-                "enable_exit, enable_ma240_break, enable_quarter_25_break, "
-                "bedrest_mode "
-                "FROM alert_preferences WHERE user_id = %s",
-                (user_id,),
-            )
-            r = cur.fetchone()
-            if not r:
-                # No row yet → all-on defaults except bedrest (off).
-                return {
-                    "enable_enter": True, "enable_pyramid": True,
-                    "enable_warn": True, "enable_exit": True,
-                    "enable_ma240_break": True,
-                    "enable_quarter_25_break": True,
-                    "bedrest_mode": False,
-                }
-            keys = [d[0] for d in cur.description]
-            return {k: bool(v) for k, v in zip(keys, r)}
+    DEFAULTS_ALL_ON = {
+        "enable_enter": True, "enable_pyramid": True,
+        "enable_warn": True, "enable_exit": True,
+        "enable_ma240_break": True,
+        "enable_quarter_25_break": True,
+        "bedrest_mode": False,
+    }
+    try:
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT enable_enter, enable_pyramid, enable_warn, "
+                    "enable_exit, enable_ma240_break, enable_quarter_25_break, "
+                    "bedrest_mode "
+                    "FROM alert_preferences WHERE user_id = %s",
+                    (user_id,),
+                )
+                r = cur.fetchone()
+                if not r:
+                    return DEFAULTS_ALL_ON
+                keys = [d[0] for d in cur.description]
+                return {k: bool(v) for k, v in zip(keys, r)}
+    except Exception as e:
+        # bedrest_mode 컬럼이 없는 환경 (migration 044 미적용) 또는 다른
+        # transient error. bedrest 기본값 (false) 으로 fallback — 사용자가
+        # silent 무알림 되는 사고 방지.
+        log.warning(
+            "_user_prefs SELECT failed (%s) — falling back to all-on defaults",
+            str(e).splitlines()[0][:200],
+        )
+        return DEFAULTS_ALL_ON
 
 
 def _latest_close(ticker: str) -> Optional[float]:
@@ -295,6 +309,12 @@ _SIGNAL_LABELS: Dict[str, Dict[str, str]] = {
     "action_sell":        {"name": "매도",       "dir": "bear", "phrase": "10MA 이탈 (매도)"},
     "action_sell_short":  {"name": "청산/인버스", "dir": "bear", "phrase": "추세 사망 (청산 또는 인버스 진입)"},
     "action_avoid":       {"name": "회피",       "dir": "bear", "phrase": "240MA 아래 — 죽은 차트 (회피)"},
+    # 회고 #55 — ALERT_RULES 에 있지만 _SIGNAL_LABELS 누락이던 4 개.
+    # 한글 label 없으면 사용자에게 raw snake_case 노출.
+    "pattern_death_messenger": {"name": "저승사자",     "dir": "bear", "phrase": "장대음봉 + 주봉 10MA 동시 이탈 (저승사자)"},
+    "ma240_break_down":        {"name": "240MA 이탈",  "dir": "bear", "phrase": "월봉 240MA 하향 돌파 (죽은 차트 진입)"},
+    "pattern_cup_and_handle":  {"name": "컵핸들",      "dir": "bull", "phrase": "컵 위드 핸들 매수 추세 지속"},
+    "pattern_doulbanji":       {"name": "돌반지",      "dir": "bull", "phrase": "240MA 돌파-지지-반등 (책의 최강 매수 시그널)"},
 }
 
 
@@ -827,19 +847,100 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
     return stats
 
 
+def run_bedrest_digest(dry_run: bool = False) -> Dict[str, int]:
+    """Weekly digest for bedrest_mode users (회고 #1).
+
+    매주 weekly-scan 의 telegram step 직후 실행. bedrest_mode=true 인
+    사용자 각각의 watchlist 에서 **이번 주에 새로 발견된 active enter/exit
+    신호** 만 모아 1통의 요약 메시지로 발송. 책 정신: "한달 누워있다 1회만
+    확인" — 사용자는 주 1회만 신호 본다.
+    """
+    stats = {"users": 0, "sent": 0, "skipped_no_signals": 0}
+
+    # bedrest 사용자만 — _users_with_alerts 와 join.
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT u.id::text, u.telegram_chat_id
+                  FROM users u
+                  JOIN alert_preferences ap ON ap.user_id = u.id
+                 WHERE ap.bedrest_mode = true
+                   AND u.telegram_chat_id IS NOT NULL
+                   AND u.telegram_chat_id <> ''
+                """
+            )
+            users = cur.fetchall()
+    stats["users"] = len(users)
+    if not users:
+        log.info("no bedrest users")
+        return stats
+
+    for user_id, chat_id in users:
+        watch = _watchlist_active(user_id)
+        if not watch:
+            stats["skipped_no_signals"] += 1
+            continue
+        tickers = [w["ticker"] for w in watch]
+        signals = _active_signals_for(tickers)
+        # 책 정신 매매 결정 = enter/exit class only — 와병투자 digest 는
+        # 정말 매매할 만한 신호만 모음. warn / pyramid 등은 noise.
+        actionable = [s for s in signals if classify(s["signal_type"]) and
+                      classify(s["signal_type"])[0] in {"enter", "exit"}]
+        if not actionable:
+            stats["skipped_no_signals"] += 1
+            continue
+
+        # 메시지 — 책 톤. enter / exit 분리, ticker 최대 5개씩 list.
+        enter_lines: List[str] = []
+        exit_lines: List[str] = []
+        for s in actionable[:30]:   # safety cap
+            atype = classify(s["signal_type"])[0]
+            label = _signal_label(s["signal_type"])
+            line = f"  · <b>{s['ticker']}</b> {label['name']}"
+            if atype == "enter":
+                enter_lines.append(line)
+            else:
+                exit_lines.append(line)
+
+        sections: List[str] = []
+        if enter_lines:
+            sections.append("🟢 <b>매수 후보</b> (책 점검 자리)\n" + "\n".join(enter_lines[:10]))
+        if exit_lines:
+            sections.append("🔴 <b>청산 신호</b> (보유 중이면 검토)\n" + "\n".join(exit_lines[:10]))
+
+        msg = (
+            "🛌 <b>와병투자 주간 요약</b>\n"
+            "이번 주 watchlist 의 결정-grade 신호 모음. 본인 차트 검증 후 진행.\n\n"
+            + "\n\n".join(sections)
+        )
+        if not dry_run and chat_id:
+            ok = send_telegram(chat_id, msg)
+            if ok:
+                stats["sent"] += 1
+                time.sleep(0.05)
+    return stats
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true",
                    help="don't send telegram messages or insert rows")
+    p.add_argument("--digest", action="store_true",
+                   help="와병투자 주간 요약 모드 (bedrest_mode=true 사용자에게만)")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
-    stats = run_once(dry_run=args.dry_run)
-    log.info("done: %s", stats)
+    if args.digest:
+        stats = run_bedrest_digest(dry_run=args.dry_run)
+        log.info("digest done: %s", stats)
+    else:
+        stats = run_once(dry_run=args.dry_run)
+        log.info("done: %s", stats)
     return 0
 
 
