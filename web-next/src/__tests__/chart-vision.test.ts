@@ -95,11 +95,16 @@ describe("chart-vision page is registered", () => {
     expect(fs.existsSync(p)).toBe(true);
   });
 
-  it("sidebar menu links to /chart-vision", () => {
+  it("sidebar menu links to /chart-vision (admin-only)", () => {
     const sidebar = fs.readFileSync(
       path.resolve(__dirname, "..", "components", "sidebar.tsx"),
       "utf8",
     );
     expect(sidebar).toMatch(/\/chart-vision/);
+    // Must be inside the admin-only beta group, not the public nav.
+    // We check that the chart-vision item appears in the same group
+    // that the navGroups() helper only mounts for admins.
+    expect(sidebar).toMatch(/ADMIN_BETA_GROUP[\s\S]{0,400}chart-vision/);
+    expect(sidebar).toMatch(/isAdmin\s*\?\s*\[[^\]]*ADMIN_BETA_GROUP/);
   });
 });

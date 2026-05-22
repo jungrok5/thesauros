@@ -67,12 +67,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "📷 차트 비전",
-    items: [
-      { href: "/chart-vision", label: "차트 이미지 분석", icon: Camera },
-    ],
-  },
-  {
     heading: "⭐ 내 종목",
     items: [
       { href: "/watchlist", label: "관심·보유 종목", icon: Star },
@@ -87,6 +81,15 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// 베타 기능 — 일반 사용자에게 풀기 전 관리자만 노출. 풀 때는
+// ADMIN_BETA_GROUP 항목을 NAV_GROUPS 의 적절한 그룹으로 이동시키면 됨.
+const ADMIN_BETA_GROUP: NavGroup = {
+  heading: "🧪 베타 (관리자)",
+  items: [
+    { href: "/chart-vision", label: "차트 이미지 분석", icon: Camera },
+  ],
+};
+
 const ADMIN_GROUP: NavGroup = {
   heading: "🔒 관리자",
   items: [
@@ -96,7 +99,9 @@ const ADMIN_GROUP: NavGroup = {
 };
 
 function navGroups(isAdmin: boolean): NavGroup[] {
-  return isAdmin ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
+  return isAdmin
+    ? [...NAV_GROUPS, ADMIN_BETA_GROUP, ADMIN_GROUP]
+    : NAV_GROUPS;
 }
 
 function NavList({

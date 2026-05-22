@@ -18,6 +18,10 @@ import {
   Star,
   AlertTriangle,
   Calendar,
+  Clock,
+  Bed,
+  Camera,
+  RefreshCw,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -144,6 +148,180 @@ export default function WelcomePage() {
         ))}
       </ol>
 
+      {/* 운영 규칙 — 무엇이 언제 갱신되는지 */}
+      <section className="rounded-xl border-2 border-zinc-500/30 bg-zinc-500/5 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Clock className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
+          <h2 className="text-base font-semibold">
+            데이터 갱신 일정 (2026-05-22 정리)
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          책 정신상 매매 결정은 <strong>주봉 종가 후 1회</strong>. 이 룰에
+          맞춰 cron 을 2 단으로 분리했습니다 — 매일 데이터 갱신과 주 1회
+          결정 분석.
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr className="text-left border-b border-border">
+                <th className="py-2 pr-3 font-medium">시점</th>
+                <th className="py-2 pr-3 font-medium">무엇이 갱신</th>
+                <th className="py-2 font-medium">알림 발사?</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              <tr>
+                <td className="py-2 pr-3 align-top">
+                  <div className="font-medium">매일 17 KST</div>
+                  <div className="text-muted-foreground">월~금</div>
+                </td>
+                <td className="py-2 pr-3 align-top space-y-0.5">
+                  <div>· 종가 (bars) — 오늘 KR 종가 적재</div>
+                  <div>· 거시 (macro_state) — FRED + 글로벌 지수</div>
+                  <div>· 외인+기관 (investor_flow) — 책 5장 선행성 신호</div>
+                  <div>· DART 새 공시 (watchlist 종목)</div>
+                </td>
+                <td className="py-2 align-top text-muted-foreground">
+                  <div className="text-emerald-600 dark:text-emerald-400">🟡 이벤트 알림만</div>
+                  <div className="mt-1">새 DART 공시 (자사주 매입 / 유상증자 / 5% 지분 등)</div>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-3 align-top">
+                  <div className="font-medium">금요일 17 KST</div>
+                  <div className="text-muted-foreground">매주 1회</div>
+                </td>
+                <td className="py-2 pr-3 align-top space-y-0.5">
+                  <div>· <strong>전 종목 17 패턴 분석</strong> (scan_daily)</div>
+                  <div>· 한 줄 평 + 매수 자격 + 매매플랜 갱신</div>
+                  <div>· 알림 dedup 결정</div>
+                </td>
+                <td className="py-2 align-top text-muted-foreground">
+                  <div className="text-emerald-600 dark:text-emerald-400">🟢 결정 알림</div>
+                  <div className="mt-1">진입 / 추가매수 / 경고 / 청산 / 목표 / 손절</div>
+                  <div className="mt-0.5 text-[10px]">월말 주에는 「📅 월말 주」 라벨 함께 표시 — 월봉 240MA / 포킹 점검 신호</div>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-3 align-top">
+                  <div className="font-medium">토요일 11 KST</div>
+                  <div className="text-muted-foreground">매주 1회</div>
+                </td>
+                <td className="py-2 pr-3 align-top space-y-0.5">
+                  <div>· DART 재무 (fundamentals)</div>
+                  <div>· DART 전체 공시 (disclosures)</div>
+                  <div>· 테마 + 멤버 (themes / theme_members)</div>
+                  <div>· 어닝 캘린더 + 애널리스트 컨센서스 + 5% 보유</div>
+                </td>
+                <td className="py-2 align-top text-muted-foreground">없음 (데이터 적재만)</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-3 align-top">
+                  <div className="font-medium">일요일 10 KST</div>
+                  <div className="text-muted-foreground">매주 1회</div>
+                </td>
+                <td className="py-2 pr-3 align-top space-y-0.5">
+                  <div>· 종목 master (KRX 신규 상장 / 폐지 반영)</div>
+                </td>
+                <td className="py-2 align-top text-muted-foreground">없음</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="rounded-md border border-dashed border-border bg-muted/20 p-2 text-[11px] text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">읽는 법:</strong> 페이지에 표시되는 가격은
+          <em> 직전 갱신 시점</em> 기준입니다. 페이지 상단의 freshness chip 으로 확인 가능.
+          현재가는 별도 <a href="https://finance.naver.com/" target="_blank" rel="noopener noreferrer" className="underline">증권 앱</a> 에서 보세요 — 페이지 가격은 <strong>매매 결정용 (주봉 종가)</strong> 입니다.
+        </div>
+      </section>
+
+      {/* 책 정신 5 규칙 */}
+      <section className="rounded-xl border-2 border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
+          <h2 className="text-base font-semibold">책 정신 핵심 규칙 (요약)</h2>
+        </div>
+        <ol className="list-decimal list-inside space-y-2 text-sm leading-relaxed">
+          <li>
+            <strong>매매는 안 할수록 좋다</strong> — 코스톨라니: &ldquo;우량주
+            샀으면 죄짓고 감옥에 가 있어라&rdquo;. 와병투자 (한달 누워있다
+            말일 1회만 확인) 가 책의 이상.
+          </li>
+          <li>
+            <strong>주봉 종가가 결정 단위</strong> — 매주 금요일 15:30 KST
+            마감가 기준. 장중 변동에 흔들리지 말 것. 분석은 17 KST 이후
+            (FDR 종가 publish 후) 페이지에서 확인.
+          </li>
+          <li>
+            <strong>240MA 위 종목만 매수 대상</strong> — 그 아래는
+            「죽은 차트」. 정배열 (위→아래: 5&gt;10&gt;20&gt;60&gt;120&gt;240) 만
+            살아있는 종목. 역배열은 「사망유희」.
+          </li>
+          <li>
+            <strong>거래량은 선행성</strong> — 가격 조작은 가능하나 거래량은
+            못 숨김. 외인+기관 5일 동행 매수는 선행 신호 (책 5장).
+          </li>
+          <li>
+            <strong>4등분선 25% 깨지면 손절</strong> — 직전 장대양봉 몸통
+            25% 라인. 책 시그니처 매도 시그널. 페이지의 매매플랜이 자동 계산.
+          </li>
+        </ol>
+      </section>
+
+      {/* 알림 모드 — 와병투자 + 베타 */}
+      <section className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Bed className="h-5 w-5 text-violet-700 dark:text-violet-300" />
+          <h2 className="text-base font-semibold">알림 모드</h2>
+        </div>
+        <ul className="space-y-2 text-sm leading-relaxed">
+          <li>
+            <strong>🟢 결정 알림 (기본 ON)</strong> — 주봉 마감 후 enter /
+            pyramid / warn / exit / target / stop.
+          </li>
+          <li>
+            <strong>🟡 이벤트 알림 (기본 ON)</strong> — DART 새 공시 (자사주
+            매입 / 유상증자 / 5% 지분 변동).
+          </li>
+          <li>
+            <strong>🟠 가격 알림</strong> — watchlist 종목에 target/stop 등록
+            시 자동.
+          </li>
+          <li>
+            <strong>🛌 와병투자 모드</strong> (opt-in, 책의 이상적 모습) —
+            ON 시 위 3 가지 모두 OFF + 금요일 종가 후 <strong>주 1회 통합 요약</strong>만
+            받음. 손가락이 자꾸 가는 분께 권장.
+            <Link href="/settings/alerts" className="ml-1 text-violet-700 dark:text-violet-300 underline">
+              알림 설정에서 켜기
+            </Link>
+          </li>
+        </ul>
+      </section>
+
+      {/* 페이지별 데이터 신선도 */}
+      <section className="rounded-xl border border-border bg-card p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-base font-semibold">페이지별 데이터 신선도</h2>
+        </div>
+        <ul className="text-sm space-y-1.5 text-muted-foreground">
+          <li>· <strong className="text-foreground">/dashboard (거시)</strong> — 매일 갱신, KST 17 이후</li>
+          <li>· <strong className="text-foreground">/stocks/[ticker]</strong> 한 줄 평 — <em>금요일</em> 갱신 (주봉 종가 기반)</li>
+          <li>· <strong className="text-foreground">/stocks/[ticker]</strong> 가격/이평선 — 종가 (직전 17 KST)</li>
+          <li>· <strong className="text-foreground">/stocks/[ticker]</strong> 외인+기관 / 공시 — 매일 갱신</li>
+          <li>· <strong className="text-foreground">/screener</strong> 순위 — 금요일 갱신</li>
+          <li>· <strong className="text-foreground">/themes</strong> — 토요일 갱신 (캐시: 1시간 ISR)</li>
+          <li>· <strong className="text-foreground">/flow-ranking, /volume-surge</strong> — 매일 갱신</li>
+          <li>· <strong className="text-foreground">/watchlist</strong> — 실시간 (페이지 열 때 조회)</li>
+        </ul>
+        <div className="rounded-md border border-dashed border-border bg-muted/20 p-2 mt-2 text-[11px] text-muted-foreground leading-relaxed">
+          모든 페이지 상단에 <strong>freshness chip</strong> 이 갱신 시점을 표시합니다. <em>최근 분석</em> 이후 며칠 지났는지 한눈에 확인.
+        </div>
+      </section>
+
       {/* 추가 안내 */}
       <section className="rounded-xl border border-border bg-card p-4 space-y-2 text-sm leading-relaxed">
         <h2 className="font-semibold">📌 자주 받는 질문</h2>
@@ -168,6 +346,13 @@ export default function WelcomePage() {
             <strong className="text-foreground">『AVOID/회피 종목도 관심에 넣을 수 있나?』</strong>{" "}
             가능하지만 책 정신상 신규 매수 자격 X. 매수 시도 시 한 번 경고.
             모니터링 목적이라면 OK.
+          </li>
+          <li>
+            <strong className="text-foreground">『미국 주식은 왜 자동 분석이 안 되나?』</strong>{" "}
+            책 정신상 코스피·코스닥 종목 매매 + 미국은 글로벌 지수 (탑다운
+            1단계) 로만 활용. 또 Naver/Yahoo 가 cloud IP 차단으로 자동 수집도
+            어려워 2026-05-22 부로 자동 분석 중단. 미국·해외·암호화폐 차트는
+            모바일 증권 앱 스크린샷으로 차트 비전 (베타) 분석 가능.
           </li>
         </ul>
       </section>
