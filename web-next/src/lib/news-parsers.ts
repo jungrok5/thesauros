@@ -82,9 +82,25 @@ export function parseNaverNews(html: string): NewsItem[] {
     const title = stripTags(titleA[2]).trim();
     if (!title) continue;
 
-    const articleUrl = href.startsWith("/")
-      ? `https://finance.naver.com${href}`
-      : href;
+    // Naver Finance retired the in-page news_read viewer mid-2024:
+    // /item/news_read.naver now returns a 92-byte stub that just
+    // emits <script>top.location.href='...'</script> to redirect to
+    // n.news.naver.com. Mobile / in-app browsers (Telegram, Naver
+    // app webview, some KakaoTalk webviews) block or strip that
+    // script, leaving the user on a blank page = the "링크 다 깨져
+    //있네" symptom reported 2026-05-22. Build the canonical
+    // n.news.naver.com URL directly from article_id + office_id so
+    // the link works in one hop regardless of script support.
+    const articleId = /[?&]article_id=([^&]+)/.exec(href)?.[1];
+    const officeId = /[?&]office_id=([^&]+)/.exec(href)?.[1];
+    let articleUrl: string;
+    if (articleId && officeId) {
+      articleUrl = `https://n.news.naver.com/mnews/article/${officeId}/${articleId}`;
+    } else {
+      articleUrl = href.startsWith("/")
+        ? `https://finance.naver.com${href}`
+        : href;
+    }
 
     const info = tr.match(/<td[^>]*class="[^"]*info[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
     const date = tr.match(/<td[^>]*class="[^"]*date[^"]*"[^>]*>([\s\S]*?)<\/td>/i);

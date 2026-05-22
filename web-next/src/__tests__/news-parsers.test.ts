@@ -93,6 +93,50 @@ describe("parseNaverNews", () => {
     // Date-only rows still parse to midnight KST.
     expect(items[1].published_at).toBe("2026-05-18T00:00:00+09:00");
   });
+
+  it("rewrites legacy news_read.naver URLs to n.news.naver.com", () => {
+    // Reported 2026-05-22: clicking a 종목 뉴스 link landed users on a
+    // blank 92-byte page because Naver Finance now serves only a
+    // <script>top.location.href=...</script> redirect at the old URL.
+    // Mobile + in-app browsers (Telegram, Kakao webview) block the
+    // script, so users see nothing. Parser must build the canonical
+    // n.news URL directly from article_id + office_id query params.
+    const html = `<table class="type5">
+      <tr>
+        <td class="title">
+          <a href="/item/news_read.naver?article_id=0006286156&office_id=018&code=069540&page=1&sm=title_entity_id.basic">
+            셀트리온 3분기 실적
+          </a>
+        </td>
+        <td class="info">매일경제</td>
+        <td class="date">2026.05.22 09:00</td>
+      </tr>
+    </table>`;
+    const items = parseNaverNews(html);
+    expect(items).toHaveLength(1);
+    expect(items[0].url).toBe(
+      "https://n.news.naver.com/mnews/article/018/0006286156",
+    );
+  });
+
+  it("falls back to finance.naver.com when query params are missing", () => {
+    // Robustness: if Naver ever drops the article_id/office_id params
+    // (or A/B-tests a new format), the original URL still gets clicked
+    // through — better than an empty href.
+    const html = `<table class="type5">
+      <tr>
+        <td class="title">
+          <a href="/item/news_read.naver?unexpected=param">제목</a>
+        </td>
+        <td class="info">정보</td>
+        <td class="date">2026.05.22</td>
+      </tr>
+    </table>`;
+    const items = parseNaverNews(html);
+    expect(items[0].url).toBe(
+      "https://finance.naver.com/item/news_read.naver?unexpected=param",
+    );
+  });
 });
 
 describe("parseNaverDate", () => {
