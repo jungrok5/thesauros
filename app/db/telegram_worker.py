@@ -430,28 +430,86 @@ def _ticker_name(ticker: str) -> Optional[str]:
 
 # ---- Driver ------------------------------------------------------------
 
+def _site_base_url() -> str:
+    """Site root for stock-detail deep links. Set via WEB_BASE_URL env;
+    default is the current Vercel prod hostname. Trailing slash stripped
+    so callers can just concat `/stocks/{ticker}`."""
+    url = os.environ.get("WEB_BASE_URL") or "https://thesauros2026.vercel.app"
+    return url.rstrip("/")
+
+
+# alert_type → (Korean label, action ask). The label tells the user
+# WHICH alert preference toggle fired the message ("진입 신호" / "청산
+# 신호" 등 — matches the toggle names on /settings). The ask is the
+# 책-tone one-liner: 매매는 안 할수록 좋고 좋은 자리만 — so we say
+# "검토" / "점검" / "원칙대로", not "지금 사세요".
+_ALERT_TYPE_META: Dict[str, Tuple[str, str, str]] = {
+    # alert_type → (badge, korean label, action ask)
+    "enter":   ("🟢", "진입 신호",  "지금 자리인지 점검"),
+    "pyramid": ("🟡", "추가매수",   "이미 보유 중이면 비중 추가 검토"),
+    "warn":    ("🟠", "경고",       "수익 보전 / 비중 축소 시점 점검"),
+    "exit":    ("🔴", "청산 신호",  "추세 종료 — 청산 검토"),
+    "target":  ("🎯", "목표가",     "목표가 도달 — 일부 익절 검토"),
+    "stop":    ("🛑", "손절가",     "손절가 도달 — 원칙대로 매도"),
+}
+
+
+def _clean_name(name: Optional[str]) -> str:
+    """Trim whitespace + collapse the awkward 'Name  - Common Stock'
+    suffix Naver pads onto US tickers. Without this the title becomes
+    'TSLA Tesla, Inc.  - Common Stock · 진입 신호' — verbose without
+    adding info beyond 'Tesla, Inc.'."""
+    if not name:
+        return ""
+    n = " ".join(name.split())   # collapse internal whitespace
+    for suffix in (" - Common Stock", " - Class A Common Stock",
+                   " - Class B Common Stock"):
+        if n.endswith(suffix):
+            n = n[: -len(suffix)]
+            break
+    return n.strip()
+
+
 def format_message(ticker: str, name: Optional[str], alert_type: str,
                    sig: Dict[str, Any]) -> str:
-    """Telegram alert message — same information architecture as the
-    stock-detail BookVerdict: Korean signal label, multi-TF stack,
-    pattern direction made explicit, and 외인+기관 동행 as a
-    corroboration line when available.
+    """Telegram alert message — book-tone, action-first, deep-linkable.
 
-    Body is HTML (parse_mode=HTML).
+    Layout:
+
+        {badge} {alert_type 한글} — <b>{ticker}</b> {name}
+        {signal phrase 한 줄} — {action ask}
+
+        📈 multi-TF stack (월/주/일)
+        🎯 freshness — fresh/late/invalid
+        💰 외인+기관 동행 (KR only)
+        📊 강도/신뢰도/종합 점수
+
+        🔔 알림 설정 "{한글 label}" 에서 발송됨
+        👉 <a href="...">상세 분석 보기 →</a>
+
+    Body is HTML (parse_mode=HTML). The first two lines answer "뭐 어쩌
+    라는 건지" (what kind of alert + what action is implied); the footer
+    answers "어떤 알림 설정이 보냈는지" + gives a one-click deep link
+    into the site's /stocks/{ticker} page so the user can verify the
+    underlying data without typing the ticker into a search box.
     """
     signal_type = sig.get("signal_type", "")
     label = _signal_label(signal_type)
-    badge = {
-        "enter":    "🟢",
-        "pyramid":  "🟡",
-        "warn":     "🟠",
-        "exit":     "🔴",
-        "target":   "🎯",
-        "stop":     "🛑",
-    }.get(alert_type, "📊")
 
-    title = f"{badge} <b>{ticker}</b> {name or ''} · {label['name']}"
-    lines = [title, f"📊 {label['phrase']}"]
+    badge, atype_label, action_ask = _ALERT_TYPE_META.get(
+        alert_type, ("📊", alert_type, "확인"),
+    )
+    name_clean = _clean_name(name)
+
+    # Title row: badge · 한글 alert_type · ticker · 종목명
+    # The dash before name groups "{ticker} {name}" visually so the
+    # name is read as an annotation, not part of the alert label.
+    title_name = f" {name_clean}" if name_clean else ""
+    title = f"{badge} <b>{atype_label}</b> — <b>{ticker}</b>{title_name}"
+
+    # Action line: combines the signal's descriptive phrase with the
+    # book-tone action ask. e.g. "쌍바닥 매수 반전 패턴 — 지금 자리인지 점검".
+    lines = [title, f"📊 {label['phrase']} — {action_ask}"]
 
     # Multi-TF stack from analyze_results.
     blob = _analyze_blob(ticker)
@@ -481,7 +539,25 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
             f"🎯 {fresh['kind']} 돌파 {fresh['runup']:+.0f}% — {zone}"
         )
 
-    # Strength + confidence row.
+    # Smart-money corroboration (KR only). Placed before the score row
+    # because it's narrative ("외인+기관이 같이 사고 있다") — easier to
+    # read in sequence with the multi-TF + freshness lines than after
+    # the numeric strength/confidence summary.
+    flow = _flow_5d(ticker)
+    if flow:
+        f, i = flow["foreign"], flow["inst"]
+        if label["dir"] == "bull" and f > 0 and i > 0:
+            lines.append(
+                f"💰 외인+기관 동행 매수 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
+            )
+        elif label["dir"] == "bear" and f < 0 and i < 0:
+            lines.append(
+                f"💰 외인+기관 동행 매도 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
+            )
+
+    # Strength + confidence row — quantitative tail, after the
+    # narrative. Same numbers users see on the stock page so the
+    # alert + page agree.
     strength = sig.get("strength")
     conf = (sig.get("params") or {}).get("confidence")
     score = (blob or {}).get("book_score")
@@ -493,22 +569,17 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
     if isinstance(score, (int, float)):
         bits.append(f"종합 {float(score):+.2f}")
     if bits:
-        lines.append("⏱ " + " · ".join(bits))
+        lines.append("📊 " + " · ".join(bits))
 
-    # Smart-money corroboration (KR only).
-    flow = _flow_5d(ticker)
-    if flow:
-        f, i = flow["foreign"], flow["inst"]
-        # Only show when both signs match the signal direction (otherwise
-        # noise — the corroboration line should reinforce, not contradict).
-        if label["dir"] == "bull" and f > 0 and i > 0:
-            lines.append(
-                f"💰 외인+기관 동행 매수 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
-            )
-        elif label["dir"] == "bear" and f < 0 and i < 0:
-            lines.append(
-                f"💰 외인+기관 동행 매도 (5일 합: 외인 {f / 1e9:+.1f}B · 기관 {i / 1e9:+.1f}B)"
-            )
+    # Footer — answers "어떤 알림 설정이 이걸 보냈는지" + deep-link to
+    # the stock page. Blank line first so the footer reads as metadata,
+    # not part of the signal narrative.
+    lines.append("")
+    lines.append(f'🔔 알림 설정 "{atype_label}" 에서 발송됨')
+    lines.append(
+        f'👉 <a href="{_site_base_url()}/stocks/{ticker}">'
+        f'상세 분석 보기 →</a>'
+    )
 
     return "\n".join(lines)
 

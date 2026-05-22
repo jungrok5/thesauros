@@ -145,6 +145,10 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
+          # Deep-link target inside the Telegram message. Falls back to
+          # the prod hostname if unset; override only when a feature
+          # branch deploy needs alerts to point at a preview URL.
+          WEB_BASE_URL: https://thesauros2026.vercel.app
         run: |
           # Reads scan_results + watchlist + alert_preferences and emits
           # 🟢 매수 / 🟡 추가매수 / 🟠 경고 / 🔴 청산 / 🎯 목표 / 🛑 손절
