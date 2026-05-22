@@ -18,6 +18,11 @@ name: Weekly Book-Rule Scan
 # 데이터 publish 안정화 후 안전한 분석 타이밍.
 on:
   workflow_dispatch:
+    inputs:
+      send_alerts:
+        description: "텔레그램 alert 실제 발송 여부 (manual run default false — 책 정신: 비-금요일 발사 X)"
+        type: boolean
+        default: false
 
 concurrency:
   group: weekly-scan
@@ -79,7 +84,21 @@ jobs:
           # 주봉 마감 후만 발사 = 책 정신.
           # alert_preferences.bedrest_mode=true 사용자는 short-circuit.
           # eligibility CONDITIONAL (자리 X) 면 enter-class alert drop.
-          python -m app.db.telegram_worker
+          #
+          # Manual dispatch protection: 책 정신상 주봉 종가 후 1회 발사
+          # 인데, manual dispatch (비-금요일 / 사용자 트리거) 시 alert
+          # 가 다시 발사되면 사용자가 "왜 화요일에 alert 왔지" 혼란.
+          # 해결: workflow_dispatch + inputs.send_alerts=false 면
+          # --dry-run 으로 실행 (log 만, 발송 X). 명시적 send_alerts=true
+          # 시에만 진짜 발송. Vercel cron (scheduled) trigger 시엔 input
+          # 이 없어 진짜 발송 (정상 흐름).
+          args=""
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && \
+             [ "${{ inputs.send_alerts }}" != "true" ]; then
+            args="--dry-run"
+            echo "::notice::Manual dispatch — alerts in dry-run mode. dispatch with send_alerts=true to actually send."
+          fi
+          python -m app.db.telegram_worker $args
 
       - name: Data-quality assertions
         if: always()
