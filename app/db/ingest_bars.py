@@ -232,61 +232,9 @@ def fetch_kr_ticker(ticker: str, start: date, end: date) -> List[Tuple[Any, ...]
     return _resample_daily_to_rows(ticker, df)
 
 
-# ────────────────────────────────────────────────────────────────────────
-# US fetcher — Naver weekCandle + monthCandle (no resample needed)
-# ────────────────────────────────────────────────────────────────────────
-
-def _rows_from_df(ticker: str, granularity: str, df) -> List[Tuple[Any, ...]]:
-    out: List[Tuple[Any, ...]] = []
-    if df is None or df.empty:
-        return out
-    for _, row in df.iterrows():
-        close = _num(row["close"])
-        if close is None or close == 0:
-            continue
-        out.append((
-            ticker, granularity, row["date"].date(),
-            _num(row.get("open")), _num(row.get("high")),
-            _num(row.get("low")), close,
-            _num(row.get("adj_close")) or close,
-            _int(row.get("volume")),
-        ))
-    return out
-
-
-def fetch_us_ticker(ticker: str) -> List[Tuple[Any, ...]]:
-    """Fetch US weekly + monthly bars. Naver is the primary source
-    (volume figures match what KR retail tools display, calibrating the
-    engine's volume signals). Stooq is fallback for when Naver is
-    blocked or returns empty — coverage is narrower but it doesn't get
-    cloud-IP rate-limited the way Naver does.
-
-    Naver caps each response at 110 rows (~2y weekly + ~9y monthly).
-    Stooq returns full history (typically 5+ years). Retention later
-    caps monthly at 5y per policy."""
-    from app.data import naver_bars
-    from app.data import stooq
-
-    # If Naver's circuit breaker is already open from prior failures in
-    # this run, skip straight to Stooq — pays no timeout cost.
-    skip_naver = naver_bars.is_circuit_open()
-    out: List[Tuple[Any, ...]] = []
-
-    wdf = None if skip_naver else naver_bars.fetch_weekly(ticker, years=YEARS_HISTORY)
-    if wdf is None or wdf.empty:
-        wdf = stooq.fetch_weekly(ticker, years=YEARS_HISTORY)
-        if wdf is not None and not wdf.empty:
-            log.debug("stooq fallback weekly %s rows=%d", ticker, len(wdf))
-    out.extend(_rows_from_df(ticker, "W", wdf))
-
-    mdf = None if skip_naver else naver_bars.fetch_monthly(ticker, years=YEARS_HISTORY)
-    if mdf is None or mdf.empty:
-        mdf = stooq.fetch_monthly(ticker, years=YEARS_HISTORY)
-        if mdf is not None and not mdf.empty:
-            log.debug("stooq fallback monthly %s rows=%d", ticker, len(mdf))
-    out.extend(_rows_from_df(ticker, "M", mdf))
-
-    return out
+# US fetcher (fetch_us_ticker + _rows_from_df + Naver/Stooq imports)
+# removed 2026-05-22 — universe deactivated via migration 045. See
+# git history if reviving for another non-KR market.
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -358,49 +306,23 @@ def run_kr(market: str, today: date, workers: int) -> int:
     return n_total
 
 
-def run_us(watchlist_only: bool = True) -> int:
-    """Ingest US bars from Naver. Sequential — Naver is rate-friendly
-    but we don't push it. By default watchlist-only (cron path) since
-    US is not yet in the default scan universe."""
-    if watchlist_only:
-        wl_us = [t for t, m in watchlist_tickers() if m in US_MARKETS]
-        us_rows = wl_us
-    else:
-        us_rows = [t for t, m in active_tickers() if m in US_MARKETS]
-
-    if not us_rows:
-        log.info("US: no tickers to fetch")
-        return 0
-
-    log.info("US: fetching %d ticker(s) via Naver", len(us_rows))
-    buf: List[Tuple[Any, ...]] = []
-    n_errors = 0
-    for t in us_rows:
-        try:
-            buf.extend(fetch_us_ticker(t))
-        except Exception as e:
-            n_errors += 1
-            log.warning("naver fetch %s: %s", t, e)
-        if len(buf) >= 2000:
-            upsert_bars(buf)
-            buf.clear()
-    n = upsert_bars(buf)
-    log.info("  US done: rows=%d errors=%d", n, n_errors)
-    return n
+# US ingest removed 2026-05-22 (migration 045) — universe deactivated,
+# Naver/Stooq fetcher dead code. 책 정신: 코스피/코스닥 종목 매매 + 미국
+# 차트는 P_VISION 의 이미지 분석으로 대체.
 
 
 def run_one(ticker: str) -> int:
-    """Single-ticker ingest, used by analyze-ticker.yml so a freshly
-    watchlisted name has both bars (for /api/chart) and analyze_results
-    (for the analysis view) populated within one workflow run.
-    Auto-routes KR vs US by ticker suffix."""
+    """Single-ticker ingest for analyze-ticker.yml dispatch (freshly
+    watchlisted name). KR-only post-2026-05-22; non-KR tickers return
+    0 (the caller's UI shows "분석 중단" notice)."""
     t = ticker.upper()
-    if t.endswith(".KS") or t.endswith(".KQ"):
-        today = date.today()
-        start = today - timedelta(days=YEARS_HISTORY * 365 + 30)
-        rows = fetch_kr_ticker(t, start, today)
-    else:
-        rows = fetch_us_ticker(t)
+    if not (t.endswith(".KS") or t.endswith(".KQ")):
+        log.info("  one-shot %s: not a KR ticker — skipping (US universe "
+                 "removed; use chart-image analysis)", t)
+        return 0
+    today = date.today()
+    start = today - timedelta(days=YEARS_HISTORY * 365 + 30)
+    rows = fetch_kr_ticker(t, start, today)
     n = upsert_bars(rows)
     log.info("  one-shot %s: rows=%d", t, n)
     return n
@@ -450,23 +372,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception as e:
             log.error("%s ingest failed: %s", m, e)
 
-    # US ingest:
-    #   - explicit --markets US* → full US universe (heavy, manual only)
-    #   - default cron (markets={KOSPI,KOSDAQ}) → watchlist-only path so
-    #     user-added US tickers still get fresh bars + analysis. This
-    #     was the missing branch — the old "if not markets or markets &
-    #     US_MARKETS" guard skipped US entirely under the cron's default
-    #     KOSPI/KOSDAQ filter, leaving the 6,870 US universe at 0 rows.
-    if markets and (markets & set(US_MARKETS)):
-        try:
-            n_total += run_us(watchlist_only=False)
-        except Exception as e:
-            log.error("US ingest (universe) failed: %s", e)
-    else:
-        try:
-            n_total += run_us(watchlist_only=True)
-        except Exception as e:
-            log.error("US ingest (watchlist) failed: %s", e)
+    # US ingest path removed 2026-05-22 (migration 045). 책 정신 + Naver
+    # cloud-IP 차단으로 자동 수집 불가. 사용자 watchlist 의 US 종목은
+    # 분석 비활성 — UI 가 차트 이미지 분석 (P_VISION) 으로 안내.
 
     log.info("done in %.1fs: total rows upserted=%d",
              time.time() - t0, n_total)

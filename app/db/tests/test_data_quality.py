@@ -135,8 +135,11 @@ def test_tickers_freshness():
 
 def test_tickers_universe_size():
     n = _scalar("SELECT COUNT(*) FROM tickers WHERE is_active = true")
-    assert n >= 3000, (
-        f"tickers active universe = {n}, expected ≥ 3000 (KOSPI 900 + KOSDAQ 1700 + S&P 500)"
+    # KR-only universe post-2026-05-22 (migration 045): KOSPI ~900 +
+    # KOSDAQ ~1,800 ≈ 2,700. Cushion floor at 2,500 so a temporary
+    # weekly-tickers-refresh hiccup still fails loudly, not silently.
+    assert n >= 2_500, (
+        f"tickers active universe = {n}, expected ≥ 2,500 (KOSPI + KOSDAQ)"
     )
 
 

@@ -323,7 +323,28 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           </div>
         </div>
       ) : !result ? (
-        watch.added ? (
+        // US/non-KR ticker — universe deactivated 2026-05-22 (책 정신
+        // + Naver/yfinance 클라우드 차단). 자동 분석 X, 차트 이미지
+        // 분석으로 안내.
+        resolved?.market &&
+        ["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"].includes(resolved.market) ? (
+          <div className="rounded-lg border border-violet-500/40 bg-violet-500/5 p-4 text-sm space-y-2">
+            <div className="font-medium text-violet-700 dark:text-violet-300">
+              📷 미국 주식 자동 분석을 중단했습니다
+            </div>
+            <div className="text-muted-foreground leading-relaxed">
+              책 정신상 매매 종목은 코스피·코스닥 중심이며,
+              Naver/Yahoo 의 클라우드 IP 차단으로 자동 수집도 어렵습니다.
+              대신 <strong>차트 이미지 분석 기능</strong> 을 곧 추가합니다 —
+              모바일 증권 앱의 차트 스크린샷을 업로드하면 책 패턴
+              (쌍바닥·240MA·포킹·돌반지) 자동 식별.
+            </div>
+            <div className="text-xs text-muted-foreground">
+              관심 종목 목록의 기존 미국 종목은 보존되지만 새 분석은 진행되지
+              않습니다. 한국 종목은 정상 동작합니다.
+            </div>
+          </div>
+        ) : watch.added ? (
           // User just added this ticker to their watchlist — the POST
           // handler fired `dispatchAnalyzeTicker` which kicks off an
           // analyze-ticker.yml workflow on GitHub Actions. Typical

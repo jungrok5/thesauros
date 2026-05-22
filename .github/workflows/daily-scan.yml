@@ -89,16 +89,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          # Batch-mode flag — analyzer.load_ticker_data() reads this and
-          # skips its live-Naver fallback when set. Why: scan_daily
-          # iterates the full universe; if a US ticker has no bars in DB,
-          # the fallback would issue a Naver request per missing name. A
-          # few hundred misses × 10s timeout (when Naver rate-limits)
-          # was blowing the 75-min step ceiling. ingest_bars is the only
-          # place that should hit Naver in bulk; scan_daily must be
-          # DB-only. (Disabling here doesn't affect ad-hoc /api/analyze
-          # callers — they don't set the env var.)
-          THESAUROS_DISABLE_LIVE_FETCH: "1"
+          # THESAUROS_DISABLE_LIVE_FETCH removed 2026-05-22 — the
+          # analyzer's live-Naver fallback was deleted along with the
+          # US universe (migration 045). scan_daily now KR-only and
+          # reads DB bars only.
         run: |
           # Friday-only — weekly W bar doesn't change Mon-Thu.
           dow=$(date -u +%u)

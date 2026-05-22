@@ -276,24 +276,15 @@ def _filter_movers(tickers: List[str], min_pct: float) -> List[str]:
 
 def _list_tickers(markets: Optional[List[str]] = None,
                   tickers: Optional[List[str]] = None,
-                  limit: Optional[int] = None,
-                  sp500_only: bool = False) -> List[str]:
-    """Pick tickers from `tickers` master table.
-
-    sp500_only: for the US side (NASDAQ/NYSE/AMEX) restrict to S&P 500
-    constituents only. Keeps Supabase storage bounded — full US universe
-    is ~7K tickers vs S&P 500's 500. KR markets are unaffected.
+                  limit: Optional[int] = None) -> List[str]:
+    """Pick tickers from `tickers` master table — KOSPI + KOSDAQ only
+    (US universe deactivated 2026-05-22 via migration 045).
 
     Bars filter (2026-05-22): when callers don't pass an explicit
     ticker list, we exclude tickers that have ZERO weekly bars in DB.
-    Background: the 2026-05-22 cron took 1h2m vs the usual 25m because
-    scan_daily iterated all 6,913 US tickers with no bars (Naver
-    cloud-IP blocked) — each one cost a ~0.2s DB lookup before falling
-    into `skipped_no_history`. That's ~23 min wasted per cron. The
-    cron runs ingest_bars BEFORE scan_daily so any ticker that SHOULD
-    have bars already does; tickers without bars are exactly the ones
-    scan_daily would have skipped anyway. Filter at the universe step
-    instead of one-by-one in load_ticker_data.
+    They'd fall into `skipped_no_history` anyway and waste a per-ticker
+    DB lookup. EXISTS subquery is cheap because `bars` PK is
+    (ticker, granularity, bar_date).
 
     Explicit --tickers bypass the bars filter (one-off mode used by
     analyze-ticker.yml dispatch — caller knows they want that ticker
@@ -309,12 +300,6 @@ def _list_tickers(markets: Optional[List[str]] = None,
         where_clauses.append("market = ANY(%s)")
         params.append([m.upper() for m in markets])
 
-    # Skip tickers with no weekly bars in DB — they'd fall into
-    # skipped_no_history anyway. The EXISTS subquery is cheap because
-    # `bars (ticker, granularity, bar_date)` is the primary key, so
-    # Postgres can answer it via index-only scan.
-    # Bypass for explicit ticker lists: caller is doing a one-off
-    # (e.g., a just-watchlisted ticker that bars hasn't seen yet).
     if not tickers:
         where_clauses.append(
             "EXISTS (SELECT 1 FROM bars WHERE bars.ticker = tickers.ticker "
@@ -329,24 +314,7 @@ def _list_tickers(markets: Optional[List[str]] = None,
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
-
-    if not sp500_only:
-        return [r[0] for r in rows]
-
-    # Filter US rows to S&P 500 constituents; keep KR/etc as-is.
-    from app.data.universe import fetch_sp500_table
-    try:
-        sp500 = set(fetch_sp500_table()["ticker"].tolist())
-    except Exception:
-        log.warning("S&P 500 fetch failed; falling back to full US universe")
-        return [r[0] for r in rows]
-    US = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"}
-    out: List[str] = []
-    for t, m in rows:
-        if m in US and t not in sp500:
-            continue
-        out.append(t)
-    return out
+    return [r[0] for r in rows]
 
 
 def _watchlist_tickers() -> List[str]:
@@ -522,7 +490,7 @@ def _flush_analyze_chunk(chunk: List[Dict[str, Any]]) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--markets", nargs="+", default=None,
-                   help="filter by market (KOSPI / KOSDAQ / NASDAQ)")
+                   help="filter by market (KOSPI / KOSDAQ)")
     p.add_argument("--tickers", nargs="+", default=None,
                    help="explicit ticker list (overrides --markets)")
     p.add_argument("--limit", type=int, default=None)
@@ -532,9 +500,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--changed-pct", type=float, default=0.0,
                    help="incremental mode: only scan tickers whose latest |change vs prev close| ≥ this %% "
                         "(default 0 = full scan). E.g. 1.0 ≈ 'movers only'.")
-    p.add_argument("--sp500-only", action="store_true",
-                   help="restrict US markets (NASDAQ/NYSE/AMEX) to S&P 500 constituents — "
-                        "keeps Supabase storage bounded")
+    # --sp500-only removed 2026-05-22 (migration 045 deactivated US universe).
     p.add_argument("--watchlist-only", action="store_true",
                    help="Scan ONLY tickers in any user's watchlist + recently-"
                         "viewed tickers (last_accessed_at within 90d). Used "
@@ -563,14 +529,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         tickers = _list_tickers(markets=args.markets,
                                 tickers=args.tickers,
-                                limit=args.limit,
-                                sp500_only=args.sp500_only)
+                                limit=args.limit)
 
         # Always include every ticker that any user has added to their
-        # watchlist — even if it's outside the configured universe (e.g.
-        # NASDAQ mid-cap not in S&P 500). Cost is bounded by the user
-        # count × ~10 picks each. Only applies when scanning a market
-        # filter (not explicit --tickers).
+        # watchlist (KR only post-2026-05-22 — US deactivated). Cost is
+        # bounded by user count × ~10 picks. Only applies when scanning
+        # a market filter (not explicit --tickers).
         if not args.tickers:
             wl = _watchlist_tickers()
             if wl:
