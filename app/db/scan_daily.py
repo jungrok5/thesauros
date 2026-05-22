@@ -84,6 +84,10 @@ PATTERN_SLUG_MAP = {
     "펌핑":            "pumping",
     "랠리":            "rally",
     "저승사자":        "death_messenger",
+    "장대양봉 catalyst": "catalyst_candle",
+    "장대양봉":         "long_bullish_candle",
+    "MA 수렴 매복":     "ma_convergence_ambush",
+    "눌림목 매매":      "pullback_entry",
     # reversals
     "1패턴":           "type1_same",
     "2패턴":           "type2_cross",
