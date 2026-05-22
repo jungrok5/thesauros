@@ -26,7 +26,11 @@ import {
 } from "@/lib/chart-vision-prompt";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;  // Vision API 보통 5-15s, 여유 마진.
+// Vision API 보통 5-15s. 30s ceiling: Vercel Hobby 10s 초과 / Pro 60s
+// 호환. Vision call timeout (현재 Anthropic SDK default 10min) 를
+// 우리 함수 시간보다 짧게 둘 필요는 없음 — Vercel 가 timeout 시키면
+// 그 자체로 502 가 적절.
+export const maxDuration = 30;
 
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_BYTES = 10 * 1024 * 1024;   // 10 MB — Anthropic vision cap.
