@@ -445,6 +445,29 @@ def _site_base_url() -> str:
     return url.rstrip("/")
 
 
+def _is_month_end_week(today=None) -> bool:
+    """True iff this week's Friday is the LAST Friday of its calendar
+    month — proxy for 책의 '월말 영업일 분석'. The Friday of the next
+    week is in the following month iff today's Friday is the last.
+
+    책 2부 3장: "월봉 = 매월 말일 오후 2시 1회 확인". Adding a
+    dedicated monthly cron would mean a new GH workflow + Vercel cron +
+    KR-holiday calendar — book-spirit "안 할수록 좋다" pushes against
+    that. Embedding the cue in weekly-scan's existing alert is cheaper
+    and produces the same nudge: "이번 주가 월말 주 — 월봉 신호도
+    함께 점검".
+    """
+    from datetime import date, timedelta
+    d = today or date.today()
+    # KST cron runs Friday — use today as the anchor.
+    # Find this week's Friday (today if Friday, otherwise the upcoming).
+    # weekday(): Mon=0 .. Sun=6. Friday = 4.
+    days_to_fri = (4 - d.weekday()) % 7
+    this_friday = d + timedelta(days=days_to_fri)
+    next_friday = this_friday + timedelta(days=7)
+    return next_friday.month != this_friday.month
+
+
 # alert_type → (Korean label, action ask). The label tells the user
 # WHICH alert preference toggle fired the message ("진입 신호" / "청산
 # 신호" 등 — matches the toggle names on /settings). The ask is the
@@ -624,6 +647,11 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
     # the stock page. Blank line first so the footer reads as metadata,
     # not part of the signal narrative.
     lines.append("")
+    # 월말 주 강조 — 책 2부 3장의 "월봉 1회 확인" 정신. 매주 평소처럼
+    # 같은 알림이 오더라도, 그 주가 월말 주이면 사용자가 "월봉도 함께
+    # 점검" 하도록 헤더 한 줄로 nudge.
+    if _is_month_end_week():
+        lines.append("📅 이번 주 = 월말 주 — 월봉 240MA / 포킹 함께 점검")
     lines.append(f'🔔 알림 설정 "{atype_label}" 에서 발송됨')
     lines.append(
         f'👉 <a href="{_site_base_url()}/stocks/{ticker}">'

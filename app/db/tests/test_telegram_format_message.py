@@ -273,6 +273,49 @@ def test_message_falls_back_when_eligibility_missing():
     assert "지금 자리인지 점검" in msg
 
 
+def test_month_end_week_label_appears(monkeypatch):
+    """When the current week's Friday is the LAST Friday of its calendar
+    month, the alert should remind users to check 월봉 신호 too — that's
+    the book's '월말 1회 확인' rule (2부 3장) embedded in weekly-scan's
+    existing alert. No dedicated monthly cron needed."""
+    from datetime import date
+    import app.db.telegram_worker as tw
+    # Pick a Friday that's the last Friday of its month. 2026-05-29 is
+    # a Friday; the next Friday (2026-06-05) is in June → month-end.
+    monkeypatch.setattr(
+        tw, "_is_month_end_week", lambda today=None: True,
+    )
+    msg = telegram_worker.format_message(
+        "005930.KS", "삼성전자", "enter", _enter_sig(),
+    )
+    assert "월말 주" in msg
+    assert "월봉 240MA" in msg
+
+
+def test_month_end_label_absent_in_other_weeks(monkeypatch):
+    """Non-month-end weeks must NOT carry the extra nudge — otherwise
+    it loses meaning."""
+    import app.db.telegram_worker as tw
+    monkeypatch.setattr(
+        tw, "_is_month_end_week", lambda today=None: False,
+    )
+    msg = telegram_worker.format_message(
+        "005930.KS", "삼성전자", "enter", _enter_sig(),
+    )
+    assert "월말 주" not in msg
+
+
+def test_is_month_end_week_recognizes_last_friday():
+    """Direct check of the calendar predicate (independent of mocks).
+    2026-05-29 is a Friday; the next Friday (2026-06-05) is in June →
+    last Friday of May. 2026-05-22 is also Friday but 05-29 is later
+    same month → NOT the last."""
+    from datetime import date
+    from app.db.telegram_worker import _is_month_end_week
+    assert _is_month_end_week(date(2026, 5, 29)) is True
+    assert _is_month_end_week(date(2026, 5, 22)) is False
+
+
 def test_exit_class_alerts_ignore_eligibility():
     """exit/warn/stop alerts are about negative signals — never gated
     or downgraded by buy eligibility (the user needs to know about
