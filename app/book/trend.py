@@ -94,6 +94,13 @@ class TrendState:
     alignment_score: float       # 정배열 점수 [-1, 1]
     overall_score: float         # 종합 점수 [-1, 1]
     label: str                   # "강세" / "약세" / "혼조" / "데드"
+    recently_crossed_up_10ma: bool = False
+    """True iff close was below 10MA in any of the last 6 bars AND is
+    now above. The book's "월봉 10MA 상향 돌파" entry trigger — fires
+    at the crossover bar and stays True for ~6 bars after, then
+    alignment-based logic takes over. Phase 2 ENTRY_LAG fix: this is
+    the path that lets us BUY on a fresh crossover without waiting
+    for 정배열 to form (which used to lag the book's call by months)."""
 
 
 def alignment_score(mas: List[float]) -> float:
@@ -201,6 +208,20 @@ def classify_trend(df: pd.DataFrame, timeframe: str) -> Optional[TrendState]:
 
     above_ma_10 = bool(price > ma_10)
 
+    # Recent 10MA crossover — book's entry trigger (p318-319 삼성 5년
+    # 케이스, p264-265 카카오). Was price BELOW 10MA in any of the last
+    # 6 bars AND is now above? For monthly grain that's 6 months
+    # (matches the book's "월봉 10MA 상향 돌파" window). For weekly
+    # grain, 6 weeks is a "fresh weekly cross". For daily, 6 days noise.
+    # Computed regardless of timeframe; consumers can filter.
+    recently_crossed_up_10ma = False
+    if above_ma_10 and len(work) >= 6:
+        # Were any of the last 6 bars (excluding current) at-or-below MA10?
+        recent_window = work.iloc[-6:-1]
+        if not recent_window.empty and not recent_window["ma_10"].isna().all():
+            was_below = (recent_window["close"] <= recent_window["ma_10"]).fillna(False)
+            recently_crossed_up_10ma = bool(was_below.any())
+
     mas = [float(last.get(f"ma_{p}", np.nan)) for p in MA_PERIODS]
     align = alignment_score(mas)
 
@@ -236,6 +257,7 @@ def classify_trend(df: pd.DataFrame, timeframe: str) -> Optional[TrendState]:
         alignment_score=align,
         overall_score=score,
         label=label,
+        recently_crossed_up_10ma=recently_crossed_up_10ma,
     )
 
 
@@ -319,7 +341,24 @@ def analyze_multi_timeframe(
         parts.append("월봉 10MA 하향 이탈 → 추세 사망 (책: 무조건 청산)")
     elif weekly is None or weekly.above_ma_10:
         # 월봉 10MA 위 + 주봉 10MA 위 (또는 주봉 정보 없음) = 강세
-        if weekly is not None and weekly.alignment_score > 0.5 and monthly.alignment_score > 0:
+        # Phase 2 ENTRY_LAG fix: book's 1차 entry trigger is "월봉 10MA
+        # 상향 돌파" (book p318-319, p264-265). The legacy code required
+        # 정배열 (alignment > 0.5) before firing BUY, which lagged the
+        # book's call by months on fresh crossovers (Kakao 2019-04 →
+        # our 2019-12 = 33 weeks late). New path: a recent monthly
+        # crossover bypasses the alignment requirement — that's the
+        # book's "신규 진입" moment.
+        if monthly.recently_crossed_up_10ma:
+            # Fresh crossover. Book's trend-follow thesis: enter at the
+            # TURNING POINT, don't wait for alignment to form (by then
+            # you've missed half the move). Bull-trap losses are
+            # accepted — book's asymmetric P&L claim (small loss / big
+            # win) depends on it. The 240MA AVOID gate above already
+            # blocks "dead chart" cases where the structure is still
+            # decisively bearish.
+            signal = "BUY"
+            parts.append("월봉 10MA 상향 돌파 직후 → 책 1차 진입 자리")
+        elif weekly is not None and weekly.alignment_score > 0.5 and monthly.alignment_score > 0:
             signal = "BUY"
             parts.append("월봉/주봉 10MA 위 + 정배열 → 추세 살아있음")
         else:

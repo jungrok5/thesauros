@@ -239,6 +239,18 @@
   ],
   "2019-04-19": [
     {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.726,
+      "reason": "BUY (book_score=+0.77)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 23483.0,
+        "stretch_reason": null
+      }
+    },
+    {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
       "strength": 0.55,
@@ -269,6 +281,18 @@
     }
   ],
   "2019-04-26": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.726,
+      "reason": "BUY (book_score=+0.77)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 23082.0,
+        "stretch_reason": null
+      }
+    },
     {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
@@ -301,6 +325,18 @@
   ],
   "2019-05-03": [
     {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.636,
+      "reason": "HOLD · 손절 폭 17% (책 룰 -10% 초과)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 25691.0,
+        "stretch_reason": "손절 폭 17% (책 룰 -10% 초과)"
+      }
+    },
+    {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
       "strength": 0.55,
@@ -331,6 +367,18 @@
     }
   ],
   "2019-05-10": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.636,
+      "reason": "HOLD · 손절 폭 17% (책 룰 -10% 초과)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 26093.0,
+        "stretch_reason": "손절 폭 17% (책 룰 -10% 초과)"
+      }
+    },
     {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
@@ -363,6 +411,18 @@
   ],
   "2019-05-17": [
     {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.726,
+      "reason": "BUY (book_score=+0.77)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 24989.0,
+        "stretch_reason": null
+      }
+    },
+    {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
       "strength": 0.55,
@@ -393,6 +453,18 @@
     }
   ],
   "2019-05-24": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.726,
+      "reason": "BUY (book_score=+0.77)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 24888.0,
+        "stretch_reason": null
+      }
+    },
     {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
@@ -425,6 +497,18 @@
   ],
   "2019-05-31": [
     {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.726,
+      "reason": "BUY (book_score=+0.77)",
+      "params": {
+        "book_score": 0.765,
+        "trend_signal": "BUY",
+        "last_close": 24989.0,
+        "stretch_reason": null
+      }
+    },
+    {
       "signal_type": "pattern_double_bottom",
       "timeframe": "weekly",
       "strength": 0.55,
@@ -454,7 +538,159 @@
       }
     }
   ],
+  "2019-06-07": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 24086.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-06-14": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 25089.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-06-21": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 25390.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-06-28": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26394.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-07-05": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26795.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-07-12": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26394.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-07-19": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 27096.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-07-26": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26293.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-08-09": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26494.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-08-23": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 26695.0,
+        "stretch_reason": null
+      }
+    }
+  ],
   "2019-08-30": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.707,
+      "reason": "BUY (book_score=+0.72)",
+      "params": {
+        "book_score": 0.717,
+        "trend_signal": "BUY",
+        "last_close": 26996.0,
+        "stretch_reason": null
+      }
+    },
     {
       "signal_type": "volume_case_7",
       "timeframe": "daily",

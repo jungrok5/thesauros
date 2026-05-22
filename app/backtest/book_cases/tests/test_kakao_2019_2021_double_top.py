@@ -150,22 +150,24 @@ def test_system_flagged_buy_during_uptrend(walk) -> None:
 
 
 def test_system_entry_lag_is_bounded(walk) -> None:
-    """How late was our first buy vs the book's 2019-04 entry?
+    """How close was our first buy to the book's 2019-04 entry?
 
-    The book sees the breakout at monthly close. We see it on weekly
-    bars + weekly MA crossovers, so a lag of weeks-to-months is
-    expected. Bound the lag so any drift triggers explicit review:
-      - lag < 0  → we got EARLIER than the book (good — review & widen)
-      - lag in [0, 50w] → currently ~33w
-      - lag > 50w → regressed → investigate
+    Phase 2 ENTRY_LAG fix (2026-05-22): added a "recently_crossed_up_10ma"
+    BUY trigger to analyze_multi_timeframe — fresh monthly 10MA
+    crossovers now fire BUY without waiting for 정배열 to form.
 
-    The point isn't to track an exact number; it's to make the gap
-    visible so it can be improved by Phase 2.1 (monthly-aware action).
+    Before the fix, our first buy was at 2019-12-20 (33 weeks late).
+    After, it's at 2019-04-19 (2 weeks BEFORE the book's 2019-04-30
+    monthly anchor — the weekly grid catches the cross-up before the
+    monthly bar closes).
+
+    Bound [-3, 12] weeks: tight enough that a regression (signal
+    going back to lagging by months) trips, loose enough that the
+    weekly/monthly anchor difference + minor swing-detection drift
+    don't flake the test.
     """
     first_buy = None
     for d in sorted(walk.keys()):
-        if d < _BOOK_ENTRY:
-            continue
         for s in walk[d]:
             st = s.get("signal_type", "")
             if st.startswith("action_buy") or st.startswith("action_strong_buy"):
@@ -173,12 +175,14 @@ def test_system_entry_lag_is_bounded(walk) -> None:
                 break
         if first_buy:
             break
-    assert first_buy is not None, "no buy signal after book entry — impossible if test 3 passed"
+    assert first_buy is not None, "no buy signal anywhere — impossible if test 3 passed"
     lag_weeks = (first_buy - _BOOK_ENTRY).days / 7
-    assert 0 <= lag_weeks <= 50, (
+    assert -3 <= lag_weeks <= 12, (
         f"entry lag = {lag_weeks:.1f} weeks (first_buy={first_buy}). "
-        "Outside the expected [0, 50w] envelope. If we got earlier, that's "
-        "a win — tighten the bound. If later, investigate."
+        "Outside the expected [-3, 12w] envelope. If we got even earlier, "
+        "tighten the bound (Phase 2.1 improvement). If later, the "
+        "ENTRY_LAG fix regressed — check analyze_multi_timeframe's "
+        "recently_crossed_up_10ma path."
     )
 
 
