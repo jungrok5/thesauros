@@ -108,6 +108,26 @@ class PortfolioState:
     equity_history: List[Tuple[date, float]] = field(default_factory=list)
 
 
+def load_fires_csv(path: Path) -> List[Dict[str, Any]]:
+    """Load a per-fire CSV (produced by `sweep --csv`) back into the
+    dict-of-dicts shape collect_universe_fires returns. Use this to
+    skip the ~14-minute walk when you've already swept the universe.
+    """
+    rows: List[Dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            # Cast numeric columns back to float.
+            for k in ("strength", "entry_price", "exit_price",
+                      "return_pct", "effective_return_pct"):
+                if k in r and r[k] != "":
+                    r[k] = float(r[k])
+            if "hold_weeks" in r and r["hold_weeks"] != "":
+                r["hold_weeks"] = int(r["hold_weeks"])
+            rows.append(r)
+    return rows
+
+
 def collect_universe_fires(
     universe: List[str], hold_weeks: int,
 ) -> List[Dict[str, Any]]:
@@ -405,6 +425,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--sell-cost-pct", type=float, default=_SELL_COST_PCT * 100)
     p.add_argument("--entry-signals", nargs="+", default=None,
                    help=f"default: {' '.join(DEFAULT_ENTRY_SIGNALS)}")
+    p.add_argument("--fires-csv", default=None,
+                   help="load pre-computed fires CSV (from sweep --csv), "
+                        "skipping the ~14-min walk")
     p.add_argument("--csv", default=None, help="dump per-trade CSV")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -434,7 +457,12 @@ def main(argv: Optional[List[str]] = None) -> int:
              len(universe), start_d, end_d, args.hold_weeks, args.max_positions)
     log.info("entry signals: %s", ", ".join(entry_signals))
 
-    all_fires = collect_universe_fires(universe, args.hold_weeks)
+    if args.fires_csv:
+        all_fires = load_fires_csv(Path(args.fires_csv))
+        log.info("loaded %d fires from %s (skipped walk)",
+                 len(all_fires), args.fires_csv)
+    else:
+        all_fires = collect_universe_fires(universe, args.hold_weeks)
     candidates = filter_entry_fires(all_fires, entry_signals)
     log.info("collected %d fires, %d entry candidates after filter+dedup",
              len(all_fires), len(candidates))
