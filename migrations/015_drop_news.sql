@@ -1,10 +1,5 @@
--- 015_drop_news.sql — drop the per-stock news cache.
---
--- News is now fetched in real time from Naver Finance via
--- /api/news/[ticker] (5-minute ISR cache), so the DB copy is orphan.
--- DART disclosures stay in `disclosures` (separate table) because they
--- depend on a rate-limited API key.
---
--- CASCADE drops the RLS policy + idx_news_ticker_pub index together.
+-- 015_drop_news.sql — NO-OP (historical placeholder).
+-- 원래 의도: DROP TABLE IF EXISTS news CASCADE. 영구 보호 정책으로 no-op 화.
+-- 정책 + 회귀 가드: app/db/tests/test_no_destructive_replay.py
 
-DROP TABLE IF EXISTS news CASCADE;
+SELECT 1;

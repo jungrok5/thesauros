@@ -1,16 +1,10 @@
--- 025_drop_bars_daily.sql — drop the obsolete daily-bar table.
+-- 025_drop_bars_daily.sql — NO-OP (historical placeholder).
 --
--- Migration 021 (weekly pivot) introduced `bars` with granularity in
--- ('W','M') and stopped writing to `bars_daily`. The site has been
--- weekly-only for months but the table sat around without a writer.
+-- 원래 의도 (2026-05-19, weekly pivot 직후): DROP TABLE IF EXISTS
+-- bars_daily CASCADE. 022 와 동일한 패턴으로 no-op 화 — migration
+-- replay 시 우연한 데이터 손실 방지.
 --
--- The two remaining consumers (/api/quote, <LastClose>) were just
--- repointed at `bars` granularity='W' in the same commit that adds
--- this migration. Verify no callers reference `bars_daily` before
--- applying:
---   rg -n "bars_daily" web-next/src/ app/   → returns nothing
---
--- Frees up index space + the table itself. Run AFTER deploying the
--- code that doesn't read it (otherwise /api/quote 500s for a minute).
+-- 영구 보호 정책 — 모든 DROP TABLE / TRUNCATE 는 적용 후 no-op 화.
+-- test_no_destructive_replay.py 가 회귀 가드.
 
-DROP TABLE IF EXISTS bars_daily CASCADE;
+SELECT 1;   -- explicit no-op

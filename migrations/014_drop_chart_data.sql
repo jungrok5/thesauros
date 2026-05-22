@@ -1,6 +1,5 @@
--- 014_drop_chart_data.sql — drop precomputed chart cache
---
--- Replaced by on-demand SQL window functions in /api/chart. Saves
--- ~200MB once the chart cron is removed (Supabase free-tier budget).
+-- 014_drop_chart_data.sql — NO-OP (historical placeholder).
+-- 원래 의도: DROP TABLE IF EXISTS chart_data. 영구 보호 정책으로 no-op 화.
+-- 정책 + 회귀 가드: app/db/tests/test_no_destructive_replay.py
 
-DROP TABLE IF EXISTS chart_data;
+SELECT 1;

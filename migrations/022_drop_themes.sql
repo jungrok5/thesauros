@@ -1,13 +1,22 @@
--- 022_drop_themes.sql — drop theme tables.
+-- 022_drop_themes.sql — NO-OP (historical placeholder).
 --
--- The /themes page (and /themes/[id]) is removed in the search-only
--- pivot (2026-05-19). Universe-wide auto-classification produced too
--- many false positives (LG우, GOOGL pre-stretch-gate, etc.). Site now
--- centres on user search + on-demand analysis per ticker, so the
--- theme heatmap data has no consumer left.
+-- 원래 의도 (2026-05-19 search-only pivot 시점):
+--     DROP TABLE IF EXISTS theme_daily CASCADE;
+--     DROP TABLE IF EXISTS theme_members CASCADE;
+--     DROP TABLE IF EXISTS themes CASCADE;
 --
--- CASCADE drops the per-table RLS policies + indexes together.
+-- 그러나 5/20 에 041_themes_restore.sql 로 themes / theme_members 부활.
+-- 즉 022 의 의도는 이미 reverse 됨. 이 파일을 destructive 로 두면
+-- _migrations tracker reset + migrate up replay 시 부활된 themes 가
+-- 다시 drop 됨 (2026-05-22 새벽 실제 발생 사례).
+--
+-- 영구 보호: SQL 내용을 no-op 로 비움. _migrations 트래커에 등록된
+-- 상태는 유지 (checksum 변경됨 — migrate.py 에서 그건 OK). 향후
+-- migrate up replay 가 일어나도 prod 의 themes 보존.
+--
+-- 회귀 가드: app/db/tests/test_no_destructive_replay.py 가 모든
+-- migrations/*.sql 에서 DROP TABLE / TRUNCATE / DROP COLUMN 검출하여
+-- 차단. 향후 새 destructive migration 도입 시 명시적 archive 절차를
+-- 거치도록 강제.
 
-DROP TABLE IF EXISTS theme_daily CASCADE;
-DROP TABLE IF EXISTS theme_members CASCADE;
-DROP TABLE IF EXISTS themes CASCADE;
+SELECT 1;   -- explicit no-op so the runner has something to execute

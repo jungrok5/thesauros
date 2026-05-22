@@ -16,9 +16,12 @@
 
 BEGIN;
 
-DROP TABLE IF EXISTS bars_daily;
+-- 2026-05-22 update: DROP TABLE IF EXISTS bars_daily 를 주석화. migration
+-- 025 가 별도로 bars_daily 를 drop 함. 여기서도 또 drop 하면 replay 시
+-- 위험. test_no_destructive_replay.py 정책에 맞춰 destructive 제거.
+-- bars_daily 는 이미 없으니 no-op.
 
-CREATE TABLE bars (
+CREATE TABLE IF NOT EXISTS bars (
     ticker      VARCHAR(20) NOT NULL REFERENCES tickers(ticker),
     granularity CHAR(1)     NOT NULL CHECK (granularity IN ('W','M')),
     -- Week-ending Friday for 'W', month-ending last business day for 'M'.
