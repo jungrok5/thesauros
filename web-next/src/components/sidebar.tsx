@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
+  Camera,
   Compass,
   Filter,
   Hash,
@@ -63,6 +64,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
       { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
+    ],
+  },
+  {
+    heading: "📷 차트 비전",
+    items: [
+      { href: "/chart-vision", label: "차트 이미지 분석", icon: Camera },
     ],
   },
   {
