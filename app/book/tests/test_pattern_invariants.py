@@ -220,6 +220,34 @@ def test_double_bottom_detects_and_invariant():
     _check_plan_invariant(p, "synthetic-double-bottom")
 
 
+def make_higher_right_double_bottom(n_total: int = 130) -> pd.DataFrame:
+    """Book's "짝궁둥이 쌍바닥" variant: L2 noticeably higher than L1
+    (책 p256: 가장 강력한 매수). L2/L1 gap ~9% — within tol 13% even
+    after wick jitter expansion."""
+    closes: list[float] = []
+    closes += list(np.linspace(110, 60, 25))    # descent to L1 ~60
+    closes += list(np.linspace(60, 78, 18))     # rally to neckline ~78
+    closes += list(np.linspace(78, 66, 14))     # L2 ~66 — higher than L1 (~10%)
+    closes += list(np.linspace(66, 95, 28))     # breakout above neckline
+    while len(closes) < n_total:
+        closes.append(closes[-1] * 1.002)
+    return _to_df(closes)
+
+
+def test_higher_right_double_bottom_fires_and_flagged():
+    """Phase 2 fix: a 짝궁둥이 쌍바닥 (L2 ~17% above L1) must fire and
+    stamp extra['higher_right']=True. This is the bullish counterpart
+    to the Kakao weakening-top case — symmetric variant detection."""
+    df = make_higher_right_double_bottom()
+    p = detect_double_bottom(df)
+    assert p is not None, "짝궁둥이 쌍바닥 should fire (L2 above L1, distance=3 fix)"
+    assert p.direction == "bullish"
+    assert p.extra.get("higher_right") is True, (
+        f"higher_right flag not set. extra={p.extra}"
+    )
+    _check_plan_invariant(p, "synthetic-higher-right-bottom")
+
+
 def test_double_bottom_NEVER_completed_below_neckline():
     """Regression for 068930.KQ 2026-05-21: 쌍바닥 검출 후 last_close 가
     neckline 한참 아래 (8460 vs 9180 = -8 %) 인데도 completed=True 로
@@ -273,6 +301,46 @@ def test_double_top_detects_and_invariant():
     assert p is not None, "double_top should fire on a textbook M shape"
     assert p.direction == "bearish"
     _check_plan_invariant(p, "synthetic-double-top")
+
+
+def make_weakening_double_top(n_total: int = 130) -> pd.DataFrame:
+    """Book's "약화 쌍봉" variant: H2 markedly lower than H1.
+
+    Models the Kakao 2021 case structure (book p264-265):
+      - H1 at ~100 (analogous to 173K)
+      - intervening trough at ~82 (the neckline)
+      - H2 at ~88 (analogous to 153K — 12 % below H1, well outside the
+        old tol=5 % cap)
+      - breakdown to ~60 below neckline (analogous to 118K break)
+
+    Phase 2 fix should make this fire AND flag extra['weakening']=True.
+    """
+    closes: list[float] = []
+    closes += list(np.linspace(60, 100, 30))    # rise to first top
+    closes += list(np.linspace(100, 82, 18))    # pull back to neckline ~82
+    closes += list(np.linspace(82, 88, 14))     # second top — LOWER (~12%)
+    closes += list(np.linspace(88, 60, 28))     # breakdown
+    while len(closes) < n_total:
+        closes.append(closes[-1] * 0.998)
+    return _to_df(closes)
+
+
+def test_weakening_double_top_fires_and_flagged():
+    """The Phase 2 fix (Kakao 2021 case): a double top with H2 ~12 %
+    lower than H1 should now fire and stamp extra['weakening']=True.
+    Anti-regression: if tol gets tightened back below ~12 % or the
+    weakening flag stops being written, this test fails."""
+    df = make_weakening_double_top()
+    p = detect_double_top(df)
+    assert p is not None, (
+        "Weakening double top (H2 ~12% below H1) should fire — Phase 2 "
+        "set tol=0.12 specifically to admit this variant. Did tol regress?"
+    )
+    assert p.direction == "bearish"
+    assert p.extra.get("weakening") is True, (
+        f"weakening flag not set. extra={p.extra}"
+    )
+    _check_plan_invariant(p, "synthetic-weakening-double-top")
 
 
 def test_inverse_hns_invariant_when_detected():

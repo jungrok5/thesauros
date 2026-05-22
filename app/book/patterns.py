@@ -95,7 +95,7 @@ def _ma_value(df: pd.DataFrame, period: int) -> Optional[float]:
 # 1. 쌍바닥 (Double Bottom)
 # ---------------------------------------------------------------------------
 def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
-                         tol: float = 0.05) -> Optional[Pattern]:
+                         tol: float = 0.13) -> Optional[Pattern]:
     """W자: 두 저점이 비슷한 가격대, 중간 반등, 마지막 10MA 돌파(완성).
 
     Book p254-257:
@@ -103,11 +103,25 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
       - 2차 브레이킹 거래량 = 1차의 70~200%
       - 10MA 돌파 후킹 캔들 → 패턴 완성
       - 짝궁둥이 쌍바닥 (오른쪽이 더 높음) = 가장 강력
+
+    Params (Phase 2 OOS-driven tuning, 2026-05-22):
+      - tol 5%→13% so the book's "짝궁둥이 약식" variant (right bottom
+        meaningfully different from left) qualifies. Symmetric cases
+        still pass.
+      - distance=3 (was default 5) — between two close-together same-
+        kind extrema, the intervening opposite-kind extremum is often
+        shallower than distance=5 catches; the alternating filter then
+        collapses the two extrema into one and the pattern vanishes.
+        Documented in detect_double_top below (Kakao 2021 case).
+      - Min-bars 120→24 separated from lookback. `lookback` is the
+        "look at the last N bars" window; the minimum is what's needed
+        for a double-low structure to physically exist. Monthly
+        fixtures (~46 bars) no longer auto-rejected.
     """
-    if df is None or len(df) < lookback:
+    if df is None or len(df) < 24:
         return None
 
-    swings = find_swings_for_pattern(df, lookback)
+    swings = find_swings_for_pattern(df, lookback, distance=3)
     lows = [s for s in swings if s.kind == "low"]
     if len(lows) < 2:
         return None
@@ -156,9 +170,10 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
         if not (0.7 <= vol_ratio_2nd <= 2.0):
             fake_volume = True
 
+    higher_right = b.price > a.price * 1.005   # 책: 짝궁둥이 = 더 강한 매수
     # Confidence — base + adjustments
     conf = 0.55
-    if b.price > a.price * 1.005:
+    if higher_right:
         conf += 0.20  # 짝궁둥이 (오른쪽 높음)
     if not fake_volume:
         conf += 0.10
@@ -191,6 +206,7 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
         extra={
             "low1": a.to_dict(), "low2": b.to_dict(), "neckline": neckline,
             "fake_volume": fake_volume,
+            "higher_right": higher_right,
         },
     )
 
@@ -199,17 +215,34 @@ def detect_double_bottom(df: pd.DataFrame, lookback: int = 120,
 # 2. 쌍봉 (Double Top)
 # ---------------------------------------------------------------------------
 def detect_double_top(df: pd.DataFrame, lookback: int = 120,
-                      tol: float = 0.05) -> Optional[Pattern]:
+                      tol: float = 0.13) -> Optional[Pattern]:
     """M자: 두 고점이 비슷, 10MA 하향 돌파 시 완성 (저승사자 캔들).
 
-    Book p260-263:
+    Book p260-263 + p264-265 카카오 실전:
       - 두 번째 거래량은 첫 번째보다 적어야 함
       - 10MA 하향 돌파 음봉 = 패턴 완성 (즉시 청산)
+      - 두 번째 고점이 더 낮은 "약화 (weakening)" 변형 = 더 강한 매도 신호
+        (책 카카오 케이스: H1 173K → H2 153.5K, -11.4%)
+
+    Params (Phase 2 OOS-driven tuning, 2026-05-22 — Kakao 2021):
+      - tol 5%→13% to capture book's "약화 쌍봉" variant (H2 markedly
+        lower than H1). Book's Kakao case is 11.27% (173K→153.5K); 13%
+        gives a ~2% margin for wick-vs-close noise without admitting
+        clearly-not-a-double-top.
+      - distance=3 in find_swings_for_pattern (was default 5). Root
+        cause of the original miss: between H1 (2021-06) and H2 (2021-
+        09) the intervening trough (2021-07 @ 142.5K) wasn't deep
+        enough to register as a swing-low at distance=5, so the
+        alternating-filter in find_swings collapsed the two highs into
+        one. distance=3 captures the trough, both peaks survive.
+      - Min-bars 120→24 separated from `lookback` (which is the
+        "look at the last N bars" window). Monthly fixtures (~46 bars)
+        no longer auto-rejected.
     """
-    if df is None or len(df) < lookback:
+    if df is None or len(df) < 24:
         return None
 
-    swings = find_swings_for_pattern(df, lookback)
+    swings = find_swings_for_pattern(df, lookback, distance=3)
     highs = [s for s in swings if s.kind == "high"]
     if len(highs) < 2:
         return None
@@ -230,16 +263,27 @@ def detect_double_top(df: pd.DataFrame, lookback: int = 120,
     ma_10 = _ma_value(df, 10)
     completed = ma_10 is not None and last_close < ma_10 and last_close < neckline
 
+    weakening = b.price < a.price * 0.95   # 책: 약화 = 더 강한 매도
+
     conf = 0.60
     if b.volume > 0 and a.volume > 0 and b.volume < a.volume:
         conf += 0.15  # 책 규칙: 거래량 감소
+    if weakening:
+        conf += 0.10  # 약화 변형은 더 강한 bearish — confidence 가산
     if completed:
         conf += 0.10
     conf = min(conf, 0.95)
 
     entry = last_close if completed else neckline
     stop = max(a.price, b.price) * 1.03
-    target = neckline - (max(a.price, b.price) - neckline)
+    # Book "measured move": target = neckline - height. But if entry
+    # (= last_close on completed patterns) is already below that
+    # absolute level, the displayed target would sit ABOVE entry and
+    # contradict the bearish-pattern invariant (target ≤ entry).
+    # Clamp to just below entry in that case — the pattern's already
+    # paid out and the UI shouldn't suggest a "shorting up" zone.
+    height = max(a.price, b.price) - neckline
+    target = min(neckline - height, entry * 0.97)
 
     return Pattern(
         kind="쌍봉",
@@ -252,10 +296,14 @@ def detect_double_top(df: pd.DataFrame, lookback: int = 120,
         target=target,
         reason=(
             f"쌍봉: H1={a.price:.2f}@{a.date.date()} → H2={b.price:.2f}@{b.date.date()}"
+            + (" (약화형, 책의 더 강한 매도)" if weakening else "")
             + (" / 10MA 하향 돌파 (저승사자 캔들 발생 → 무조건 청산)" if completed
                else " / 미완")
         ),
-        extra={"high1": a.to_dict(), "high2": b.to_dict(), "neckline": neckline},
+        extra={
+            "high1": a.to_dict(), "high2": b.to_dict(), "neckline": neckline,
+            "weakening": weakening,
+        },
     )
 
 

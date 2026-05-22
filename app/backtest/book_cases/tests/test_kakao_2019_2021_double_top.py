@@ -16,13 +16,18 @@ What this test verifies:
   5) Characterization of timing lag — bounded so a future regression
      would change the bound and force review.
 
-Known limitations surfaced (TODO #PATTERN_TOL, #PATTERN_LOOKBACK):
-  - `pattern_double_top` does NOT fire on this case despite the book
-    showing the textbook M-shape, because:
-      • detector's `lookback=120` requires 120 bars; monthly Kakao has
-        only ~46 bars in this fixture window
-      • detector's `tol=0.05` requires the two highs to differ by ≤5%
-        — Kakao's 173K → 153K is 11% (book's "weakening 약화" variant)
+Detector improvements (2026-05-22):
+  Phase 2 surfaced #PATTERN_TOL / #PATTERN_LOOKBACK / #PATTERN_DISTANCE
+  gaps. detect_double_top updated:
+    • tol 5% → 12% (captures book's "약화" asymmetric variant; Kakao
+      H1 173K → H2 153.5K is 11% diff)
+    • distance 5 → 3 in find_swings_for_pattern (the trough between
+      close-together highs was filtered out at distance=5, so the
+      alternating-filter collapsed the two peaks into one)
+    • min-bars 120 → 24 (separated from `lookback`)
+    • "weakening" boost: when H2 < H1 * 0.95, confidence +0.10
+  With the fix, pattern_double_top fires on weekly Kakao 2021-09-10
+  (3 weeks before book's 2021-09-30 exit) at confidence 0.95.
 """
 from __future__ import annotations
 
@@ -181,25 +186,51 @@ def test_system_entry_lag_is_bounded(walk) -> None:
 # (4) Known-gap characterization — pattern_double_top did NOT fire
 # ─────────────────────────────────────────────────────────────────────
 
-def test_pattern_double_top_does_not_fire_today(walk) -> None:
-    """Currently our detect_double_top does NOT pick up the Kakao M-top
-    because the two highs differ by ~11% (173K vs 153K) while the
-    detector's tol is 5%, and because monthly bars (46) are below the
-    lookback floor of 120.
+def test_pattern_double_top_fires_near_book_exit(walk) -> None:
+    """detect_double_top now fires on the Kakao 약화 쌍봉 (Phase 2 fix:
+    tol 5%→12%, distance 5→3, lookback min 120→24). The pattern must
+    surface within ±6 weeks of the book's 2021-09-30 exit so a user
+    relying on pattern alerts gets the same call the book makes.
 
-    This test pins down the current gap. When we improve the detector
-    (TODO #PATTERN_TOL / #PATTERN_LOOKBACK), this test will fail and
-    we will flip the assertion to "MUST fire near 2021-09".
-    """
+    Currently first fires at 2021-09-10 (3 weeks early) with conf 0.95
+    on weekly timeframe. The early signal is desirable — the book
+    confirms at month-end (2021-09-30) but a weekly heads-up is
+    actionable for bedrest-mode alerts."""
     hits = fires_near(walk, _BOOK_EXIT,
-                      signal_type_prefix="pattern_doubletop",
-                      window_weeks=12)
-    # Also check the snake_case variant 'pattern_double_top' which is
-    # what extract_signals would slugify into (handle either spelling).
-    hits += fires_near(walk, _BOOK_EXIT,
-                       signal_type_prefix="pattern_double_top",
-                       window_weeks=12)
-    assert hits == [], (
-        "pattern_double_top fired on Kakao — improvement! Update this "
-        "test to assert presence, and close TODO #PATTERN_TOL/LOOKBACK."
+                      signal_type_prefix="pattern_double_top",
+                      window_weeks=6)
+    assert hits, (
+        "pattern_double_top did NOT fire within ±6w of 2021-09-30. "
+        "Either the detector regressed (see Phase 2 fix in patterns.py) "
+        "or the walk snapshot is stale — regenerate with "
+        "`python -m app.backtest.book_cases.build_walk_snapshot "
+        "--fixture 035720_kakao_2019_2021_double_top`."
+    )
+    # Confidence sanity — a weakening double-top should be a high-
+    # confidence call (the book treats the 약화 variant as the
+    # STRONGEST sell). Anything < 0.7 means the boost path regressed.
+    max_conf = max(float(s.get("strength", 0)) for _, s in hits)
+    assert max_conf >= 0.7, (
+        f"Highest pattern_double_top confidence in window = {max_conf:.2f}, "
+        "expected ≥0.7 (weakening + completed = book's strongest bear)."
+    )
+
+
+def test_weakening_double_top_flag_set(walk) -> None:
+    """The book's specific variant on Kakao is a 'weakening' double top
+    (H2 < H1). detect_double_top now flags this in extra['weakening'].
+
+    The walk snapshot doesn't include the `extra` dict (extract_signals
+    only forwards top-level keys to scan_results), so we verify the
+    behavior indirectly: the firing pattern's reason string contains
+    '약화형'. This pins down that the weakening detection is on the
+    book-case path, not just an unrelated parameter change."""
+    hits = fires_near(walk, _BOOK_EXIT,
+                      signal_type_prefix="pattern_double_top",
+                      window_weeks=6)
+    assert hits, "no pattern_double_top fired; covered by earlier test"
+    reasons = [s.get("reason", "") for _, s in hits]
+    assert any("약화형" in r for r in reasons), (
+        f"None of the {len(hits)} pattern_double_top fires marked the "
+        f"variant as 약화형. Reasons seen: {reasons}"
     )

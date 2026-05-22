@@ -162,17 +162,33 @@ def _pattern_signals(result: Dict[str, Any]) -> List[Dict[str, Any]]:
         direction = p.get("direction") or "neutral"
         confidence = float(p.get("confidence") or 0.5)
         tf = p.get("timeframe", "daily")
+        extra = p.get("extra") or {}
+        # 변형 라벨 — detector 가 stamp 한 약화/짝궁둥이/완성 등을 reason 에
+        # 노출. 텔레그램/사이트 사용자가 "그냥 쌍봉" 인지 "약화형 (책의
+        # 더 강한 신호)" 인지 즉시 구분 가능.
+        variant_tag = ""
+        if direction == "bearish" and extra.get("weakening"):
+            variant_tag = " · 약화형 (책의 더 강한 매도)"
+        elif direction == "bullish" and extra.get("higher_right"):
+            variant_tag = " · 짝궁둥이형 (책의 더 강한 매수)"
         # signal_type uses the romanised slug so it's stable across UI
         slug_ascii = _slug(kind, "pattern")
+        # Forward detector's extra into params so downstream (snapshot
+        # tests, UI badges, telegram message detail) can read variant
+        # flags without losing the data on the scan_results boundary.
+        params: Dict[str, Any] = {
+            "kind": kind, "direction": direction,
+            "confidence": confidence, "timeframe": tf,
+        }
+        for k, v in extra.items():
+            if k not in params:
+                params[k] = v
         out.append({
             "signal_type": f"pattern_{slug_ascii}",
             "timeframe": tf,
             "strength": round(confidence, 3),
-            "reason": f"{kind} 완성 (신뢰도 {confidence:.2f}, {direction})",
-            "params": {
-                "kind": kind, "direction": direction,
-                "confidence": confidence, "timeframe": tf,
-            },
+            "reason": f"{kind} 완성 (신뢰도 {confidence:.2f}, {direction}){variant_tag}",
+            "params": params,
         })
     return out
 
