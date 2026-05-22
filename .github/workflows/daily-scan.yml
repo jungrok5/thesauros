@@ -190,7 +190,14 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           pip install pytest
-          python -m pytest app/db/tests/test_data_quality.py -v
+          # test_naver_news_links_live.py is a live probe — catches
+          # Naver shifting its article URL format the way it did on
+          # 2026-05-22 (in-page viewer → JS-redirect stub) so users
+          # don't have to report broken links.
+          python -m pytest \
+            app/db/tests/test_data_quality.py \
+            app/db/tests/test_naver_news_links_live.py \
+            -v
 
       - name: Notify admin — cron end
         # Last step. `if: always()` so the ping fires regardless of

@@ -21,8 +21,19 @@ import { getServerClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { ThemeSortChipsClient } from "./sort-chips-client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 3600; // 1시간 ISR
+// theme_metrics() RPC takes 9-10 s cold (645k bars-row window sort,
+// see migration 042 + EXPLAIN 2026-05-22). themes only refresh
+// weekly so we let ISR cache the response for 1 h — first user
+// after revalidation pays the cost, everyone else gets a hit. The
+// old `dynamic = "force-dynamic"` here defeated ISR entirely and
+// made every page-load pay the 9 s, often tipping over Vercel's
+// 10 s function timeout and showing the "테마 데이터 없음" placeholder
+// to users (the empty array fallback in fetchThemes on error).
+export const revalidate = 3600; // 1 h ISR
+// Bump the function ceiling from Vercel's default 10 s to 30 s so
+// the cold revalidation doesn't time out either. (Hobby tier max
+// is 10 s — we're on Pro per project_thesauros_deploy_state.)
+export const maxDuration = 30;
 
 type ThemeRow = {
   theme_id: number;
@@ -40,12 +51,25 @@ type ThemeRow = {
 
 type SortKey = "hot" | "up" | "down" | "buys" | "size";
 
-async function fetchThemes(): Promise<ThemeRow[]> {
+type FetchResult = { rows: ThemeRow[]; error: string | null };
+
+async function fetchThemes(): Promise<FetchResult> {
   const sb = getServerClient();
+  const t0 = Date.now();
   const { data, error } = await sb.rpc("theme_metrics");
+  const dur = Date.now() - t0;
   if (error || !data) {
-    console.error("theme_metrics rpc:", error?.message);
-    return [];
+    console.error(
+      `[themes] theme_metrics rpc failed after ${dur}ms:`,
+      error?.message,
+    );
+    return { rows: [], error: error?.message ?? "rpc returned no data" };
+  }
+  if (dur > 5000) {
+    // Surface slow-query observability without failing the page —
+    // helps catch regressions on the bars window-sort that the RPC
+    // depends on (migration 042 + the EXPLAIN noted 2026-05-22).
+    console.warn(`[themes] theme_metrics rpc slow: ${dur}ms`);
   }
   type RpcRow = {
     theme_id: number;
@@ -60,7 +84,7 @@ async function fetchThemes(): Promise<ThemeRow[]> {
     avoid: number;
     top_tickers: string[] | null;
   };
-  return (data as unknown as RpcRow[]).map((r) => ({
+  const rows = (data as unknown as RpcRow[]).map((r) => ({
     theme_id: r.theme_id,
     name: r.name,
     members: r.members,
@@ -74,6 +98,7 @@ async function fetchThemes(): Promise<ThemeRow[]> {
     avoid: r.avoid,
     top_tickers: r.top_tickers,
   }));
+  return { rows, error: null };
 }
 
 function sortBy(rows: ThemeRow[], key: SortKey): ThemeRow[] {
@@ -111,7 +136,7 @@ export default async function ThemesPage({ searchParams }: PageProps) {
     (["hot", "up", "down", "buys", "size"] as SortKey[]).includes(sp.sort as SortKey)
       ? (sp.sort as SortKey)
       : "hot";
-  const all = await fetchThemes();
+  const { rows: all, error: fetchError } = await fetchThemes();
   const themes = sortBy(all, sortKey);
 
   return (
@@ -149,9 +174,22 @@ export default async function ThemesPage({ searchParams }: PageProps) {
       <ThemeSortChipsClient />
 
       {themes.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-          테마 데이터 없음 — weekly cron 으로 동기화 됩니다.
-        </div>
+        fetchError ? (
+          // Distinguish "RPC failed / timed out" from "RPC returned 0
+          // themes". Same blank placeholder hid both cases before, so
+          // the actual debugging signal (rpc error) never reached us.
+          <div className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300 space-y-1">
+            <div className="font-medium">테마 데이터를 불러오지 못했습니다</div>
+            <div className="text-xs text-rose-600/80 dark:text-rose-400/80">
+              잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게
+              알려주세요. (RPC: {fetchError.slice(0, 100)})
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
+            테마 데이터 없음 — weekly cron 으로 동기화 됩니다.
+          </div>
+        )
       ) : (
         <section>
           <div className="text-xs text-muted-foreground mb-2">
