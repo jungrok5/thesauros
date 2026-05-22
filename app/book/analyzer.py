@@ -614,7 +614,7 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     # Yahoo). Downstream callers that still consume `as_of` (scan
     # writer, telegram alerts) treat it as the week-key, which is
     # correct.
-    return {
+    result: Dict[str, Any] = {
         "ticker": ticker,
         "as_of": str(df["date"].iloc[-1].date()),
         "last_close": round(float(df["close"].iloc[-1]), 4),
@@ -636,6 +636,13 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         "quarter_anchor": quarter_anchor,
         "indicators": indicators_dict,
     }
+    # Buy-eligibility verdict — single source of truth shared by the
+    # page's NoviceVerdict card AND the telegram alert worker. Computed
+    # AFTER all the gate inputs are populated so it can read them. See
+    # `app/book/eligibility.py` for the rule + the TS parity gate.
+    from app.book.eligibility import compute_eligibility
+    result["eligibility"] = compute_eligibility(result)
+    return result
 
 
 def load_ticker_data(ticker: str, years: int = 5) -> Optional[pd.DataFrame]:

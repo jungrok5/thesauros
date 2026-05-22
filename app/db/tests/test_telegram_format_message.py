@@ -199,3 +199,103 @@ def test_full_message_smoke(monkeypatch):
         "vercel.app/stocks/TSLA",
     ):
         assert needle in msg, f"{needle!r} missing from rendered message"
+
+
+# ---------------------------------------------------------------------
+# Contract — eligibility reflection (TSLA-style incident gate)
+# ---------------------------------------------------------------------
+
+def test_conditional_eligibility_downgrades_title_badge():
+    """When the analyzer eligibility says CONDITIONAL — 자리 지남, the
+    enter-class alert must downgrade visually (badge swap + label
+    suffix) so the user can tell at a glance it's not a clean buy."""
+    blob = {
+        "trend": {"weekly": {"above_ma_10": True, "alignment_score": 1.0},
+                  "monthly": {"above_ma_10": True, "alignment_score": 0.7}},
+        "eligibility": {
+            "grade": "CONDITIONAL",
+            "icon": "⚠️",
+            "headline": "오늘 매수 자격: 조건부 — 자리 지남",
+            "body": "추세는 살아있지만 신규 매수 자리는 한참 지남.",
+            "reason_code": "stretch_hold",
+        },
+    }
+    with patch.object(telegram_worker, "_analyze_blob", return_value=blob):
+        with patch.object(telegram_worker, "_flow_5d", return_value=None):
+            msg = telegram_worker.format_message(
+                "TSLA", "Tesla, Inc.", "enter", _enter_sig(),
+            )
+    first_line = msg.splitlines()[0]
+    assert "⚠️" in first_line, f"downgrade icon missing: {first_line!r}"
+    assert "(조건부)" in first_line, f"label not tagged 조건부: {first_line!r}"
+    assert "오늘 매수 자격: 조건부 — 자리 지남" in msg, (
+        "page's eligibility headline must appear in message"
+    )
+
+
+def test_ok_eligibility_keeps_normal_badge():
+    """OK eligibility passes through unchanged — green badge, no
+    (조건부) suffix, but the page's "매수 자격: 가능" headline still
+    surfaces so the alert and page agree word-for-word."""
+    blob = {
+        "trend": {"weekly": {"above_ma_10": True, "alignment_score": 1.0}},
+        "eligibility": {
+            "grade": "OK", "icon": "✅",
+            "headline": "오늘 매수 자격: 가능 (매수)",
+            "body": "책 정신상 매수 자리.",
+            "reason_code": None,
+        },
+    }
+    with patch.object(telegram_worker, "_analyze_blob", return_value=blob):
+        with patch.object(telegram_worker, "_flow_5d", return_value=None):
+            msg = telegram_worker.format_message(
+                "TSLA", "Tesla, Inc.", "enter", _enter_sig(),
+            )
+    first_line = msg.splitlines()[0]
+    assert "🟢" in first_line, "OK grade should keep the green enter badge"
+    assert "(조건부)" not in first_line
+    assert "오늘 매수 자격: 가능 (매수)" in msg
+
+
+def test_message_falls_back_when_eligibility_missing():
+    """analyze_results rows written before the eligibility field
+    existed must still render with the generic phrase + action ask."""
+    blob = {
+        "trend": {"weekly": {"above_ma_10": True, "alignment_score": 1.0}},
+        # NB: no `eligibility` key
+    }
+    with patch.object(telegram_worker, "_analyze_blob", return_value=blob):
+        with patch.object(telegram_worker, "_flow_5d", return_value=None):
+            msg = telegram_worker.format_message(
+                "TSLA", "Tesla, Inc.", "enter", _enter_sig(),
+            )
+    # Falls back to the original "추세 우호 정렬 (매수) — 지금 자리인지 점검"
+    assert "지금 자리인지 점검" in msg
+
+
+def test_exit_class_alerts_ignore_eligibility():
+    """exit/warn/stop alerts are about negative signals — never gated
+    or downgraded by buy eligibility (the user needs to know about
+    a SELL signal regardless of whether they 'could have bought')."""
+    blob = {
+        "trend": {"weekly": {"above_ma_10": False, "alignment_score": 0.0}},
+        "eligibility": {
+            "grade": "CONDITIONAL", "icon": "⚠️",
+            "headline": "오늘 매수 자격: 조건부",
+            "body": "...",
+            "reason_code": "stretch_hold",
+        },
+    }
+    with patch.object(telegram_worker, "_analyze_blob", return_value=blob):
+        with patch.object(telegram_worker, "_flow_5d", return_value=None):
+            msg = telegram_worker.format_message(
+                "TSLA", "Tesla, Inc.", "exit",
+                {"signal_type": "action_sell", "strength": 0.8,
+                 "params": {}},
+            )
+    first_line = msg.splitlines()[0]
+    # Original exit badge kept (🔴), no 조건부 suffix.
+    assert "🔴" in first_line
+    assert "청산 신호" in first_line
+    assert "(조건부)" not in first_line
+

@@ -454,6 +454,20 @@ _ALERT_TYPE_META: Dict[str, Tuple[str, str, str]] = {
 }
 
 
+# Alert types that represent "사야 하나" decisions — these get gated
+# by buy eligibility so the telegram message matches what the
+# stock-detail NoviceVerdict card says. Exit-class alerts (exit / stop
+# / warn) are always sent regardless of eligibility — a SELL signal
+# fires whether or not the user could have bought.
+_ENTER_CLASS_ALERTS = {"enter", "pyramid", "target"}
+
+# eligibility.reason_code values that mean "page is explicitly saying
+# 자리 X" (NOT just "자리 지남"). For these we DROP the alert entirely
+# rather than downgrade — the page would tell the user not to buy and
+# a telegram alert would directly contradict.
+_DROP_ELIGIBILITY_REASONS = {"ambush", "stale", "post_rally"}
+
+
 def _clean_name(name: Optional[str]) -> str:
     """Trim whitespace + collapse the awkward 'Name  - Common Stock'
     suffix Naver pads onto US tickers. Without this the title becomes
@@ -501,18 +515,46 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
     )
     name_clean = _clean_name(name)
 
-    # Title row: badge · 한글 alert_type · ticker · 종목명
-    # The dash before name groups "{ticker} {name}" visually so the
-    # name is read as an annotation, not part of the alert label.
-    title_name = f" {name_clean}" if name_clean else ""
-    title = f"{badge} <b>{atype_label}</b> — <b>{ticker}</b>{title_name}"
-
-    # Action line: combines the signal's descriptive phrase with the
-    # book-tone action ask. e.g. "쌍바닥 매수 반전 패턴 — 지금 자리인지 점검".
-    lines = [title, f"📊 {label['phrase']} — {action_ask}"]
-
-    # Multi-TF stack from analyze_results.
+    # Read eligibility from the analyze_results blob — this is the
+    # same verdict the page's NoviceVerdict card shows. When it
+    # disagrees with the raw alert_type (e.g. action=BUY but
+    # eligibility says CONDITIONAL — 자리 지남), the message must
+    # reflect the eligibility, not the raw classifier. Otherwise
+    # the alert and the page tell two different stories about the
+    # same ticker (the 2026-05-22 TSLA incident).
     blob = _analyze_blob(ticker)
+    elig = (blob or {}).get("eligibility") or {}
+    elig_grade = elig.get("grade")
+    elig_icon = elig.get("icon")
+    elig_headline = elig.get("headline")
+    elig_body = elig.get("body")
+
+    # Title — for enter-class alerts that are CONDITIONAL, swap the
+    # badge to the page's downgrade icon and tag the label with
+    # "(조건부)" so the user knows up-front this isn't a clean buy
+    # signal.
+    is_enter_class = alert_type in _ENTER_CLASS_ALERTS
+    if is_enter_class and elig_grade == "CONDITIONAL" and elig_icon:
+        title_badge = elig_icon
+        title_label = f"{atype_label} (조건부)"
+    else:
+        title_badge = badge
+        title_label = atype_label
+
+    title_name = f" {name_clean}" if name_clean else ""
+    title = f"{title_badge} <b>{title_label}</b> — <b>{ticker}</b>{title_name}"
+
+    # Action line — prefer eligibility headline+body for enter-class
+    # alerts since that's the exact wording the user sees on the
+    # stock page. Falls back to the generic phrase+ask when eligibility
+    # is unavailable (older analyze_results without the field).
+    if is_enter_class and elig_headline:
+        if elig_body:
+            lines = [title, f"📊 {elig_headline} — {elig_body}"]
+        else:
+            lines = [title, f"📊 {elig_headline}"]
+    else:
+        lines = [title, f"📊 {label['phrase']} — {action_ask}"]
     trend = (blob or {}).get("trend") or {}
     tf_parts: List[str] = []
     for tf_key, tf_label in (("monthly", "월"), ("weekly", "주"), ("daily", "일")):
@@ -674,6 +716,35 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
             pref_key = _PREF_BY_ALERT.get(atype)
             if pref_key and not prefs.get(pref_key, True):
                 continue
+            # Eligibility gate (added 2026-05-22) — enter-class alerts
+            # must respect the same buy-eligibility verdict the page
+            # NoviceVerdict card shows. Background: cron sent jungrok5
+            # a "🟢 진입 신호 TSLA" while the page simultaneously said
+            # "⚠️ 매수 자격: 조건부 — 지금은 자리 X". The page is the
+            # source of truth (its gates are book-spirit); the alert
+            # was misleading. We drop enter-class alerts when the
+            # page would say "자리 X" (ambush / stale-pattern /
+            # post-rally), and downgrade them visually when the page
+            # says "조건부 — 자리 지남". Exit / warn / stop alerts pass
+            # through unchanged regardless of eligibility.
+            if atype in _ENTER_CLASS_ALERTS:
+                _elig = (_analyze_blob(ticker) or {}).get("eligibility") or {}
+                _grade = _elig.get("grade")
+                _reason = _elig.get("reason_code")
+                if _grade == "CONDITIONAL" and _reason in _DROP_ELIGIBILITY_REASONS:
+                    log.info(
+                        "skip %s/%s — eligibility CONDITIONAL reason=%s "
+                        "(page would say 자리 X)",
+                        ticker, atype, _reason,
+                    )
+                    continue
+                # WATCH/AVOID/EXIT shouldn't appear for an enter-class
+                # signal (classifier would map to a different alert),
+                # but defense-in-depth: never enter-alert on a chart
+                # the page calls 회피/매도.
+                if _grade in {"AVOID", "EXIT"}:
+                    log.info("skip %s/%s — eligibility=%s", ticker, atype, _grade)
+                    continue
             sig_at = sig.get("detected_at") or "1970-01-01"
             if sig_at != "now()" and _already_alerted(u["id"], ticker, atype, sig_at):
                 stats["skipped_existing"] += 1

@@ -342,6 +342,14 @@ export function AnalysisView({
  *  책 정신 용어 0개. 초보자가 페이지 보고 "이 종목 사도 돼?" 답이
  *  즉시 나오게.
  *
+ *  Source of truth (2026-05-22): the Python analyzer ships a fully
+ *  computed `eligibility` field inside the result blob
+ *  (`app/book/eligibility.py`). This component prefers that field so
+ *  the page + telegram alert + push notification all show the SAME
+ *  verdict text. The legacy derivation below is kept as a fallback
+ *  for analyze_results rows written before the field was added (they
+ *  age out within the 30-day analyze_results retention window).
+ *
  *  IMPORTANT: action 단독으로 결정하면 매복/stale-pattern/post-rally
  *  분기 (BookVerdict 가 STRONG_BUY 여도 다운그레이드) 와 모순.
  *  068930.KQ 2026-05-21 reported case: action=STRONG_BUY 인데 BookVerdict
@@ -349,6 +357,33 @@ export function AnalysisView({
  *  → BookVerdict 의 가드를 같이 호출해서 일관성 보장.
  */
 function NoviceVerdict({ result }: { result: AnalysisResult }) {
+  // Prefer the analyzer-computed eligibility when present — that's
+  // the canonical verdict shared with the telegram alert path.
+  const elig = (result as unknown as { eligibility?: {
+    grade: string; icon: string; headline: string; body: string;
+    reason_code: string | null;
+  }; }).eligibility;
+  if (elig && elig.headline) {
+    const gradeColor = (
+      elig.grade === "OK" ? "border-emerald-500/40 bg-emerald-500/5"
+        : elig.grade === "CONDITIONAL" ? "border-amber-500/40 bg-amber-500/5"
+          : elig.grade === "WATCH" ? "border-zinc-500/30 bg-zinc-500/5"
+            : "border-rose-500/40 bg-rose-500/5"
+    );
+    return (
+      <section className={`rounded-lg border-2 ${gradeColor} px-4 py-3`}>
+        <div className="flex items-start gap-3">
+          <span className="text-xl shrink-0">{elig.icon}</span>
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold">{elig.headline}</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">{elig.body}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Fallback derivation (pre-2026-05-22 analyze_results) ─────────
   const action = result.action;
   // BookVerdict 가 갈 분기를 미리 계산 → 같은 결정을 NoviceVerdict 도 따름.
   const bullishAction = action === "BUY" || action === "STRONG_BUY";
