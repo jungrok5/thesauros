@@ -1,0 +1,1935 @@
+{
+  "2018-12-21": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20974.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2018-12-28": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20673.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-01-04": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20774.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-01-11": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20473.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-01-18": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 19991.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-01-25": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20573.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-02-01": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 19991.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-02-08": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 19710.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-02-15": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20372.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-02-22": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 19931.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-03-01": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20774.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-03-08": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 21577.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-03-15": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 21577.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-03-22": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20874.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-03-29": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20774.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-04-05": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20573.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-04-12": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 20573.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-08-30": [
+    {
+      "signal_type": "volume_case_7",
+      "timeframe": "daily",
+      "strength": 0.78,
+      "reason": "거래량 급등 중 거래량 감소 (세력 매집 완료) (bullish)",
+      "params": {
+        "case": 7,
+        "label": "급등 중 거래량 감소 (세력 매집 완료)",
+        "direction": "bullish",
+        "confidence": 0.78,
+        "reason": "상승 추세인데 거래량 -32%. 책 케이스 7."
+      }
+    }
+  ],
+  "2019-09-06": [
+    {
+      "signal_type": "volume_case_7",
+      "timeframe": "daily",
+      "strength": 0.78,
+      "reason": "거래량 급등 중 거래량 감소 (세력 매집 완료) (bullish)",
+      "params": {
+        "case": 7,
+        "label": "급등 중 거래량 감소 (세력 매집 완료)",
+        "direction": "bullish",
+        "confidence": 0.78,
+        "reason": "상승 추세인데 거래량 -31%. 책 케이스 7."
+      }
+    }
+  ],
+  "2019-09-13": [
+    {
+      "signal_type": "volume_case_7",
+      "timeframe": "daily",
+      "strength": 0.78,
+      "reason": "거래량 급등 중 거래량 감소 (세력 매집 완료) (bullish)",
+      "params": {
+        "case": 7,
+        "label": "급등 중 거래량 감소 (세력 매집 완료)",
+        "direction": "bullish",
+        "confidence": 0.78,
+        "reason": "상승 추세인데 거래량 -31%. 책 케이스 7."
+      }
+    }
+  ],
+  "2019-09-20": [
+    {
+      "signal_type": "volume_case_7",
+      "timeframe": "daily",
+      "strength": 0.78,
+      "reason": "거래량 급등 중 거래량 감소 (세력 매집 완료) (bullish)",
+      "params": {
+        "case": 7,
+        "label": "급등 중 거래량 감소 (세력 매집 완료)",
+        "direction": "bullish",
+        "confidence": 0.78,
+        "reason": "상승 추세인데 거래량 -30%. 책 케이스 7."
+      }
+    }
+  ],
+  "2019-10-18": [
+    {
+      "signal_type": "volume_case_7",
+      "timeframe": "daily",
+      "strength": 0.78,
+      "reason": "거래량 급등 중 거래량 감소 (세력 매집 완료) (bullish)",
+      "params": {
+        "case": 7,
+        "label": "급등 중 거래량 감소 (세력 매집 완료)",
+        "direction": "bullish",
+        "confidence": 0.78,
+        "reason": "상승 추세인데 거래량 -30%. 책 케이스 7."
+      }
+    }
+  ],
+  "2019-12-20": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 30107.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2019-12-27": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 30810.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-01-10": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 33118.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-01-17": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 33820.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-01-24": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 33218.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-01-31": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 31913.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-02-07": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 33620.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-02-14": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 36129.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-02-21": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 손절 폭 15% (책 룰 -10% 초과)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 38035.0,
+        "stretch_reason": "손절 폭 15% (책 룰 -10% 초과)"
+      }
+    }
+  ],
+  "2020-02-28": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 마지막 봉 장대음봉 — 책 룰: 매도 압력",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 34523.0,
+        "stretch_reason": "마지막 봉 장대음봉 — 책 룰: 매도 압력"
+      }
+    }
+  ],
+  "2020-03-06": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 35225.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-05-01": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 36931.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-05-08": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 손절 폭 20% (책 룰 -10% 초과)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 41347.0,
+        "stretch_reason": "손절 폭 20% (책 룰 -10% 초과)"
+      }
+    }
+  ],
+  "2020-05-15": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 91% + 8주 +48%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 44458.0,
+        "stretch_reason": "52w 위치 91% + 8주 +48%"
+      }
+    }
+  ],
+  "2020-05-22": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 8주 +62% (책 +50% 룰 위반) · 52w 위치 99% + 8주 +62%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 49577.0,
+        "stretch_reason": "8주 +62% (책 +50% 룰 위반) · 52w 위치 99% + 8주 +62%"
+      }
+    }
+  ],
+  "2020-05-29": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 8주 +67% (책 +50% 룰 위반) · 52w 위치 90% + 8주 +67%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 52888.0,
+        "stretch_reason": "8주 +67% (책 +50% 룰 위반) · 52w 위치 90% + 8주 +67%"
+      }
+    }
+  ],
+  "2020-06-05": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 8주 +56% (책 +50% 룰 위반)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 50379.0,
+        "stretch_reason": "8주 +56% (책 +50% 룰 위반)"
+      }
+    }
+  ],
+  "2020-06-12": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 8주 +55% (책 +50% 룰 위반) · 52w 위치 92% + 8주 +55%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 53390.0,
+        "stretch_reason": "8주 +55% (책 +50% 룰 위반) · 52w 위치 92% + 8주 +55%"
+      }
+    }
+  ],
+  "2020-06-19": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 90% + 8주 +44%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 52888.0,
+        "stretch_reason": "52w 위치 90% + 8주 +44%"
+      }
+    }
+  ],
+  "2020-06-26": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 92% + 8주 +49%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 55096.0,
+        "stretch_reason": "52w 위치 92% + 8주 +49%"
+      }
+    }
+  ],
+  "2020-07-03": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 98% + 8주 +43%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 59010.0,
+        "stretch_reason": "52w 위치 98% + 8주 +43%"
+      }
+    }
+  ],
+  "2020-07-10": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 8주 +60% (책 +50% 룰 위반) · 52w 위치 95% + 8주 +60%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 71354.0,
+        "stretch_reason": "8주 +60% (책 +50% 룰 위반) · 52w 위치 95% + 8주 +60%"
+      }
+    }
+  ],
+  "2020-07-17": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 마지막 봉 장대음봉 — 책 룰: 매도 압력",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 65232.0,
+        "stretch_reason": "마지막 봉 장대음봉 — 책 룰: 매도 압력"
+      }
+    }
+  ],
+  "2020-07-24": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 65132.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-07-31": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 90% + 8주 +37%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 68946.0,
+        "stretch_reason": "52w 위치 90% + 8주 +37%"
+      }
+    }
+  ],
+  "2020-08-07": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 88% + 8주 +33%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 70853.0,
+        "stretch_reason": "52w 위치 88% + 8주 +33%"
+      }
+    }
+  ],
+  "2020-08-14": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 92% + 8주 +38%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 72759.0,
+        "stretch_reason": "52w 위치 92% + 8주 +38%"
+      }
+    }
+  ],
+  "2020-08-21": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 93% + 8주 +35%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 74265.0,
+        "stretch_reason": "52w 위치 93% + 8주 +35%"
+      }
+    }
+  ],
+  "2020-08-28": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 52w 위치 96% + 8주 +38%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 81390.0,
+        "stretch_reason": "52w 위치 96% + 8주 +38%"
+      }
+    }
+  ],
+  "2020-09-04": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 80688.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-09-11": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 76071.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2020-09-18": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 74867.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2021-01-08": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 손절 폭 15% (책 룰 -10% 초과)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 87111.0,
+        "stretch_reason": "손절 폭 15% (책 룰 -10% 초과)"
+      }
+    }
+  ],
+  "2021-01-15": [
+    {
+      "signal_type": "action_buy",
+      "timeframe": "daily",
+      "strength": 0.66,
+      "reason": "BUY (book_score=+0.60)",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 87813.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2021-01-22": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +157%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 92931.0,
+        "stretch_reason": "240MA 대비 +157%"
+      }
+    }
+  ],
+  "2021-01-29": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +143%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 88516.0,
+        "stretch_reason": "240MA 대비 +143%"
+      }
+    }
+  ],
+  "2021-02-05": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +148%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 91326.0,
+        "stretch_reason": "240MA 대비 +148%"
+      }
+    }
+  ],
+  "2021-02-12": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +164% · 52w 위치 100% + 8주 +33%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 98250.0,
+        "stretch_reason": "240MA 대비 +164% · 52w 위치 100% + 8주 +33%"
+      }
+    }
+  ],
+  "2021-02-19": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +169% · 52w 위치 96% + 8주 +35%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 101161.0,
+        "stretch_reason": "240MA 대비 +169% · 52w 위치 96% + 8주 +35%"
+      }
+    }
+  ],
+  "2021-02-26": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +158%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 97949.0,
+        "stretch_reason": "240MA 대비 +158%"
+      }
+    }
+  ],
+  "2021-03-05": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +147%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 94537.0,
+        "stretch_reason": "240MA 대비 +147%"
+      }
+    }
+  ],
+  "2021-03-12": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +150%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 96544.0,
+        "stretch_reason": "240MA 대비 +150%"
+      }
+    }
+  ],
+  "2021-03-19": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +154%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 98853.0,
+        "stretch_reason": "240MA 대비 +154%"
+      }
+    }
+  ],
+  "2021-03-26": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +153%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 99354.0,
+        "stretch_reason": "240MA 대비 +153%"
+      }
+    }
+  ],
+  "2021-04-02": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +153%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 100559.0,
+        "stretch_reason": "240MA 대비 +153%"
+      }
+    }
+  ],
+  "2021-04-09": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +179%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 112000.0,
+        "stretch_reason": "240MA 대비 +179%"
+      }
+    }
+  ],
+  "2021-04-16": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +193%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 119000.0,
+        "stretch_reason": "240MA 대비 +193%"
+      }
+    }
+  ],
+  "2021-04-23": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +186%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 117500.0,
+        "stretch_reason": "240MA 대비 +186%"
+      }
+    }
+  ],
+  "2021-04-30": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +174%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 113500.0,
+        "stretch_reason": "240MA 대비 +174%"
+      }
+    }
+  ],
+  "2021-05-07": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +174%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 114500.0,
+        "stretch_reason": "240MA 대비 +174%"
+      }
+    }
+  ],
+  "2021-05-14": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +158%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 109000.0,
+        "stretch_reason": "240MA 대비 +158%"
+      }
+    }
+  ],
+  "2021-05-21": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +174%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 117000.0,
+        "stretch_reason": "240MA 대비 +174%"
+      }
+    }
+  ],
+  "2021-05-28": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.525,
+      "reason": "HOLD · 240MA 대비 +183%",
+      "params": {
+        "book_score": 0.487,
+        "trend_signal": "BUY",
+        "last_close": 122000.0,
+        "stretch_reason": "240MA 대비 +183%"
+      }
+    },
+    {
+      "signal_type": "volume_case_9",
+      "timeframe": "daily",
+      "strength": 0.75,
+      "reason": "거래량 상투권 거래량 폭증 (세력 털기 위험) (bearish)",
+      "params": {
+        "case": 9,
+        "label": "상투권 거래량 폭증 (세력 털기 위험)",
+        "direction": "bearish",
+        "confidence": 0.75,
+        "reason": "고점권 거래량 +214% (책 3배 기준 초과). 책 케이스 9."
+      }
+    }
+  ],
+  "2021-06-04": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.519,
+      "reason": "HOLD · 240MA 대비 +185%",
+      "params": {
+        "book_score": 0.472,
+        "trend_signal": "BUY",
+        "last_close": 124000.0,
+        "stretch_reason": "240MA 대비 +185%"
+      }
+    },
+    {
+      "signal_type": "volume_case_9",
+      "timeframe": "daily",
+      "strength": 0.85,
+      "reason": "거래량 상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정) (bearish)",
+      "params": {
+        "case": 9,
+        "label": "상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정)",
+        "direction": "bearish",
+        "confidence": 0.85,
+        "reason": "고점권 거래량 +300% (책 3배 기준 초과) + 위꼬리 거부 캔들. 책 케이스 9."
+      }
+    }
+  ],
+  "2021-06-11": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.519,
+      "reason": "HOLD · 240MA 대비 +207%",
+      "params": {
+        "book_score": 0.472,
+        "trend_signal": "BUY",
+        "last_close": 135500.0,
+        "stretch_reason": "240MA 대비 +207%"
+      }
+    },
+    {
+      "signal_type": "volume_case_9",
+      "timeframe": "daily",
+      "strength": 0.85,
+      "reason": "거래량 상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정) (bearish)",
+      "params": {
+        "case": 9,
+        "label": "상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정)",
+        "direction": "bearish",
+        "confidence": 0.85,
+        "reason": "고점권 거래량 +368% (책 3배 기준 초과) + 위꼬리 거부 캔들. 책 케이스 9."
+      }
+    }
+  ],
+  "2021-06-18": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.519,
+      "reason": "HOLD · 240MA 대비 +247% · 52w 위치 98% + 8주 +32%",
+      "params": {
+        "book_score": 0.472,
+        "trend_signal": "BUY",
+        "last_close": 155000.0,
+        "stretch_reason": "240MA 대비 +247% · 52w 위치 98% + 8주 +32%"
+      }
+    },
+    {
+      "signal_type": "volume_case_9",
+      "timeframe": "daily",
+      "strength": 0.85,
+      "reason": "거래량 상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정) (bearish)",
+      "params": {
+        "case": 9,
+        "label": "상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정)",
+        "direction": "bearish",
+        "confidence": 0.85,
+        "reason": "고점권 거래량 +441% (책 3배 기준 초과) + 위꼬리 거부 캔들. 책 케이스 9."
+      }
+    }
+  ],
+  "2021-06-25": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.519,
+      "reason": "HOLD · 240MA 대비 +241%",
+      "params": {
+        "book_score": 0.472,
+        "trend_signal": "BUY",
+        "last_close": 154500.0,
+        "stretch_reason": "240MA 대비 +241%"
+      }
+    },
+    {
+      "signal_type": "volume_case_9",
+      "timeframe": "daily",
+      "strength": 0.85,
+      "reason": "거래량 상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정) (bearish)",
+      "params": {
+        "case": 9,
+        "label": "상투권 거래량 폭증 + 위꼬리 거부 (세력 털기 확정)",
+        "direction": "bearish",
+        "confidence": 0.85,
+        "reason": "고점권 거래량 +226% (책 3배 기준 초과) + 위꼬리 거부 캔들. 책 케이스 9."
+      }
+    }
+  ],
+  "2021-07-02": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +247% · 52w 위치 88% + 8주 +39%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 159500.0,
+        "stretch_reason": "240MA 대비 +247% · 52w 위치 88% + 8주 +39%"
+      }
+    }
+  ],
+  "2021-07-09": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +245% · 52w 위치 89% + 8주 +47%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 160500.0,
+        "stretch_reason": "240MA 대비 +245% · 52w 위치 89% + 8주 +47%"
+      }
+    }
+  ],
+  "2021-07-16": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +233% · 52w 위치 86% + 8주 +34%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 157000.0,
+        "stretch_reason": "240MA 대비 +233% · 52w 위치 86% + 8주 +34%"
+      }
+    }
+  ],
+  "2021-07-23": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +214%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 149500.0,
+        "stretch_reason": "240MA 대비 +214%"
+      }
+    }
+  ],
+  "2021-07-30": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +205%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 147000.0,
+        "stretch_reason": "240MA 대비 +205%"
+      }
+    }
+  ],
+  "2021-09-03": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.57,
+      "reason": "HOLD · 240MA 대비 +208%",
+      "params": {
+        "book_score": 0.6,
+        "trend_signal": "BUY",
+        "last_close": 156500.0,
+        "stretch_reason": "240MA 대비 +208%"
+      }
+    }
+  ],
+  "2021-10-01": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 116500.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2021-10-08": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.72,
+      "reason": "SELL_OR_SHORT (book_score=-0.60)",
+      "params": {
+        "book_score": -0.6,
+        "trend_signal": "SELL",
+        "last_close": 117500.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2021-11-12": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.537,
+      "reason": "HOLD · 240MA 대비 +133%",
+      "params": {
+        "book_score": 0.517,
+        "trend_signal": "BUY",
+        "last_close": 127000.0,
+        "stretch_reason": "240MA 대비 +133%"
+      }
+    }
+  ],
+  "2021-11-19": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.537,
+      "reason": "HOLD · 240MA 대비 +132%",
+      "params": {
+        "book_score": 0.517,
+        "trend_signal": "BUY",
+        "last_close": 127000.0,
+        "stretch_reason": "240MA 대비 +132%"
+      }
+    }
+  ],
+  "2021-11-26": [
+    {
+      "signal_type": "action_hold",
+      "timeframe": "daily",
+      "strength": 0.528,
+      "reason": "HOLD · 240MA 대비 +128%",
+      "params": {
+        "book_score": 0.495,
+        "trend_signal": "BUY",
+        "last_close": 125500.0,
+        "stretch_reason": "240MA 대비 +128%"
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2021-12-03": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 123500.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2021-12-10": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 122500.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2021-12-17": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 117500.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2021-12-24": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 114500.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2021-12-31": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 112500.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-01-07": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 100000.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-01-14": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 93900.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-01-21": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 91800.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-01-28": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 85000.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-02-04": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 87100.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-02-11": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 91700.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-02-18": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 91400.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-02-25": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 94400.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-03-04": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 94700.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-03-11": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 101500.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-03-18": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 108500.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-03-25": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 105000.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-04-01": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 106000.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-04-08": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 98000.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-04-15": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 95400.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-04-22": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 92000.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-04-29": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 89900.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-05-06": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 84300.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-05-13": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 81800.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-05-20": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 83000.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-05-27": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 81700.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-06-03": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 85700.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-06-10": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.762,
+      "reason": "SELL_OR_SHORT (book_score=-0.70)",
+      "params": {
+        "book_score": -0.705,
+        "trend_signal": "SELL",
+        "last_close": 80100.0,
+        "stretch_reason": null
+      }
+    },
+    {
+      "signal_type": "volume_case_11",
+      "timeframe": "daily",
+      "strength": 0.7,
+      "reason": "거래량 상투 후 급락 + 거래량 감소 (죽은 차트) (bearish)",
+      "params": {
+        "case": 11,
+        "label": "상투 후 급락 + 거래량 감소 (죽은 차트)",
+        "direction": "bearish",
+        "confidence": 0.7,
+        "reason": "세력 떠나고 개미만 남은 상태. 회피. 책 케이스 11."
+      }
+    }
+  ],
+  "2022-06-17": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 72200.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-06-24": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 71500.0,
+        "stretch_reason": null
+      }
+    }
+  ],
+  "2022-07-01": [
+    {
+      "signal_type": "action_sell_short",
+      "timeframe": "daily",
+      "strength": 0.744,
+      "reason": "SELL_OR_SHORT (book_score=-0.66)",
+      "params": {
+        "book_score": -0.66,
+        "trend_signal": "SELL",
+        "last_close": 69900.0,
+        "stretch_reason": null
+      }
+    }
+  ]
+}
