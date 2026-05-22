@@ -283,16 +283,45 @@ def _list_tickers(markets: Optional[List[str]] = None,
     sp500_only: for the US side (NASDAQ/NYSE/AMEX) restrict to S&P 500
     constituents only. Keeps Supabase storage bounded — full US universe
     is ~7K tickers vs S&P 500's 500. KR markets are unaffected.
+
+    Bars filter (2026-05-22): when callers don't pass an explicit
+    ticker list, we exclude tickers that have ZERO weekly bars in DB.
+    Background: the 2026-05-22 cron took 1h2m vs the usual 25m because
+    scan_daily iterated all 6,913 US tickers with no bars (Naver
+    cloud-IP blocked) — each one cost a ~0.2s DB lookup before falling
+    into `skipped_no_history`. That's ~23 min wasted per cron. The
+    cron runs ingest_bars BEFORE scan_daily so any ticker that SHOULD
+    have bars already does; tickers without bars are exactly the ones
+    scan_daily would have skipped anyway. Filter at the universe step
+    instead of one-by-one in load_ticker_data.
+
+    Explicit --tickers bypass the bars filter (one-off mode used by
+    analyze-ticker.yml dispatch — caller knows they want that ticker
+    even if bars are empty).
     """
-    where = "is_active = true"
+    where_clauses = ["is_active = true"]
     params: List[Any] = []
+
     if tickers:
-        where += " AND ticker = ANY(%s)"
+        where_clauses.append("ticker = ANY(%s)")
         params.append(list(tickers))
     elif markets:
-        where += " AND market = ANY(%s)"
+        where_clauses.append("market = ANY(%s)")
         params.append([m.upper() for m in markets])
 
+    # Skip tickers with no weekly bars in DB — they'd fall into
+    # skipped_no_history anyway. The EXISTS subquery is cheap because
+    # `bars (ticker, granularity, bar_date)` is the primary key, so
+    # Postgres can answer it via index-only scan.
+    # Bypass for explicit ticker lists: caller is doing a one-off
+    # (e.g., a just-watchlisted ticker that bars hasn't seen yet).
+    if not tickers:
+        where_clauses.append(
+            "EXISTS (SELECT 1 FROM bars WHERE bars.ticker = tickers.ticker "
+            "AND bars.granularity = 'W')"
+        )
+
+    where = " AND ".join(where_clauses)
     sql = f"SELECT ticker, market FROM tickers WHERE {where} ORDER BY ticker"
     if limit:
         sql += f" LIMIT {int(limit)}"
