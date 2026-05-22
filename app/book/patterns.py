@@ -471,22 +471,40 @@ def detect_reverse_head_and_shoulders(df: pd.DataFrame, lookback: int = 150,
 # 5. 삼중바닥 (Triple Bottom)
 # ---------------------------------------------------------------------------
 def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
-                         tol: float = 0.05) -> Optional[Pattern]:
+                         tol: float = 0.13) -> Optional[Pattern]:
     """세 저점이 비슷한 가격대. 거래량 우상향이면 강력 매수.
 
     Book p276-279: SAMG엔터 450% 사례 (저점이 점차 상승 = 더 강력)
+
+    Params (Phase 2 OOS-driven tuning, 2026-05-22):
+      - tol 5%→13% (SAMG 3 bottoms 9.94K/10.81K/11.48K = 13.4% spread;
+        book treats this as "저점 점차 상승 = 더 강력" not as a reject)
+      - distance=3 in find_swings_for_pattern (same alternating-filter
+        trap as detect_double_top — shallow troughs collapse)
+      - Min-bars 180→32 (separated from `lookback`). Recently-listed
+        stocks (SAMG: 161 weekly bars) no longer auto-rejected.
     """
-    if df is None or len(df) < lookback:
+    if df is None or len(df) < 32:
         return None
 
-    swings = find_swings_for_pattern(df, lookback)
+    swings = find_swings_for_pattern(df, lookback, distance=3)
     lows = [s for s in swings if s.kind == "low"]
     if len(lows) < 3:
         return None
 
-    a, b, c = lows[-3], lows[-2], lows[-1]
-    if not (_within(a.price, b.price, tol) and _within(b.price, c.price, tol)):
+    # Scan ALL consecutive triplets, take the latest one where all
+    # three lows are within tol of each other. SAMG 2024 case: the
+    # last 3 lows include a deeper 2024-06 dip that contaminates the
+    # 2024-09~2024-12 cluster. Sliding-triplet scan finds the
+    # contiguous cluster the book identifies as the triple bottom.
+    triplet = None
+    for i in range(len(lows) - 2):
+        x, y, z = lows[i], lows[i + 1], lows[i + 2]
+        if _within(x.price, y.price, tol) and _within(y.price, z.price, tol):
+            triplet = (x, y, z)
+    if triplet is None:
         return None
+    a, b, c = triplet
 
     # 책 권장 (p276): 거래량 우상향 (저점마다 거래량 증가), 저점도 점차 상승
     rising_bottoms = a.price <= b.price <= c.price
@@ -501,6 +519,14 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
 
     ma_10 = _ma_value(df, 10)
     last_close = float(df["close"].iloc[-1])
+    floor_price = min(a.price, b.price, c.price)
+    # If current close already broke below all 3 bottoms, the pattern
+    # is invalidated (book p254: 전저점 지키기). Drop instead of firing
+    # with a broken structure — otherwise stop/entry/target invariants
+    # don't hold and the UI surfaces a stale buy signal on a falling
+    # chart. (Random-walk fuzz catches this if not guarded here.)
+    if last_close < floor_price * 0.99:
+        return None
     completed = ma_10 is not None and last_close > ma_10
 
     conf = 0.70
@@ -517,7 +543,14 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
     # Find peak between for stop reference
     peaks = [s for s in swings if a.idx < s.idx < c.idx and s.kind == "high"]
     target_base = max(p.price for p in peaks) if peaks else last_close * 1.10
-    floor = min(a.price, b.price, c.price)
+    floor = floor_price  # alias for downstream consistency
+
+    entry = last_close if completed else target_base
+    # Book target = neckline + height. But if entry (= last_close on
+    # completed patterns) is already above that, displayed target would
+    # sit BELOW entry — same fix template as detect_double_top:
+    # clamp to keep target ≥ entry for the bullish invariant.
+    target = max(target_base + (target_base - floor), entry * 1.03)
 
     return Pattern(
         kind="삼중바닥",
@@ -525,9 +558,9 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
         confidence=conf,
         completed=completed,
         detected_at=pd.to_datetime(df["date"].iloc[-1]) if "date" in df.columns else pd.to_datetime(df.index[-1]),
-        entry=last_close if completed else target_base,
+        entry=entry,
         stop=floor * 0.97,
-        target=target_base + (target_base - floor),
+        target=target,
         reason=(
             f"삼중바닥: {a.price:.2f}, {b.price:.2f}, {c.price:.2f}"
             + (" / 저점 우상향" if rising_bottoms else "")
@@ -846,8 +879,14 @@ def detect_240ma_breakout(df: pd.DataFrame, lookback_below: int = 60,
       - Last N bars mostly within ±tol of 240MA
       - Most recent bar is bullish + closes above 240MA
       - Pumping volume should be low (책: 매물 소화 끝남)
+
+    Phase 2 OOS-driven tuning (2026-05-22 — PSK +388% case):
+      Min-bars 305→245. Original required 240 (MA) + 60 (barnacle) + 5
+      = 305 weekly bars (~6 years), rejecting any ticker without 6
+      years of history. Now 245 minimum (240 MA + 5 buffer); barnacle
+      check uses whatever history is available after MA240 stabilizes.
     """
-    if df is None or len(df) < 240 + lookback_below + 5:
+    if df is None or len(df) < 245:
         return None
 
     work = add_moving_averages(df, [240]).copy().reset_index(drop=True)
@@ -860,20 +899,24 @@ def detect_240ma_breakout(df: pd.DataFrame, lookback_below: int = 60,
     last_high = float(work["high"].iloc[-1])
     last_volume = float(work["volume"].iloc[-1]) if "volume" in work.columns else 0.0
 
-    # Did we break out (close above 240MA from below)?
-    prev_closes = work["close"].iloc[-lookback_below-1:-1]
-    prev_ma240 = work["ma_240"].iloc[-lookback_below-1:-1]
-    below_count = (prev_closes < prev_ma240).sum()
-    proximity_count = (
-        (prev_closes < prev_ma240 * (1 + tol))
-        & (prev_closes > prev_ma240 * (1 - tol * 2))
-    ).sum()
-
-    # 띠개비처럼 붙음
-    barnacle = (
-        below_count >= lookback_below * 0.55
-        and proximity_count >= lookback_below * 0.45
-    )
+    # Barnacle check uses whatever post-MA240 history is available
+    # (need ≥10 bars for any meaningful signal; otherwise skip the boost).
+    usable_history = len(work) - 240  # bars where MA240 is defined
+    actual_lookback = min(lookback_below, usable_history - 1)
+    if actual_lookback >= 10:
+        prev_closes = work["close"].iloc[-actual_lookback - 1:-1]
+        prev_ma240 = work["ma_240"].iloc[-actual_lookback - 1:-1]
+        below_count = (prev_closes < prev_ma240).sum()
+        proximity_count = (
+            (prev_closes < prev_ma240 * (1 + tol))
+            & (prev_closes > prev_ma240 * (1 - tol * 2))
+        ).sum()
+        barnacle = (
+            below_count >= actual_lookback * 0.55
+            and proximity_count >= actual_lookback * 0.45
+        )
+    else:
+        barnacle = False  # not enough history to assess
 
     crossed = work["close"].iloc[-2] < work["ma_240"].iloc[-2] and last_close > ma240
     bullish = last_close > last_open
