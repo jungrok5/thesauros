@@ -107,4 +107,37 @@ describe("chart-vision page is registered", () => {
     expect(sidebar).toMatch(/ADMIN_BETA_GROUP[\s\S]{0,400}chart-vision/);
     expect(sidebar).toMatch(/isAdmin\s*\?\s*\[[^\]]*ADMIN_BETA_GROUP/);
   });
+
+  it("chart-vision URL is in NO public-facing nav group (회고 #62)", () => {
+    // Stronger guard than the windowed regex above — extract the
+    // NAV_GROUPS literal and assert /chart-vision doesn't appear in it.
+    // NAV_GROUPS is the array passed to non-admin users; if anyone
+    // accidentally moves chart-vision out of ADMIN_BETA_GROUP this
+    // test fails before regular users see the leaked menu item.
+    const sidebar = fs.readFileSync(
+      path.resolve(__dirname, "..", "components", "sidebar.tsx"),
+      "utf8",
+    );
+    // NAV_GROUPS literal runs from `const NAV_GROUPS` to the matching
+    // closing `];` at column 0.
+    const m = sidebar.match(/const\s+NAV_GROUPS[\s\S]*?\n\];/);
+    expect(m, "NAV_GROUPS literal must be parseable").not.toBeNull();
+    if (m) {
+      expect(m[0]).not.toMatch(/chart-vision/);
+    }
+  });
+
+  it("page.tsx redirects non-admin users (defence in depth #62)", () => {
+    const src = fs.readFileSync(
+      path.resolve(
+        __dirname, "..", "app", "(app)", "chart-vision", "page.tsx",
+      ),
+      "utf8",
+    );
+    // Server-side role check is the second line of defence — sidebar
+    // hiding alone doesn't protect against URL-typing users.
+    expect(src).toMatch(/role\s*!==\s*["']admin["']/);
+    expect(src).toMatch(/redirect/);
+    expect(src).toMatch(/auth\(\)/);
+  });
 });

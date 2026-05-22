@@ -40,8 +40,18 @@ _DROP_TABLE_RE = re.compile(r"^\s*DROP\s+TABLE\b", re.IGNORECASE | re.MULTILINE)
 _TRUNCATE_RE = re.compile(r"^\s*TRUNCATE\b", re.IGNORECASE | re.MULTILINE)
 
 # 정책 예외 — 새 destructive 가 정말 필요하면 여기 추가하고 PR 리뷰에서
-# 명시적 승인. 비어있는 게 정상 상태.
-ALLOWED_DESTRUCTIVE: set[str] = set()
+# 명시적 승인. 보통 비어있어야 정상.
+#
+# 045_remove_us_universe.sql:
+#   - DELETE FROM bars / analyze_results / scan_results / fundamentals /
+#     disclosures WHERE ticker IN (...) — US universe 5000+ 종목 영구 삭제.
+#   - 회고 #8: 적용 전 Supabase dashboard Database → Backups 에서
+#     manual backup 권장. PITR (Pro: 7일) 으로 24h 내엔 복구 가능.
+#   - 영구 destructive 임이 분명하므로 ALLOWED 명시 — replay guard 의
+#     DELETE FROM 검사 (#45) 가 추가되면 이 migration 만 통과시킴.
+ALLOWED_DESTRUCTIVE: set[str] = {
+    "045_remove_us_universe.sql",
+}
 
 
 def _strip_sql_comments(src: str) -> str:

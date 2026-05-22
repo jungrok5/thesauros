@@ -12,7 +12,7 @@
     },
     {
       "path": "/api/cron/weekly-scan",
-      "schedule": "0 8 * * 5"
+      "schedule": "30 8 * * 5"
     }
   ],
   "headers": [

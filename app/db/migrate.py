@@ -48,6 +48,48 @@ def _ensure_meta_table(cur) -> None:
             checksum TEXT NOT NULL
         )
     """)
+    # migrations_audit — append-only, 회고 #47. _migrations 가 reset 돼도
+    # 여기는 잔존 → replay detection 의 source of truth.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS migrations_audit (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            runner TEXT,
+            event_type TEXT NOT NULL DEFAULT 'apply'
+        )
+    """)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_migrations_audit_name "
+        "ON migrations_audit (name)"
+    )
+
+
+def _audit_seen(cur, name: str) -> bool:
+    """True if `name` has been applied before per audit history (even
+    if _migrations was reset since). Use to detect replay."""
+    cur.execute(
+        "SELECT EXISTS (SELECT 1 FROM migrations_audit WHERE name = %s)",
+        (name,),
+    )
+    return cur.fetchone()[0]
+
+
+def _audit_record(cur, name: str, cksum: str, event_type: str = "apply") -> None:
+    """Append an apply event. INSERT-only — never UPDATE/DELETE this row."""
+    import os
+    runner = (
+        os.environ.get("GITHUB_ACTOR")
+        or os.environ.get("USER")
+        or os.environ.get("USERNAME")
+        or "unknown"
+    )
+    cur.execute(
+        "INSERT INTO migrations_audit (name, checksum, runner, event_type) "
+        "VALUES (%s, %s, %s, %s)",
+        (name, cksum, runner, event_type),
+    )
 
 
 def _applied_set(cur) -> dict:
@@ -103,6 +145,26 @@ def cmd_up(target: str | None = None) -> int:
                               f"{applied[f.name]}, now {cksum} — skipping; "
                               f"create new migration to alter)")
                     continue
+                # Replay detection (회고 #47): _migrations 엔 없지만
+                # migrations_audit 에는 있으면 이전에 적용한 적 있음
+                # = _migrations reset 발생 신호. destructive replay 위험
+                # 알림 + 명시적 confirm 없으면 abort.
+                replay = _audit_seen(cur, f.name)
+                event_type = "apply"
+                if replay:
+                    import os
+                    if os.environ.get("MIGRATE_ALLOW_REPLAY") != "1":
+                        print(
+                            f"  ABORT  {f.name}: migrations_audit 에 이미 "
+                            "기록됨 = _migrations 가 reset 됐을 가능성. "
+                            "정말 재실행하려면 MIGRATE_ALLOW_REPLAY=1 env 로 "
+                            "다시 실행. (회고 #47 — 022_drop_themes replay "
+                            "사고 방지)"
+                        )
+                        return 2
+                    event_type = "replay"
+                    print(f"  REPLAY {f.name}  (MIGRATE_ALLOW_REPLAY=1)")
+
                 print(f"  apply  {f.name}  ({cksum})")
                 try:
                     cur.execute(text)
@@ -110,6 +172,7 @@ def cmd_up(target: str | None = None) -> int:
                         "INSERT INTO _migrations (name, checksum) VALUES (%s, %s)",
                         (f.name, cksum),
                     )
+                    _audit_record(cur, f.name, cksum, event_type)
                 except Exception as e:
                     print(f"  FAIL   {f.name}: {e}")
                     return 1

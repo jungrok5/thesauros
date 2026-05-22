@@ -170,7 +170,7 @@ test.describe("Sidebar gating", () => {
 
 test.describe("/chart-vision — admin-only beta", () => {
   test("admin can open the chart-vision page", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, "jungrok5@gmail.com", "admin");
     const resp = await page.goto(`${BASE}/chart-vision`, {
       waitUntil: "domcontentloaded",
     });
@@ -179,6 +179,15 @@ test.describe("/chart-vision — admin-only beta", () => {
     await expect(page.locator("body")).toContainText("책 정신 분석");
     // File input present.
     await expect(page.locator("input[type='file']")).toHaveCount(1);
+  });
+
+  test("non-admin URL access redirects to /dashboard (회고 #62)", async ({ page }) => {
+    await signInAs(page, "guard-vision@e2e.test", "user");
+    await page.goto(`${BASE}/chart-vision`, { waitUntil: "domcontentloaded" });
+    // page.tsx 의 redirect("/dashboard") 결과 — final URL 이 dashboard.
+    expect(page.url()).toContain("/dashboard");
+    // chart-vision 페이지 본문 X.
+    await expect(page.locator("body")).not.toContainText("책 정신 분석");
   });
 
   test("API rejects unauthenticated POST", async ({ page }) => {

@@ -12,12 +12,21 @@
  * 새로고침하면 사라짐. 분석 이력 + rate limit 은 P_VISION_2.
  */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft, Camera } from "lucide-react";
+import { auth } from "@/auth";
 import { ChartVisionClient } from "./client";
 
 export const dynamic = "force-dynamic";
 
-export default function ChartVisionPage() {
+// Defence in depth (회고 #62): sidebar 의 admin gating 외에 페이지 자체도
+// admin 만 통과. URL 직접 입력으로 일반 user 가 진입해도 redirect 됨.
+// chart-vision route.ts 도 access_status='approved' 검사 (별도 layer).
+export default async function ChartVisionPage() {
+  const session = await auth();
+  const u = session?.user as { role?: string; email?: string } | undefined;
+  if (!u?.email) redirect("/login");
+  if (u.role !== "admin") redirect("/dashboard");
   return (
     <div className="space-y-6 max-w-3xl">
       <Link

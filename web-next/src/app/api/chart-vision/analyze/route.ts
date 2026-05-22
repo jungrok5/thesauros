@@ -24,6 +24,7 @@ import {
   CHART_VISION_SYSTEM_PROMPT,
   CHART_VISION_USER_PROMPT,
 } from "@/lib/chart-vision-prompt";
+import { checkAndRecord } from "@/lib/chart-vision-rate-limit";
 
 export const dynamic = "force-dynamic";
 // Vision API 보통 5-15s. 30s ceiling: Vercel Hobby 10s 초과 / Pro 60s
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
   // ── 1. 인증 ───────────────────────────────────────────────────────
   const session = await auth();
   const user = session?.user as
-    | { email?: string; access_status?: string }
+    | { id?: string; email?: string; access_status?: string }
     | undefined;
   if (!user?.email) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -48,6 +49,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { ok: false, error: "access pending — 관리자 승인 후 사용 가능합니다" },
       { status: 403 },
+    );
+  }
+
+  // ── 1b. Rate limit (회고 #28/#29) ─────────────────────────────────
+  // 비용 + Anthropic rate cap 보호. user id (없으면 email) 기반 sliding
+  // window. 5/분, 30/시, 200/일 — 사용자의 정상 사용 (분당 1-2 차트) 보다
+  // 한참 위, 자동화 스크립트 abuse 직전에서 차단.
+  const limitKey = user.id ?? user.email;
+  const limit = checkAndRecord(limitKey);
+  if (!limit.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `Rate limit 초과 (${limit.window}). ${limit.retryAfterSec}초 후 재시도.`,
+        retry_after_sec: limit.retryAfterSec,
+      },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSec) } },
     );
   }
 

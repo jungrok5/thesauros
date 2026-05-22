@@ -1,5 +1,15 @@
 -- 045 — Remove US equity universe (책 정신 + 운영 단순화)
 --
+-- ⚠️ DESTRUCTIVE — RUN ONLY ONCE, BACKUP FIRST.
+-- 이 migration 은 DELETE FROM 으로 US 종목 관련 모든 row (bars / analyze_results
+-- / scan_results / fundamentals / disclosures) 영구 삭제. revert 불가능.
+--
+-- 적용 전 절차:
+--   1. Supabase Dashboard → Database → Backups 에서 manual snapshot
+--   2. (Pro 플랜) PITR 7일 보존되니 사고 시 24h 내 복구 가능
+--   3. 적용 후 test_no_destructive_replay.py 의 ALLOWED_DESTRUCTIVE 에
+--      이미 등록됨 — replay guard 통과
+--
 -- 책 2부 7장 탑다운: 코스피/코스닥 종목 매매 + 미국은 글로벌 지수
 -- (탑다운 1단계) 로만 활용. 종목 매매는 KR. 또 Naver/yfinance 둘 다
 -- GH Actions Azure IP 차단 (project_us_yfinance_blocked.md 참조) 으로

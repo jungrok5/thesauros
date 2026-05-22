@@ -71,6 +71,7 @@ _RETENTION_EXEMPT = {
     "themes",                 # ~265 rows (Naver theme universe), weekly upsert
     "theme_members",          # ~6K rows, fully replaced per theme on each cron
     "theme_metrics_cache",    # ~265 rows, TRUNCATE+INSERT every weekly cron
+    "migrations_audit",       # append-only history, ~1 row per applied migration
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.

@@ -235,6 +235,60 @@ def test_post_to_admins_uses_cron_health_helpers():
     assert mock_send.call_count == 2  # one per admin
 
 
+def test_start_aborts_when_db_above_hard_ceiling(fake_baseline_path, monkeypatch):
+    """DB 95% 이상이면 start ping 이 abort 메시지 발사 후 exit(2). 회고
+    #52 — Supabase read-only 진입 방지의 외측 가드. retention.py 의
+    90% trigger 와 별개 — retention 이 못 따라잡는 ingest 폭주 시 외측
+    중단."""
+    # 95% = 475MB. _capture_baseline 가 fake 데이터 returnning 하므로
+    # 그 fake 의 db_size_mb 를 96% 로 override.
+    monkeypatch.setattr(notify_admin_cron, "_capture_baseline", lambda: {
+        "captured_at": "2026-05-22T08:00:00+00:00",
+        "db_size_mb": 480.0,   # 96%
+        "count_scan_results": 37000,
+        "count_analyze_results": 2700,
+        "active_signals": 5500,
+        "with_eligibility": 2700,
+    })
+    posted: list[str] = []
+    monkeypatch.setattr(notify_admin_cron, "_post_to_admins",
+                        lambda text, dr: posted.append(text) or 1)
+    rc = notify_admin_cron.cmd_start(dry_run=False)
+    assert rc == 2, "exit code must be non-zero so workflow step fails"
+    assert any("HARD ceiling" in t for t in posted)
+    assert any("96.0%" in t for t in posted)
+
+
+def test_start_warns_when_db_in_soft_band(fake_baseline_path, monkeypatch):
+    """90-95% 구간은 abort 안 함 — 경고만 prepend. cron 진행."""
+    monkeypatch.setattr(notify_admin_cron, "_capture_baseline", lambda: {
+        "captured_at": "2026-05-22T08:00:00+00:00",
+        "db_size_mb": 460.0,   # 92%
+        "count_scan_results": 37000,
+        "count_analyze_results": 2700,
+        "active_signals": 5500,
+        "with_eligibility": 2700,
+    })
+    posted: list[str] = []
+    monkeypatch.setattr(notify_admin_cron, "_post_to_admins",
+                        lambda text, dr: posted.append(text) or 1)
+    rc = notify_admin_cron.cmd_start(dry_run=False)
+    assert rc == 0
+    assert any("WARNING" in t for t in posted)
+
+
+def test_start_silent_when_db_under_soft_band(fake_baseline_path, monkeypatch):
+    """SOFT 미만이면 일반 시작 메시지 — WARNING / abort prefix 없음."""
+    # default fake_baseline 의 db_size_mb 는 449.3 (89.86%) — SOFT 미만.
+    posted: list[str] = []
+    monkeypatch.setattr(notify_admin_cron, "_post_to_admins",
+                        lambda text, dr: posted.append(text) or 1)
+    rc = notify_admin_cron.cmd_start(dry_run=False)
+    assert rc == 0
+    assert all("HARD ceiling" not in t for t in posted)
+    assert all("WARNING" not in t for t in posted)
+
+
 def test_post_to_admins_dry_run_does_not_call_telegram():
     with patch.object(notify_admin_cron, "admin_chat_ids", return_value=["111"]):
         with patch.object(notify_admin_cron, "send_telegram") as mock_send:

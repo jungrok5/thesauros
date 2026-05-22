@@ -169,6 +169,28 @@ def cmd_start(dry_run: bool, label: str = "Daily-scan") -> int:
     if run_url:
         text += f"\n👉 <a href=\"{run_url}\">실행 보기 ↗</a>"
 
+    # ── DB 천장 가드 (회고 #52) ──────────────────────────────────────
+    # Supabase Free 500MB 의 95% (475MB) 초과 시 ingest 진행하면 read-only
+    # 진입 위험 → 모든 cron 즉시 abort. start-ping 은 abort 메시지로 발사
+    # 한 후 exit(2) — 후속 step 들이 "if: always()" 가 아니면 skip 됨.
+    # retention.py 의 90% trigger (VACUUM FULL bars) 와 별개의 외측 가드.
+    SOFT_PCT = 90.0
+    HARD_PCT = 95.0
+    if pct >= HARD_PCT:
+        alert = (
+            f"🚨 <b>{label} 중단</b>\n"
+            f"DB {baseline['db_size_mb']:.1f}MB ({pct:.1f}%) — HARD ceiling "
+            f"({HARD_PCT}%) 초과. ingest 시 Supabase read-only 진입 위험.\n"
+            f"즉시 VACUUM FULL bars 필요 또는 retention 정책 재검토.\n"
+        )
+        if run_url:
+            alert += f"👉 <a href=\"{run_url}\">실행 보기 ↗</a>"
+        _post_to_admins(alert, dry_run)
+        log.error("aborting cron — db %.1f%% > %.1f%%", pct, HARD_PCT)
+        return 2   # non-zero → workflow step fails
+    elif pct >= SOFT_PCT:
+        text = "⚠️ <b>WARNING</b> — DB 사용량 SOFT 경계 초과\n" + text
+
     sent = _post_to_admins(text, dry_run)
     return 0 if sent > 0 or dry_run else 2
 

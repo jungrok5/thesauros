@@ -437,14 +437,45 @@ def prune_scan_results() -> int:
     return prune_one(*POLICIES[3][:2])
 
 
+# Postgres advisory-lock key — unique 32-bit int. 사용처는 retention.py
+# 만이라 충돌 없음 (회고 #19/#56 — daily-data + weekly-scan 동시 발사 시
+# retention 이 중복 실행되는 race 방지).
+_RETENTION_LOCK_KEY = 0xC1A5_5C0D   # 임의로 고른 magic number
+
+
+def _try_advisory_lock() -> bool:
+    """Try pg_try_advisory_lock(key) — return True if acquired, False
+    if another session already holds it. Lock auto-releases on session
+    end. Cross-cron protection only (single session within a script is
+    OK to reuse)."""
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (_RETENTION_LOCK_KEY,))
+            got = cur.fetchone()[0]
+    return bool(got)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-lock", action="store_true",
+                   help="advisory lock 건너뛰기 (테스트/긴급 용)")
     args = p.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
     )
+
+    # Advisory lock — daily-data 와 weekly-scan 이 같은 시각에 retention
+    # 둘 다 호출하면 DELETE 충돌 + dead tuple 폭증 가능. 두 번째 호출은
+    # skip + 종료 (0). admin notification 은 cron 의 end-ping 이 처리.
+    if not args.no_lock:
+        if not _try_advisory_lock():
+            log.info(
+                "retention skipped — another session holds the lock "
+                "(another cron concurrent). graceful exit."
+            )
+            return 0
 
     verb = "would delete" if args.dry_run else "deleted"
     total = 0
