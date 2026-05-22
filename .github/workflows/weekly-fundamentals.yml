@@ -130,6 +130,18 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: timeout 10m python -m app.db.ingest_themes
+      - name: Publish theme_metrics_cache (snapshot for /themes page)
+        # theme_metrics() RPC takes 9-10s cold (645k bars window sort).
+        # Calling it per page-load tipped Vercel's 10s timeout and showed
+        # "테마 데이터 없음" placeholder. Snapshot it to a regular table
+        # here so the page reads with a 10ms SELECT. migration 046 +
+        # app/db/publish_theme_metrics.py.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: timeout 5m python -m app.db.publish_theme_metrics
       - name: Earnings calendar (KR filing cadence)
         # Pure DB-side seed — no external calls. Inserts the next 4
         # legal filing cutoffs per ticker (1Q/2Q/3Q/FY). UI joins

@@ -58,4 +58,23 @@ describe("/themes page — performance config invariants", () => {
     // dedicated error variable.
     expect(src).toMatch(/fetchError/);
   });
+
+  it("reads from theme_metrics_cache before the slow RPC", () => {
+    // The weekly cache (migration 046, published by
+    // app/db/publish_theme_metrics.py from weekly-fundamentals.yml)
+    // gives /themes a sub-10ms read path. The slow RPC stays as the
+    // fallback when the cache is empty (first deploy or weekly cron
+    // running). Regression guard: this test ensures the page reads
+    // theme_metrics_cache as the primary source — accidentally
+    // reverting to RPC-only would re-introduce the 9-10s page load.
+    expect(src).toMatch(/theme_metrics_cache/);
+    // And the cache read must come before the RPC call in source
+    // order — easiest pin is "the substring 'theme_metrics_cache'
+    // appears before 'rpc(\"theme_metrics\"'".
+    const cacheIdx = src.indexOf("theme_metrics_cache");
+    const rpcIdx = src.indexOf('rpc("theme_metrics"');
+    expect(cacheIdx).toBeGreaterThan(-1);
+    expect(rpcIdx).toBeGreaterThan(-1);
+    expect(cacheIdx).toBeLessThan(rpcIdx);
+  });
 });

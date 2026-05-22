@@ -51,24 +51,44 @@ type ThemeRow = {
 
 type SortKey = "hot" | "up" | "down" | "buys" | "size";
 
-type FetchResult = { rows: ThemeRow[]; error: string | null };
+type FetchResult = { rows: ThemeRow[]; error: string | null; source: "cache" | "rpc" };
 
 async function fetchThemes(): Promise<FetchResult> {
   const sb = getServerClient();
+
+  // 1) Read theme_metrics_cache first (migration 046) — ~10 ms snapshot
+  //    refreshed weekly by `app.db.publish_theme_metrics`. Falls back to
+  //    direct RPC if cache is empty (first-run or weekly job lagging).
   const t0 = Date.now();
+  const { data: cached, error: cacheErr } = await sb
+    .from("theme_metrics_cache")
+    .select("*");
+  const cacheDur = Date.now() - t0;
+  if (!cacheErr && cached && cached.length > 0) {
+    return {
+      rows: cached.map(normalize),
+      error: null,
+      source: "cache",
+    };
+  }
+  if (cacheErr) {
+    console.warn(`[themes] cache read failed after ${cacheDur}ms:`, cacheErr.message);
+  } else if (cached) {
+    console.info(`[themes] cache empty — falling back to RPC (weekly job may be lagging)`);
+  }
+
+  // 2) Fallback to RPC. Slow (9-10s cold) but accurate.
+  const t1 = Date.now();
   const { data, error } = await sb.rpc("theme_metrics");
-  const dur = Date.now() - t0;
+  const dur = Date.now() - t1;
   if (error || !data) {
     console.error(
       `[themes] theme_metrics rpc failed after ${dur}ms:`,
       error?.message,
     );
-    return { rows: [], error: error?.message ?? "rpc returned no data" };
+    return { rows: [], error: error?.message ?? "rpc returned no data", source: "rpc" };
   }
   if (dur > 5000) {
-    // Surface slow-query observability without failing the page —
-    // helps catch regressions on the bars window-sort that the RPC
-    // depends on (migration 042 + the EXPLAIN noted 2026-05-22).
     console.warn(`[themes] theme_metrics rpc slow: ${dur}ms`);
   }
   type RpcRow = {
@@ -84,12 +104,29 @@ async function fetchThemes(): Promise<FetchResult> {
     avoid: number;
     top_tickers: string[] | null;
   };
-  const rows = (data as unknown as RpcRow[]).map((r) => ({
+  const rows = (data as unknown as RpcRow[]).map(normalize);
+  return { rows, error: null, source: "rpc" };
+}
+
+/** Shared normalizer for cache + RPC row shapes (they're identical). */
+function normalize(r: {
+  theme_id: number;
+  name: string;
+  members: number;
+  avg_change_pct: string | number | null;
+  up_count: number;
+  down_count: number;
+  strong_buy: number;
+  buy: number;
+  hold: number;
+  avoid: number;
+  top_tickers: string[] | null;
+}): ThemeRow {
+  return {
     theme_id: r.theme_id,
     name: r.name,
     members: r.members,
-    avg_change_pct:
-      r.avg_change_pct == null ? null : Number(r.avg_change_pct),
+    avg_change_pct: r.avg_change_pct == null ? null : Number(r.avg_change_pct),
     up_count: r.up_count,
     down_count: r.down_count,
     strong_buy: r.strong_buy,
@@ -97,8 +134,7 @@ async function fetchThemes(): Promise<FetchResult> {
     hold: r.hold,
     avoid: r.avoid,
     top_tickers: r.top_tickers,
-  }));
-  return { rows, error: null };
+  };
 }
 
 function sortBy(rows: ThemeRow[], key: SortKey): ThemeRow[] {
@@ -136,8 +172,14 @@ export default async function ThemesPage({ searchParams }: PageProps) {
     (["hot", "up", "down", "buys", "size"] as SortKey[]).includes(sp.sort as SortKey)
       ? (sp.sort as SortKey)
       : "hot";
-  const { rows: all, error: fetchError } = await fetchThemes();
+  const { rows: all, error: fetchError, source } = await fetchThemes();
   const themes = sortBy(all, sortKey);
+  if (source === "rpc" && themes.length > 0) {
+    // Soft warning to logs when cache miss falls through to RPC — the
+    // weekly publish job (publish_theme_metrics in
+    // weekly-fundamentals.yml) should keep this rare.
+    console.warn("[themes] served from RPC fallback — cache empty");
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">

@@ -70,6 +70,7 @@ _RETENTION_EXEMPT = {
     "watchlist_groups",       # 1 row per user × group (bounded), user-owned
     "themes",                 # ~265 rows (Naver theme universe), weekly upsert
     "theme_members",          # ~6K rows, fully replaced per theme on each cron
+    "theme_metrics_cache",    # ~265 rows, TRUNCATE+INSERT every weekly cron
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.
