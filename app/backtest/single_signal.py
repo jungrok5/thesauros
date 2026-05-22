@@ -48,7 +48,40 @@ _MIN_BARS = 50
 
 
 def load_weekly_bars(ticker: str) -> pd.DataFrame:
-    """Pull all weekly bars for one ticker from Supabase, ordered."""
+    """Pull all weekly bars for one ticker.
+
+    Source dispatch via `BARS_SOURCE` env var (or fallback chain):
+      - "local" → DuckDB at data/backtest.duckdb (deep history, 2008-now)
+      - "db"    → Supabase `bars` table (live, ~2y retention)
+      - unset   → try local first; fall back to db if local empty/missing
+                  (preserves CI behavior when no local store exists)
+
+    All backtest paths (single_signal, sweep, portfolio) call this.
+    Phase 2 book-case tests don't (they load from fixture JSON).
+    """
+    import os
+    src = os.environ.get("BARS_SOURCE", "auto").lower()
+    if src in ("local", "auto"):
+        df = _load_from_local(ticker)
+        if not df.empty:
+            return df
+        if src == "local":
+            return df    # local explicit → don't fall through to DB
+    return _load_from_db(ticker)
+
+
+def _load_from_local(ticker: str) -> pd.DataFrame:
+    """Read weekly bars from the local DuckDB (data/backtest.duckdb).
+    Returns empty df if the store doesn't exist or ticker absent."""
+    try:
+        from app.backtest.local_store import load_bars as _local_load
+    except ImportError:
+        return pd.DataFrame()
+    return _local_load(ticker, granularity="W")
+
+
+def _load_from_db(ticker: str) -> pd.DataFrame:
+    """Read weekly bars from the Supabase `bars` table (live)."""
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -10,7 +10,13 @@ __pycache__/
 
 # Large data files (PIT database, model artifacts)
 data/*.duckdb
+data/*.duckdb.wal
 data/*.parquet
+# Backtest outputs — local-only by user policy (2026-05-23)
+data/sweep_*.csv
+data/portfolio_*.csv
+data/*.log
+data/*.txt
 models_store/*.pkl
 models_store/*.parquet
 models_store/signal_cache/
