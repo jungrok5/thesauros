@@ -16,6 +16,10 @@ import { test, expect } from "@playwright/test";
 
 const E2E_TOKEN = process.env.E2E_TEST_TOKEN ?? "playwright-dev-only";
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+// Public repo guard — admin email pulled from env, never hardcoded.
+// Defaults to a generic `@e2e.test` address so a fork running these
+// E2E tests doesn't accidentally hit the original maintainer's account.
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@e2e.test";
 
 async function signInAs(
   page: import("@playwright/test").Page,
@@ -45,7 +49,7 @@ async function signInAs(
 
 test.describe("/welcome — book-spirit rule documentation", () => {
   test("renders the data-refresh schedule table with all four cadences", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/welcome`, { waitUntil: "domcontentloaded" });
     const body = page.locator("body");
     // The new "데이터 갱신 일정" section must reach the user.
@@ -60,7 +64,7 @@ test.describe("/welcome — book-spirit rule documentation", () => {
   });
 
   test("explains the 5 book-spirit core rules", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/welcome`, { waitUntil: "domcontentloaded" });
     const body = page.locator("body");
     await expect(body).toContainText("책 정신 핵심 규칙");
@@ -73,7 +77,7 @@ test.describe("/welcome — book-spirit rule documentation", () => {
   });
 
   test("explains the 4 alert modes including 와병투자", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/welcome`, { waitUntil: "domcontentloaded" });
     const body = page.locator("body");
     await expect(body).toContainText("결정 알림");
@@ -83,7 +87,7 @@ test.describe("/welcome — book-spirit rule documentation", () => {
   });
 
   test("FAQ includes the US-removed explanation", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/welcome`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("body")).toContainText("미국 주식");
     await expect(page.locator("body")).toContainText("차트 비전");
@@ -96,7 +100,7 @@ test.describe("/welcome — book-spirit rule documentation", () => {
 
 test.describe("/settings/alerts — bedrest mode + categories", () => {
   test("shows the 와병투자 toggle prominently at the top", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/settings/alerts`, { waitUntil: "domcontentloaded" });
     // The bedrest toggle has a dedicated data-testid for stable picking.
     await expect(page.locator("[data-testid='pref-bedrest_mode']")).toBeVisible();
@@ -105,7 +109,7 @@ test.describe("/settings/alerts — bedrest mode + categories", () => {
   });
 
   test("groups toggles into the 4 categories the welcome page describes", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/settings/alerts`, { waitUntil: "domcontentloaded" });
     const body = page.locator("body");
     await expect(body).toContainText("결정 알림");
@@ -120,14 +124,14 @@ test.describe("/settings/alerts — bedrest mode + categories", () => {
 
 test.describe("NextDecisionChip — decision-surface visibility", () => {
   test("/screener shows the next-decision countdown", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("body")).toContainText("다음 매매 결정");
     await expect(page.locator("body")).toContainText("15:30 KST");
   });
 
   test("/stocks/[ticker] shows the compact next-decision chip", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/stocks/005930.KS`, {
       waitUntil: "domcontentloaded",
     });
@@ -145,7 +149,7 @@ test.describe("Sidebar gating", () => {
   test("admin user sees the 베타 group containing 차트 이미지 분석", async ({ page }) => {
     // Explicit role=admin — issue-session defaults to 'user' so the
     // sidebar's `isAdmin` flag would be false without this.
-    await signInAs(page, "jungrok5@gmail.com", "admin");
+    await signInAs(page, ADMIN_EMAIL, "admin");
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
     // Sidebar (desktop) is server-rendered with the admin items in DOM.
     // The MobileNav variant duplicates them inside the page tree so a
@@ -170,7 +174,7 @@ test.describe("Sidebar gating", () => {
 
 test.describe("/chart-vision — admin-only beta", () => {
   test("admin can open the chart-vision page", async ({ page }) => {
-    await signInAs(page, "jungrok5@gmail.com", "admin");
+    await signInAs(page, ADMIN_EMAIL, "admin");
     const resp = await page.goto(`${BASE}/chart-vision`, {
       waitUntil: "domcontentloaded",
     });

@@ -23,10 +23,13 @@ DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR = ROOT / ".cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
-# SEC EDGAR identification — required by SEC fair use policy
+# SEC EDGAR identification — required by SEC fair use policy.
+# Format: "<App or your name> <your-email>". Set in .env. Public repo,
+# so the default here is a placeholder — replace it via SEC_USER_AGENT
+# env var. SEC will rate-limit / 403 if missing the email portion.
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT",
-    "FinanceResearch jungrok5@gmail.com",
+    "FinanceResearch contact@example.com",
 )
 
 # FRED (Federal Reserve Economic Data) — register at https://fred.stlouisfed.org/

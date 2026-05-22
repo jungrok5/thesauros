@@ -15,6 +15,7 @@
 import { test, expect } from "@playwright/test";
 
 const E2E_TOKEN = process.env.E2E_TEST_TOKEN ?? "playwright-dev-only";
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@e2e.test";
 
 async function signInAs(page: import("@playwright/test").Page, email: string) {
   const r = await page.request.post("/api/e2e-test/issue-session", {
@@ -38,7 +39,7 @@ async function signInAs(page: import("@playwright/test").Page, email: string) {
 test.describe("Watchlist authed CRUD", () => {
   test("POST adds, GET lists, DELETE removes", async ({ page, request }) => {
     test.skip(!process.env.E2E_TEST_TOKEN, "set E2E_TEST_TOKEN to run authed E2E");
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
 
     const ticker = "AAPL";
 
@@ -66,7 +67,7 @@ test.describe("Watchlist authed CRUD", () => {
 
   test("watchlist page renders for signed-in user", async ({ page }) => {
     test.skip(!process.env.E2E_TEST_TOKEN, "set E2E_TEST_TOKEN to run authed E2E");
-    await signInAs(page, "jungrok5@gmail.com");
+    await signInAs(page, ADMIN_EMAIL);
     await page.goto("/watchlist");
     await expect(page.getByRole("heading", { name: /관심 종목/ })).toBeVisible();
   });

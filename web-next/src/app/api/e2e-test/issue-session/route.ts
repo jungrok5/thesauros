@@ -20,6 +20,13 @@ import { getServerClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const IS_PROD = process.env.NODE_ENV === "production";
+// Defence in depth — Vercel preview deploys also run with NODE_ENV
+// production-ish + serve a public URL. Block both 'production' and
+// 'preview' env unless explicitly opted in. Local dev (`vercel dev` or
+// `next dev`) has VERCEL_ENV unset → passes.
+const VERCEL_LIVE =
+  process.env.VERCEL_ENV === "production" ||
+  process.env.VERCEL_ENV === "preview";
 const PROD_ALLOWED = process.env.ALLOW_E2E_IN_PROD === "1";
 
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
@@ -95,7 +102,7 @@ async function upsertTestUser(
 }
 
 export async function POST(req: NextRequest) {
-  if (IS_PROD && !PROD_ALLOWED) {
+  if ((IS_PROD || VERCEL_LIVE) && !PROD_ALLOWED) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const expected = expectedToken();
