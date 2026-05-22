@@ -8237,10 +8237,10 @@
     {
       "signal_type": "action_strong_buy",
       "timeframe": "daily",
-      "strength": 0.858,
-      "reason": "STRONG_BUY (book_score=+0.87)",
+      "strength": 0.91,
+      "reason": "STRONG_BUY (book_score=+1.00)",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 75400.0,
         "stretch_reason": null
@@ -8259,16 +8259,45 @@
         "ma_period": 240,
         "ma_value": 68516.66666666667
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 246,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 283,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-09-19": [
     {
       "signal_type": "action_strong_buy",
       "timeframe": "daily",
-      "strength": 0.858,
-      "reason": "STRONG_BUY (book_score=+0.87)",
+      "strength": 0.91,
+      "reason": "STRONG_BUY (book_score=+1.00)",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 79700.0,
         "stretch_reason": null
@@ -8287,16 +8316,45 @@
         "ma_period": 240,
         "ma_value": 68508.75
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 245,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 282,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-09-26": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 손절 폭 15% (책 룰 -10% 초과)",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 83300.0,
         "stretch_reason": "손절 폭 15% (책 룰 -10% 초과)"
@@ -8315,16 +8373,45 @@
         "ma_period": 240,
         "ma_value": 68511.66666666667
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 244,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 281,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-10-03": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 손절 폭 18% (책 룰 -10% 초과)",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 89000.0,
         "stretch_reason": "손절 폭 18% (책 룰 -10% 초과)"
@@ -8343,16 +8430,45 @@
         "ma_period": 240,
         "ma_value": 68538.75
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 243,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 280,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-10-10": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 52w 위치 100% + 8주 +32%",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 94400.0,
         "stretch_reason": "52w 위치 100% + 8주 +32%"
@@ -8371,16 +8487,45 @@
         "ma_period": 240,
         "ma_value": 68590.0
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 242,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 279,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-10-17": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 52w 위치 98% + 8주 +37%",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 97900.0,
         "stretch_reason": "52w 위치 98% + 8주 +37%"
@@ -8399,16 +8544,45 @@
         "ma_period": 240,
         "ma_value": 68652.91666666667
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 241,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 278,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-10-24": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 52w 위치 98% + 8주 +42%",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 98800.0,
         "stretch_reason": "52w 위치 98% + 8주 +42%"
@@ -8427,16 +8601,45 @@
         "ma_period": 240,
         "ma_value": 68723.33333333333
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 240,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 277,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-10-31": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.678,
+      "strength": 0.73,
       "reason": "HOLD · 8주 +55% (책 +50% 룰 위반) · 52w 위치 98% + 8주 +55%",
       "params": {
-        "book_score": 0.87,
+        "book_score": 1.0,
         "trend_signal": "BUY",
         "last_close": 107500.0,
         "stretch_reason": "8주 +55% (책 +50% 룰 위반) · 52w 위치 98% + 8주 +55%"
@@ -8455,19 +8658,77 @@
         "ma_period": 240,
         "ma_value": 68831.66666666667
       }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 239,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 276,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
+      }
     }
   ],
   "2025-11-07": [
     {
       "signal_type": "action_hold",
       "timeframe": "daily",
-      "strength": 0.57,
+      "strength": 0.66,
       "reason": "HOLD · 마지막 봉 장대음봉 — 책 룰: 매도 압력",
       "params": {
-        "book_score": 0.6,
+        "book_score": 0.825,
         "trend_signal": "BUY",
         "last_close": 97900.0,
         "stretch_reason": "마지막 봉 장대음봉 — 책 룰: 매도 압력"
+      }
+    },
+    {
+      "signal_type": "pattern_rounding_bottom",
+      "timeframe": "weekly",
+      "strength": 0.75,
+      "reason": "원형바닥 (Cup with Handle) 완성 (신뢰도 0.75, bullish)",
+      "params": {
+        "kind": "원형바닥 (Cup with Handle)",
+        "direction": "bullish",
+        "confidence": 0.75,
+        "timeframe": "weekly",
+        "cup_bottom": {
+          "idx": 238,
+          "date": "2024-11-15",
+          "price": 49900.0,
+          "kind": "low",
+          "volume": 215587402.0
+        },
+        "recovery_peak": {
+          "idx": 275,
+          "date": "2025-08-01",
+          "price": 74000.0,
+          "kind": "high",
+          "volume": 148891490.0
+        },
+        "handle_low": 67500.0,
+        "rim": 74000.0,
+        "variant": "v_recovery"
       }
     }
   ],

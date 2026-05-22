@@ -16,11 +16,12 @@ What this test verifies:
   2) System fires action_buy near book's handle date (mid-2025).
   3) System fires pattern_ma240_breakout near 2025-08 — the "240MA
      동시 돌파 더 강한 매수" the book specifically calls out.
-  4) Known gap (today): pattern_cup_and_handle does NOT fire because
-     the textbook detector requires left-rim/right-rim ≈ same price
-     and Samsung 2024-2025 has no matching left rim (it's a V-recovery
-     past prior highs, which the book labels as cup-handle stylistically).
-     TODO #PATTERN_CUP_RELAXED to handle this variant.
+  4) Pattern detector (Phase 2 #PATTERN_CUP_RELAXED fix, 2026-05-22):
+     pattern_rounding_bottom (= Cup-with-Handle, slug "원형바닥") fires
+     2025-09-12 with variant='v_recovery', confidence 0.75. The V-
+     recovery variant added to detect_cup_and_handle handles the
+     book's stylistic "deep V + handle + breakout" case (no matching
+     left rim required).
 
 Reuses fixture from test_samsung_5y_monthly_10ma — same ticker, same
 date range.
@@ -175,23 +176,34 @@ def test_pattern_ma240_breakout_fires_in_window(walk) -> None:
 # Known gap (today): pattern_cup_and_handle doesn't fire
 # ─────────────────────────────────────────────────────────────────────
 
-def test_pattern_cup_and_handle_does_not_fire_today(walk) -> None:
-    """detect_cup_and_handle requires left-rim ≈ right-rim (tol=10%)
-    per William O'Neil's textbook definition. Samsung 2024-2025 is a
-    V-recovery past prior peaks — book labels it cup-handle
-    stylistically but the textbook constraint doesn't hold.
+def test_pattern_cup_handle_fires_with_v_recovery_variant(walk) -> None:
+    """Phase 2 #PATTERN_CUP_RELAXED fix: a V-recovery cup-handle (no
+    matching left rim) should fire with variant='v_recovery'. The
+    pattern's signal_type is `pattern_rounding_bottom` (책 명칭
+    "원형바닥 (Cup with Handle)" → slug "원형바닥" matches first).
 
-    Pin the current behavior. When we relax the detector (TODO
-    #PATTERN_CUP_RELAXED, similar to the rim variant we did for
-    double_top), flip this to MUST-FIRE.
-    """
+    Currently first fires 2025-09-12 — exactly in the book's handle
+    window. Required minimum: at least 1 fire between the handle
+    window start and book's high date."""
     hits = []
-    for d, sigs in walk.items():
-        for s in sigs:
-            if s.get("signal_type", "").startswith("pattern_cup"):
-                hits.append((d, s.get("signal_type")))
-    assert hits == [], (
-        f"pattern_cup_and_handle now fires somewhere ({len(hits)} hits) — "
-        "improvement! Update this test to MUST-FIRE near the handle window "
-        "and close TODO #PATTERN_CUP_RELAXED."
+    for d in sorted(walk.keys()):
+        if not (_BOOK_HANDLE_WINDOW_START <= d <= _BOOK_HIGH_DATE):
+            continue
+        for s in walk[d]:
+            st = s.get("signal_type", "")
+            if st in ("pattern_rounding_bottom", "pattern_cup_and_handle"):
+                hits.append((d, s))
+    assert hits, (
+        "No pattern_rounding_bottom/cup_and_handle fired in the book's "
+        f"handle-through-high window [{_BOOK_HANDLE_WINDOW_START}, "
+        f"{_BOOK_HIGH_DATE}]. #PATTERN_CUP_RELAXED V-recovery variant "
+        "should catch this case — check detect_cup_and_handle."
+    )
+    # Variant flag — must come through params (Phase 2 _pattern_signals
+    # change forwards detector's extra into params).
+    variants = {s.get("params", {}).get("variant") for _, s in hits}
+    assert "v_recovery" in variants, (
+        f"None of the {len(hits)} cup fires marked variant=v_recovery. "
+        f"Variants seen: {variants}. The Samsung 2024-2025 case is the "
+        "canonical V-recovery — textbook can't match (no left rim)."
     )

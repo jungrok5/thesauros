@@ -608,6 +608,14 @@ def detect_cup_and_handle(df: pd.DataFrame,
     """깊은 U자 + 우측 작은 V자 (handle), 핸들 위로 돌파 시 진입.
 
     Book p280-281: 삼성전자 사례. 240MA 동시 돌파 시 더 강력.
+
+    Two variants:
+      (1) Textbook (William O'Neil): matching left + right rim, U cup,
+          handle pullback. High confidence.
+      (2) V-recovery (book's stylistic — Samsung 2024-2025): deep V
+          bottom + handle + breakout past the recovery peak. No
+          matching left rim. Lower confidence. Phase 2 #PATTERN_CUP_
+          RELAXED fix.
     """
     if df is None or len(df) < cup_min_bars + 10:
         return None
@@ -622,9 +630,41 @@ def detect_cup_and_handle(df: pd.DataFrame,
     if len(highs) < 2 or len(lows) < 1:
         return None
 
-    # Find a cup: leftmost high and rightmost high (matching), low between
-    last_high = highs[-1]
-    candidates_left = [h for h in highs[:-1] if last_high.idx - h.idx >= cup_min_bars]
+    textbook = _try_textbook_cup_handle(work, highs, lows, cup_min_bars, tol)
+    if textbook is not None:
+        return textbook
+
+    # V-recovery variant uses finer swings (distance=3) — the handle
+    # pullback is often shallow enough that distance=5 misses the
+    # intervening swing-low, causing the alternating filter to collapse
+    # the handle peak into the current breakout bar. Same root cause we
+    # fixed in detect_double_top.
+    fine_swings = find_swings(work, distance=3)
+    fine_highs = [s for s in fine_swings if s.kind == "high"]
+    fine_lows = [s for s in fine_swings if s.kind == "low"]
+    return _try_v_recovery_cup_handle(work, fine_highs, fine_lows, cup_min_bars)
+
+
+def _try_textbook_cup_handle(
+    work: pd.DataFrame, highs, lows, cup_min_bars: int, tol: float,
+) -> Optional[Pattern]:
+    """Textbook (O'Neil) cup-handle: matching rims, U cup, handle.
+
+    `last_high` here is the right RIM — the local peak that the handle
+    pulls back from. We exclude the current bar from being last_high
+    because if it is, the "handle" after it is empty / 1 bar long.
+    Walking forward, the breakout bar IS the current bar but the rim
+    formed earlier.
+    """
+    last_idx = len(work) - 1
+    # Exclude the current bar from rim candidates — the rim must have a
+    # handle AFTER it, and the handle needs to exist before the current
+    # breakout bar.
+    rim_candidates = [h for h in highs if h.idx < last_idx]
+    if not rim_candidates:
+        return None
+    last_high = max(rim_candidates, key=lambda h: h.idx)
+    candidates_left = [h for h in rim_candidates if last_high.idx - h.idx >= cup_min_bars]
     if not candidates_left:
         return None
     left_high = max(candidates_left, key=lambda h: h.price)
@@ -637,14 +677,13 @@ def detect_cup_and_handle(df: pd.DataFrame,
     if cup_bottom.price > min(left_high.price, last_high.price) * 0.90:
         return None  # not deep enough
 
-    # Handle: short shallow pullback after last_high
     handle_zone = work.iloc[last_high.idx:].reset_index(drop=True)
     if len(handle_zone) < 3:
         return None
     handle_low = float(handle_zone["low"].min())
     handle_depth = (last_high.price - handle_low) / last_high.price
     if handle_depth > 0.15:
-        return None  # too deep, handle invalid
+        return None
 
     last_close = float(work["close"].iloc[-1])
     rim = last_high.price
@@ -668,9 +707,9 @@ def detect_cup_and_handle(df: pd.DataFrame,
         detected_at=pd.to_datetime(work["date"].iloc[-1]) if "date" in work.columns else pd.to_datetime(work.index[-1]),
         entry=rim,
         stop=handle_low * 0.97,
-        target=rim + cup_depth,  # 책: 컵 깊이만큼 추가 상승
+        target=rim + cup_depth,
         reason=(
-            f"Cup-Handle: rim {rim:.2f}, bottom {cup_bottom.price:.2f} "
+            f"Cup-Handle (텍스트북): rim {rim:.2f}, bottom {cup_bottom.price:.2f} "
             f"({(cup_depth/rim*100):.1f}% deep), handle {handle_depth*100:.1f}% pullback"
             + (" / 핸들 돌파 완성" if completed else " / 핸들 진행 중")
         ),
@@ -680,6 +719,117 @@ def detect_cup_and_handle(df: pd.DataFrame,
             "right_high": last_high.to_dict(),
             "handle_low": handle_low,
             "rim": rim,
+            "variant": "textbook",
+        },
+    )
+
+
+def _try_v_recovery_cup_handle(
+    work: pd.DataFrame, highs, lows, cup_min_bars: int,
+) -> Optional[Pattern]:
+    """V-recovery cup-handle (book p280-281 stylistic, Samsung 2024-2025).
+
+    Structure:
+      - Deepest swing-low in lookback = cup bottom (the V).
+      - Substantial recovery: most-recent swing-high ≥ cup_bottom * 1.30
+        (book threshold — recovery has visibly turned the chart).
+      - Handle: pullback after recovery peak. Either:
+          • already formed (last_close near peak after a small dip), OR
+          • recovery peak IS the current bar (just broke out — handle was
+            a few bars before)
+      - Confidence base 0.55 (vs textbook 0.70): the structure is more
+        stylistic, lower priors than the rim-matching variant.
+    """
+    if len(lows) < 1 or len(highs) < 1:
+        return None
+    # cup_bottom is the lowest swing-low in the RECENT window, not the
+    # absolute lowest across all 290 lookback bars (otherwise an old crash
+    # bottom — e.g., COVID 2020 for Samsung — outranks the actual V-valley).
+    # Search range: idx in [20%, 95%] of work. Older lows are pre-history;
+    # the last 5% is "fresh crash" not yet recovered.
+    n = len(work)
+    candidate_lows = [s for s in lows if n * 0.20 <= s.idx <= n * 0.95]
+    if not candidate_lows:
+        return None
+    cup_bottom = min(candidate_lows, key=lambda s: s.price)
+    # Need a prior peak BEFORE the cup bottom (so it's actually a V valley,
+    # not just a long downtrend with no recovery).
+    pre_peak = max((h for h in highs if h.idx < cup_bottom.idx),
+                   key=lambda h: h.price, default=None)
+    if pre_peak is None:
+        return None
+    # Drop from pre_peak to cup_bottom must be ≥ 25 % (book: 대전환 자리).
+    drop_pct = (pre_peak.price - cup_bottom.price) / pre_peak.price
+    if drop_pct < 0.25:
+        return None
+
+    last_idx = len(work) - 1
+    last_close = float(work["close"].iloc[-1])
+
+    # Recovery peak = highest swing-high AFTER cup_bottom, EXCLUDING the
+    # current bar. This is the "handle reference" — the local top from
+    # which the most recent pullback originated.
+    post_highs = [h for h in highs if cup_bottom.idx < h.idx < last_idx]
+    if not post_highs:
+        return None
+    recovery_peak = max(post_highs, key=lambda h: h.price)
+    recovery_pct = (recovery_peak.price - cup_bottom.price) / cup_bottom.price
+    if recovery_pct < 0.30:
+        return None  # not enough V-recovery yet
+
+    # Cup span: from pre_peak to recovery_peak. Must span at least
+    # cup_min_bars so it isn't a flash crash + bounce.
+    if recovery_peak.idx - pre_peak.idx < cup_min_bars:
+        return None
+
+    # Handle = bars between recovery_peak and current bar.
+    handle_zone = work.iloc[recovery_peak.idx + 1:last_idx + 1]
+    if len(handle_zone) < 2:
+        return None
+    handle_low = float(handle_zone["low"].min())
+    handle_depth = (recovery_peak.price - handle_low) / recovery_peak.price
+    if not (0.02 <= handle_depth <= 0.15):
+        return None
+
+    # Breakout: current close above the handle reference (recovery_peak).
+    if last_close < recovery_peak.price:
+        return None
+
+    rim = recovery_peak.price
+    completed = last_close >= rim   # breakout of recovery_peak = handle complete
+    cup_depth = rim - cup_bottom.price
+
+    conf = 0.55
+    ma_240 = _ma_value(work, 240)
+    if ma_240 is not None and last_close > ma_240:
+        conf += 0.10
+    if recovery_pct >= 0.50:
+        conf += 0.05   # deeper V-recovery = more decisive turn
+    if completed:
+        conf += 0.10
+    conf = min(conf, 0.90)   # capped lower than textbook (0.95)
+
+    return Pattern(
+        kind="원형바닥 (Cup with Handle)",
+        direction="bullish",
+        confidence=conf,
+        completed=completed,
+        detected_at=pd.to_datetime(work["date"].iloc[-1]) if "date" in work.columns else pd.to_datetime(work.index[-1]),
+        entry=rim,
+        stop=cup_bottom.price * 1.02,
+        target=rim + cup_depth,
+        reason=(
+            f"Cup-Handle (V-recovery): bottom {cup_bottom.price:.2f} → "
+            f"recovery {rim:.2f} ({recovery_pct*100:.0f}% up), handle "
+            f"{handle_depth*100:.1f}% pullback"
+            + (" / 핸들 돌파 완성" if completed else " / 핸들 진행 중")
+        ),
+        extra={
+            "cup_bottom": cup_bottom.to_dict(),
+            "recovery_peak": recovery_peak.to_dict(),
+            "handle_low": handle_low,
+            "rim": rim,
+            "variant": "v_recovery",
         },
     )
 

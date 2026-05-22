@@ -248,6 +248,76 @@ def test_higher_right_double_bottom_fires_and_flagged():
     _check_plan_invariant(p, "synthetic-higher-right-bottom")
 
 
+def make_textbook_cup_and_handle() -> pd.DataFrame:
+    """Textbook O'Neil Cup-with-Handle: matching left + right rims,
+    deep U, small handle pullback, breakout above the rim. Series
+    ends right after the breakout (no padding) so the detector sees
+    the clean structure without trailing swings."""
+    closes: list[float] = []
+    closes += list(np.linspace(60, 100, 15))     # rise to left rim ~100
+    closes += list(np.linspace(100, 65, 30))     # left side of U
+    closes += [67.0] * 8                          # cup bottom flat
+    closes += list(np.linspace(67, 99, 30))      # right side of U → right rim ~99
+    closes += list(np.linspace(99, 92, 8))       # handle pullback ~7%
+    closes += list(np.linspace(92, 108, 6))      # breakout above rim
+    return _to_df(closes)
+
+
+def test_textbook_cup_handle_fires_with_textbook_variant():
+    """The original detector path must still fire on a true Cup-with-
+    Handle (matching rims). Phase 2 fix added a fallback path but the
+    textbook is still preferred (higher confidence)."""
+    df = make_textbook_cup_and_handle()
+    p = detect_cup_and_handle(df)
+    assert p is not None, (
+        "Textbook Cup-with-Handle should fire (matching rims, deep U, "
+        "small handle, breakout above rim)"
+    )
+    assert p.direction == "bullish"
+    assert p.extra.get("variant") == "textbook", (
+        f"Expected variant=textbook, got {p.extra.get('variant')}. "
+        "Did the textbook path regress? V-recovery is the fallback only."
+    )
+    _check_plan_invariant(p, "synthetic-textbook-cup")
+
+
+def make_v_recovery_cup_handle() -> pd.DataFrame:
+    """V-recovery cup-handle (Samsung 2024-2025 stylistic): no matching
+    left rim, deep V-shape, then handle + breakout PAST the recovery
+    peak. Series ends right after breakout (no padding) so trailing
+    swings don't displace the structure."""
+    closes: list[float] = []
+    closes += list(np.linspace(90, 100, 10))     # pre-peak ~100
+    closes += list(np.linspace(100, 50, 35))     # crash to ~50 (50% drop)
+    closes += [50.0] * 5                          # bottom flat
+    closes += list(np.linspace(50, 75, 40))      # V-recovery to ~75 (recovery peak)
+    closes += list(np.linspace(75, 68, 8))       # handle pullback ~9%
+    closes += list(np.linspace(68, 80, 4))       # short breakout past 75
+    return _to_df(closes)
+
+
+def test_v_recovery_cup_handle_fires_with_variant_flag():
+    """Phase 2 #PATTERN_CUP_RELAXED fix: the book's stylistic V-recovery
+    cup-handle (no matching left rim) should now fire and stamp
+    extra['variant']='v_recovery'. Confidence capped at 0.90 (vs
+    textbook 0.95) — lower priors for the stylistic structure."""
+    df = make_v_recovery_cup_handle()
+    p = detect_cup_and_handle(df)
+    assert p is not None, (
+        "V-recovery Cup-with-Handle should fire (deep V + handle + "
+        "breakout past recovery peak). #PATTERN_CUP_RELAXED fix."
+    )
+    assert p.direction == "bullish"
+    assert p.extra.get("variant") == "v_recovery", (
+        f"Expected variant=v_recovery, got {p.extra.get('variant')}"
+    )
+    assert p.confidence <= 0.90, (
+        f"V-recovery confidence {p.confidence} > 0.90 cap. Textbook "
+        "variant should always be the higher-confidence path."
+    )
+    _check_plan_invariant(p, "synthetic-v-recovery-cup")
+
+
 def test_double_bottom_NEVER_completed_below_neckline():
     """Regression for 068930.KQ 2026-05-21: 쌍바닥 검출 후 last_close 가
     neckline 한참 아래 (8460 vs 9180 = -8 %) 인데도 completed=True 로
