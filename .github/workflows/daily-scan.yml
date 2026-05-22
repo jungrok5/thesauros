@@ -41,6 +41,19 @@ jobs:
           pip install -r requirements.txt
           pip install supabase "psycopg[binary]"
 
+      - name: Notify admin — cron start
+        # First DB-touching step so the baseline snapshot the end step
+        # diffs against is taken before retention shrinks anything.
+        # continue-on-error: a telegram outage shouldn't block the cron
+        # — the run is what matters; the ping is observability.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m app.db.notify_admin_cron start
+
       - name: Apply retention FIRST (free space before ingest)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -178,3 +191,19 @@ jobs:
         run: |
           pip install pytest
           python -m pytest app/db/tests/test_data_quality.py -v
+
+      - name: Notify admin — cron end
+        # Last step. `if: always()` so the ping fires regardless of
+        # earlier failures — that's exactly when the admin most needs
+        # to know. `job.status` reflects "the worst conclusion among
+        # prior steps" so success/failure/cancelled is captured.
+        # continue-on-error so a telegram outage doesn't mask the
+        # underlying run conclusion.
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m app.db.notify_admin_cron end --status ${{ job.status }}
