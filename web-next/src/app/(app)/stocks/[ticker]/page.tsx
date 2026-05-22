@@ -37,6 +37,7 @@ import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
+import { NextDecisionChip } from "@/components/next-decision-chip";
 import { InvestorFlow } from "@/components/investor-flow";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -375,6 +376,10 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
             )}
             <MarketHoursNotice />
             <LastClose ticker={ticker} />
+            {/* 다음 매매 결정 시점 (책 정신: 주봉 종가) — compact chip
+                형태로 LastClose 옆에. 사용자가 매일 들여다보는 충동을
+                줄이는 게 목적. */}
+            <NextDecisionChip compact />
             {/* 분석 시점 vs 현재가 차이는 BookVerdict header chip 통합
                 (2026-05-20). chip + trigger-cleared note 가 같은 정보 carry. */}
             <AnalysisView

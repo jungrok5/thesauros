@@ -189,22 +189,29 @@ def _user_prefs(user_id: str) -> Dict[str, bool]:
     backward compat) but is no longer queried — the /recommendations
     page that consumed the digest was removed in the search-only
     pivot (2026-05-19) and telegram_worker never wired a sender for it.
+
+    `bedrest_mode` (migration 044) — 책 2부 3장 "한달 누워있다 1회만
+    확인" 정신. ON 이면 run_once 가 이 user 의 모든 즉시 alert 를 skip.
     """
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT enable_enter, enable_pyramid, enable_warn, "
-                "enable_exit, enable_ma240_break, enable_quarter_25_break "
+                "enable_exit, enable_ma240_break, enable_quarter_25_break, "
+                "bedrest_mode "
                 "FROM alert_preferences WHERE user_id = %s",
                 (user_id,),
             )
             r = cur.fetchone()
             if not r:
-                return {k: True for k in (
-                    "enable_enter", "enable_pyramid", "enable_warn",
-                    "enable_exit", "enable_ma240_break",
-                    "enable_quarter_25_break",
-                )}
+                # No row yet → all-on defaults except bedrest (off).
+                return {
+                    "enable_enter": True, "enable_pyramid": True,
+                    "enable_warn": True, "enable_exit": True,
+                    "enable_ma240_break": True,
+                    "enable_quarter_25_break": True,
+                    "bedrest_mode": False,
+                }
             keys = [d[0] for d in cur.description]
             return {k: bool(v) for k, v in zip(keys, r)}
 
@@ -670,7 +677,7 @@ def _check_price_targets(
 
 def run_once(dry_run: bool = False) -> Dict[str, int]:
     stats = {"users": 0, "watched_tickers": 0, "new_alerts": 0, "sent": 0,
-             "pushed": 0, "skipped_existing": 0}
+             "pushed": 0, "skipped_existing": 0, "bedrest_skipped": 0}
 
     users = _users_with_alerts()
     stats["users"] = len(users)
@@ -683,6 +690,13 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
         if not watch:
             continue
         prefs = _user_prefs(u["id"])
+        # 와병투자 모드 — 책 2부 3장 정신. ON 인 사용자에게는 어떠한
+        # 즉시 alert 도 보내지 않는다. 별도 weekly digest 가 그 역할을
+        # 대신함 (P1 weekly-scan 구현 후 enable 예정).
+        if prefs.get("bedrest_mode"):
+            stats["bedrest_skipped"] += 1
+            log.info("skip user %s — bedrest_mode ON", u["id"])
+            continue
         tickers = [w["ticker"] for w in watch]
         category_by_ticker = {w["ticker"]: w["category"] for w in watch}
         watch_by_ticker = {w["ticker"]: w for w in watch}

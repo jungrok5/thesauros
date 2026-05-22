@@ -20,6 +20,7 @@ import { ActionPill } from "@/components/action-pill";
 import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 import { SubScoreChips } from "@/components/sub-score-chips";
+import { NextDecisionChip } from "@/components/next-decision-chip";
 import { PresetCardsClient } from "./preset-cards-client";
 import { SubScoreControlsClient } from "./sub-score-controls-client";
 
@@ -312,6 +313,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
           아니라 “이런 종목 발견 시 어떻게 행동할지” 함께 안내.
         </p>
       </header>
+
+      {/* "다음 결정 D-x" — 책 정신 visualize. 사용자가 매일 들여다보는
+          충동을 줄이는 게 목적. 다음 매매 결정 = 다음 금요일 15:30 KST. */}
+      <NextDecisionChip />
 
       {/* Preset 선택 — client component 로 분리. 클릭 즉시 active state
           반영 + isPending 스피너 표시. 서버 RSC fetch 가 끝나면 결과

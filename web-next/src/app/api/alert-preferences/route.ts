@@ -17,6 +17,10 @@ const FIELDS = [
   "enable_quarter_25_break",
   "enable_daily_top5",
   "enable_disclosure",
+  // 와병투자 모드 — 책의 이상적 사용자 모습 ("한달 누워있다 1회만 확인").
+  // ON 이면 telegram_worker 가 위 모든 enable_* 토글을 무시하고 주 1회
+  // 통합 요약만 발사. (migration 044)
+  "bedrest_mode",
 ] as const;
 
 const DEFAULTS: Record<(typeof FIELDS)[number], boolean> = {
@@ -28,6 +32,7 @@ const DEFAULTS: Record<(typeof FIELDS)[number], boolean> = {
   enable_quarter_25_break: true,
   enable_daily_top5: false,
   enable_disclosure: true,
+  bedrest_mode: false,
 };
 
 async function currentUser() {
