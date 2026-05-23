@@ -46,9 +46,11 @@ _REGIME_DF: Optional[pd.DataFrame] = None
 
 
 def _load_regime_df() -> pd.DataFrame:
-    """Load + cache the KOSPI MONTHLY bars with 10MA + above flag.
+    """Load + cache the KOSPI MONTHLY bars with 10MA + derived fields.
 
-    Schema: date (month-end), close, ma_10, above (bool).
+    Schema: date (month-end), close, ma_10, above (bool),
+            below_pct (% below 10MA, 0 if above), ma_10_slope_3m (MA
+            change vs 3 months ago — negative = falling).
     Earlier rows have ma_10 = NaN (before MIN_PERIODS).
     """
     global _REGIME_DF
@@ -68,6 +70,10 @@ def _load_regime_df() -> pd.DataFrame:
         window=MA_WINDOW, min_periods=MA_MIN_PERIODS,
     ).mean()
     df["above"] = df["close"] > df["ma_10"]
+    # Magnitude of being below MA — 0 if at/above, positive % if below.
+    df["below_pct"] = ((df["ma_10"] - df["close"]) / df["ma_10"] * 100).clip(lower=0)
+    # MA slope: this month's MA vs 3 months ago. Negative = falling.
+    df["ma_10_slope_3m"] = df["ma_10"] - df["ma_10"].shift(3)
     _REGIME_DF = df
     log.debug("loaded KOSPI regime: %d monthly bars, %s ~ %s",
               len(df), df["date"].min().date(), df["date"].max().date())
@@ -126,6 +132,80 @@ def kospi_regime_filter(allow_unknown: bool = True):
 
 # Backward-compat name
 kospi_240ma_filter = kospi_regime_filter
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Smart filter — combine magnitude + slope to avoid false-bear blocks
+# ─────────────────────────────────────────────────────────────────────
+
+def _regime_state_at(d: date) -> Optional[dict]:
+    """Return the latest regime row ≤ d as a dict, or None if no
+    valid (post-MA) bar yet."""
+    df = _load_regime_df()
+    mask = df["date"].dt.date <= d
+    if not mask.any():
+        return None
+    row = df[mask].iloc[-1]
+    if pd.isna(row["ma_10"]):
+        return None
+    return {
+        "close": float(row["close"]),
+        "ma_10": float(row["ma_10"]),
+        "above": bool(row["above"]),
+        "below_pct": float(row["below_pct"]),
+        "ma_10_slope_3m": float(row["ma_10_slope_3m"])
+        if not pd.isna(row["ma_10_slope_3m"]) else None,
+    }
+
+
+def kospi_smart_filter(
+    below_threshold_pct: float = 3.0,
+    require_falling_ma: bool = True,
+    allow_unknown: bool = True,
+):
+    """Smart KOSPI regime filter — block BUY only on REAL bears.
+
+    A "real bear" requires BOTH:
+      (a) close ≥ `below_threshold_pct` below 10MA (default: 3%) —
+          rules out small intraprice dips around the MA (책 시장
+          consolidation 무시), and
+      (b) `require_falling_ma`: 10MA itself trending down (slope of
+          MA10 over the last 3 months is negative). This guards against
+          single-month flush events during otherwise rising trends.
+
+    Either condition relaxed → fewer blocks → more upside captured
+    during 2014/2018-style consolidations.
+
+    Args:
+        below_threshold_pct: KOSPI must be at least this % below
+            10MA to be considered bearish. 3% empirically catches
+            2008 (-10%) / 2020 (-4%) / 2022 (-10%+) while passing
+            2018 (-0.6%) / 2014 (small).
+        require_falling_ma: also require MA10 itself to be falling.
+            Default True.
+        allow_unknown: pre-MA history (early KOSPI) — True allows BUY,
+            False blocks.
+
+    Returns:
+        callable (date) → bool — True = allow BUY, False = block.
+    """
+    def _filter(d: date) -> bool:
+        state = _regime_state_at(d)
+        if state is None:
+            return allow_unknown
+        # Above MA → bull, allow.
+        if state["above"]:
+            return True
+        # Below MA — check magnitude.
+        if state["below_pct"] < below_threshold_pct:
+            return True   # shallow dip, treat as consolidation
+        # Below by meaningful amount — check slope if required.
+        if require_falling_ma:
+            slope = state["ma_10_slope_3m"]
+            if slope is None or slope >= 0:
+                return True   # MA still rising → consolidation, allow
+        return False   # meaningful AND sustained downtrend → block
+    return _filter
 
 
 def regime_stats() -> dict:

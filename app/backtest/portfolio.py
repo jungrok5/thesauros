@@ -441,9 +441,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "skipping the ~14-min walk")
     p.add_argument("--csv", default=None, help="dump per-trade CSV")
     p.add_argument("--regime-filter", action="store_true",
-                   help="enable KOSPI 월봉 10MA regime filter — disable "
-                        "BUY when broad market is below its 10-month MA "
-                        "(book p318: 거시 → 추세 → 패턴 우선순위)")
+                   help="enable simple KOSPI 월봉 10MA regime filter — "
+                        "disable BUY when KOSPI below 10MA (book p318: "
+                        "거시 → 추세 → 패턴 우선순위)")
+    p.add_argument("--regime-smart", action="store_true",
+                   help="enable smart regime filter — block BUY only when "
+                        "KOSPI is ≥3%% below 10MA AND MA itself is falling. "
+                        "Avoids false-bear blocks during shallow pullbacks.")
+    p.add_argument("--regime-threshold-pct", type=float, default=3.0,
+                   help="smart filter: %% below 10MA required to consider "
+                        "bearish (default: 3.0)")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -483,12 +490,20 @@ def main(argv: Optional[List[str]] = None) -> int:
              len(all_fires), len(candidates))
 
     regime_filter = None
-    if args.regime_filter:
+    if args.regime_smart:
+        from app.backtest.market_regime import kospi_smart_filter
+        regime_filter = kospi_smart_filter(
+            below_threshold_pct=args.regime_threshold_pct,
+            require_falling_ma=True,
+        )
+        log.info("regime filter ON (SMART): block only when KOSPI ≥%.1f%% "
+                 "below 10MA AND MA falling", args.regime_threshold_pct)
+    elif args.regime_filter:
         from app.backtest.market_regime import kospi_regime_filter, regime_stats
         regime_filter = kospi_regime_filter()
         rs = regime_stats()
-        log.info("regime filter ON: KOSPI 월봉 10MA — %d above / %d below "
-                 "(%.1f%% bullish months)",
+        log.info("regime filter ON (SIMPLE): KOSPI 월봉 10MA — %d above / "
+                 "%d below (%.1f%% bullish months)",
                  rs["n_months_above_10ma"], rs["n_months_below_10ma"],
                  rs["pct_above"] * 100)
 

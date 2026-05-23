@@ -33,6 +33,22 @@ from app.book.patterns import (
     detect_all,
 )
 from app.book.analyzer import analyze_ticker
+from app.book._swings import clear_swings_cache
+from app.book.trend import clear_resample_cache
+
+
+@pytest.fixture(autouse=True)
+def _clear_analyzer_caches():
+    """Pattern tests call detect_* functions directly, bypassing
+    analyze_ticker (which would clear caches). Force a fresh state
+    before each test so id(df) collisions across tests can't leak
+    stale (cached) swings from a previously-GC'd DataFrame.
+    """
+    clear_swings_cache()
+    clear_resample_cache()
+    yield
+    clear_swings_cache()
+    clear_resample_cache()
 
 
 # ─────────────────────────────────────────────────────────────────────

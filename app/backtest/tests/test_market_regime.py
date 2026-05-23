@@ -161,3 +161,76 @@ def test_portfolio_no_filter_takes_all_buys(monkeypatch) -> None:
         initial_cash=1_000_000, max_positions=2,
     )
     assert len(state.trades) == 2
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Smart filter — combinatorial cases
+# ─────────────────────────────────────────────────────────────────────
+
+def _stub_state(close: float, ma_10: float, slope_3m: float = 0.0) -> dict:
+    """Mock _regime_state_at result."""
+    below_pct = max(0.0, (ma_10 - close) / ma_10 * 100)
+    return {
+        "close": close, "ma_10": ma_10, "above": close > ma_10,
+        "below_pct": below_pct, "ma_10_slope_3m": slope_3m,
+    }
+
+
+def test_smart_above_ma_allows(monkeypatch) -> None:
+    """Above MA → allow regardless of slope."""
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=2500, ma_10=2400, slope_3m=-50))
+    f = MR.kospi_smart_filter()
+    assert f(date(2020, 1, 1)) is True
+
+
+def test_smart_shallow_dip_allows(monkeypatch) -> None:
+    """Below MA but < threshold% → allow (consolidation)."""
+    # 2018-02 scenario: KOSPI 2427 vs MA 2441 → 0.57% below.
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=2427, ma_10=2441, slope_3m=-5))
+    f = MR.kospi_smart_filter(below_threshold_pct=3.0)
+    assert f(date(2018, 2, 28)) is True
+
+
+def test_smart_deep_dip_falling_ma_blocks(monkeypatch) -> None:
+    """Below MA by ≥threshold AND MA falling → block (real bear)."""
+    # 2008-01 scenario: 1635 vs 1820 = 10.2% below, MA falling steeply.
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=1635, ma_10=1820, slope_3m=-100))
+    f = MR.kospi_smart_filter(below_threshold_pct=3.0)
+    assert f(date(2008, 1, 31)) is False
+
+
+def test_smart_deep_dip_rising_ma_allows(monkeypatch) -> None:
+    """Below MA by ≥threshold BUT MA still rising → allow (single
+    flush event, trend intact). 2024-09 scenario."""
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=2593, ma_10=2677, slope_3m=+77))
+    f = MR.kospi_smart_filter(below_threshold_pct=3.0)
+    assert f(date(2024, 9, 30)) is True
+
+
+def test_smart_unknown_state_allow_default(monkeypatch) -> None:
+    """No regime data (pre-MA history) — default allow=True."""
+    monkeypatch.setattr(MR, "_regime_state_at", lambda _d: None)
+    f = MR.kospi_smart_filter(allow_unknown=True)
+    assert f(date(2000, 1, 1)) is True
+
+
+def test_smart_threshold_disabled_blocks_all_below(monkeypatch) -> None:
+    """threshold=0 + require_falling=False → blocks any dip below MA.
+    Same as simple filter behavior."""
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=2400, ma_10=2410, slope_3m=+50))
+    f = MR.kospi_smart_filter(below_threshold_pct=0, require_falling_ma=False)
+    assert f(date(2020, 1, 1)) is False   # 0.4% below blocks at threshold=0
+
+
+def test_smart_require_falling_off_blocks_threshold_only(monkeypatch) -> None:
+    """require_falling_ma=False → only magnitude matters."""
+    monkeypatch.setattr(MR, "_regime_state_at",
+                        lambda _d: _stub_state(close=2500, ma_10=2650, slope_3m=+100))
+    # 5.7% below, MA rising. With require_falling=False, magnitude alone blocks.
+    f = MR.kospi_smart_filter(below_threshold_pct=3.0, require_falling_ma=False)
+    assert f(date(2024, 9, 30)) is False
