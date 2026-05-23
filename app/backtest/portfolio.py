@@ -185,14 +185,22 @@ def simulate(
     max_positions: int = 10,
     buy_cost_pct: float = _BUY_COST_PCT,
     sell_cost_pct: float = _SELL_COST_PCT,
+    regime_filter: Optional[callable] = None,
 ) -> PortfolioState:
     """Replay buy/sell events chronologically.
 
     Each candidate fire is (entry_date, ticker, entry_price, exit_date,
     exit_price). We convert to a paired event list, sort by date, and
     walk:
-      - BUY: if slot open AND ticker not held AND have cash, take it
-      - SELL: if held, close
+      - BUY: if slot open AND ticker not held AND have cash AND regime
+        allows, take it
+      - SELL: if held, close (regime doesn't gate sells — let positions
+        exit naturally even in bear regimes)
+
+    `regime_filter(date) → bool`: if provided, called on each BUY event
+    date. False blocks the BUY (cash stays, slot stays open). Defaults
+    to None (no filter — current Phase 4 behavior).
+    See app/backtest/market_regime.py for the KOSPI 월봉 10MA filter.
 
     Equity is recorded at every event date AND at end_date.
     """
@@ -251,6 +259,9 @@ def simulate(
             if len(state.positions) >= max_positions:
                 continue
             if ticker in state.positions:
+                continue
+            if regime_filter is not None and not regime_filter(event_date):
+                # Market regime says no — skip BUY, keep cash + slot.
                 continue
             open_slots = max_positions - len(state.positions)
             if open_slots <= 0:
@@ -429,6 +440,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="load pre-computed fires CSV (from sweep --csv), "
                         "skipping the ~14-min walk")
     p.add_argument("--csv", default=None, help="dump per-trade CSV")
+    p.add_argument("--regime-filter", action="store_true",
+                   help="enable KOSPI 월봉 10MA regime filter — disable "
+                        "BUY when broad market is below its 10-month MA "
+                        "(book p318: 거시 → 추세 → 패턴 우선순위)")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -467,6 +482,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     log.info("collected %d fires, %d entry candidates after filter+dedup",
              len(all_fires), len(candidates))
 
+    regime_filter = None
+    if args.regime_filter:
+        from app.backtest.market_regime import kospi_regime_filter, regime_stats
+        regime_filter = kospi_regime_filter()
+        rs = regime_stats()
+        log.info("regime filter ON: KOSPI 월봉 10MA — %d above / %d below "
+                 "(%.1f%% bullish months)",
+                 rs["n_months_above_10ma"], rs["n_months_below_10ma"],
+                 rs["pct_above"] * 100)
+
     state = simulate(
         candidates,
         start_date=start_d, end_date=end_d,
@@ -474,6 +499,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         max_positions=args.max_positions,
         buy_cost_pct=args.buy_cost_pct / 100.0,
         sell_cost_pct=args.sell_cost_pct / 100.0,
+        regime_filter=regime_filter,
     )
 
     stats = summarize(state)
