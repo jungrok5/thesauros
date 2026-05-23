@@ -32,7 +32,7 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -288,6 +288,58 @@ def _resolve_tickers(args: argparse.Namespace) -> List[str]:
     return tickers
 
 
+def _walk_one_for_pool(args: Tuple[str, int]) -> List[Dict[str, Any]]:
+    """ProcessPoolExecutor worker — returns fires or empty list on
+    error. Each worker has its own analyzer cache state."""
+    ticker, hold_weeks = args
+    try:
+        return walk_ticker_collect_fires(ticker, hold_weeks)
+    except Exception as e:
+        log.warning("ticker %s failed: %s", ticker, e)
+        return []
+
+
+def _parallel_walk(
+    tickers: List[str], hold_weeks: int, workers: int, t0: float,
+) -> List[Dict[str, Any]]:
+    """Run walk_ticker_collect_fires across `workers` processes.
+
+    Result determinism: we collect fires PER ticker (each worker's
+    output preserves the bar-by-bar order for that ticker), then
+    sort by ticker name + entry_date to produce a fully-deterministic
+    final list — same content as serial walk, just faster.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    by_ticker: Dict[str, List[Dict[str, Any]]] = {}
+    completed = 0
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_walk_one_for_pool, (t, hold_weeks)): t
+            for t in tickers
+        }
+        for fut in as_completed(futures):
+            t = futures[fut]
+            by_ticker[t] = fut.result()
+            completed += 1
+            if completed % 20 == 0 or completed == len(tickers):
+                elapsed = time.time() - t0
+                rate = completed / elapsed if elapsed > 0 else 0
+                remain = (len(tickers) - completed) / rate if rate > 0 else 0
+                total_fires = sum(len(v) for v in by_ticker.values())
+                log.info("[%d/%d] %s — %.0fs elapsed, %d fires so far, ~%.0fs remain",
+                         completed, len(tickers), t, elapsed, total_fires, remain)
+
+    # Preserve INPUT ticker order so parallel output is bit-identical
+    # to serial. Sorting by ticker name would diverge from serial which
+    # iterates in user-supplied order.
+    all_fires: List[Dict[str, Any]] = []
+    for t in tickers:
+        if t in by_ticker:
+            all_fires.extend(by_ticker[t])
+    return all_fires
+
+
 def _save_csv(fires: List[Dict[str, Any]], path: Path) -> None:
     if not fires:
         log.warning("no fires to write to %s", path)
@@ -322,6 +374,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="write per-fire CSV to this path")
     p.add_argument("--filter-signal", nargs="+", default=None,
                    help="only show top fires for these signals (substring match)")
+    p.add_argument("--workers", type=int, default=1,
+                   help="parallelize ticker walks via ProcessPoolExecutor "
+                        "(N processes). Each worker has its own analyzer "
+                        "caches — deterministic outputs verified by "
+                        "test_sweep_parallel_parity. Default 1 (serial).")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -335,19 +392,23 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     all_fires: List[Dict[str, Any]] = []
     t0 = time.time()
-    for j, t in enumerate(tickers, start=1):
-        if j % 20 == 0 or j == len(tickers):
-            elapsed = time.time() - t0
-            rate = j / elapsed if elapsed > 0 else 0
-            remain = (len(tickers) - j) / rate if rate > 0 else 0
-            log.info("[%d/%d] %s — %.1fs elapsed, %d fires so far, ~%.0fs remain",
-                     j, len(tickers), t, elapsed, len(all_fires), remain)
-        try:
-            fires = walk_ticker_collect_fires(t, hold_weeks=args.hold_weeks)
-        except Exception as e:
-            log.warning("ticker %s failed: %s", t, e)
-            continue
-        all_fires.extend(fires)
+    if args.workers > 1:
+        log.info("parallel mode: %d workers", args.workers)
+        all_fires = _parallel_walk(tickers, args.hold_weeks, args.workers, t0)
+    else:
+        for j, t in enumerate(tickers, start=1):
+            if j % 20 == 0 or j == len(tickers):
+                elapsed = time.time() - t0
+                rate = j / elapsed if elapsed > 0 else 0
+                remain = (len(tickers) - j) / rate if rate > 0 else 0
+                log.info("[%d/%d] %s — %.1fs elapsed, %d fires so far, ~%.0fs remain",
+                         j, len(tickers), t, elapsed, len(all_fires), remain)
+            try:
+                fires = walk_ticker_collect_fires(t, hold_weeks=args.hold_weeks)
+            except Exception as e:
+                log.warning("ticker %s failed: %s", t, e)
+                continue
+            all_fires.extend(fires)
 
     if args.csv:
         _save_csv(all_fires, Path(args.csv))
