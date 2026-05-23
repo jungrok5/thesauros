@@ -544,6 +544,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--sell-cost-pct", type=float, default=_SELL_COST_PCT * 100)
     p.add_argument("--entry-signals", nargs="+", default=None,
                    help=f"default: {' '.join(DEFAULT_ENTRY_SIGNALS)}")
+    p.add_argument("--metrics", action="store_true",
+                   help="compute Sharpe/Sortino/Calmar + alpha-beta vs KOSPI "
+                        "(MTM weekly equity series — slower)")
+    p.add_argument("--equity-csv", default=None,
+                   help="dump weekly MTM equity time series CSV (requires "
+                        "--metrics)")
+    p.add_argument("--risk-free-annual", type=float, default=0.03,
+                   help="annual risk-free rate for Sharpe denominator "
+                        "(default: 0.03 = KR 10y treasury)")
     p.add_argument("--active-exit", action="store_true",
                    help="enable active exit on bearish signals (action_sell, "
                         "pattern_double_top, etc.) — close held positions "
@@ -643,6 +652,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     stats = summarize(state)
     _print_summary(stats)
+
+    if args.metrics:
+        from app.backtest.metrics import compute_full_metrics, print_metrics
+        metrics = compute_full_metrics(state, start_d, end_d,
+                                       risk_free_annual=args.risk_free_annual)
+        print_metrics(metrics)
+        if args.equity_csv:
+            eq_df = metrics.get("_equity_df")
+            if eq_df is not None:
+                eq_df.to_csv(args.equity_csv, index=False)
+                log.info("weekly MTM equity written to %s", args.equity_csv)
 
     if args.csv:
         _save_trades_csv(state, Path(args.csv))
