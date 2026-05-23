@@ -104,7 +104,15 @@ def walk_ticker_collect_fires(
 
     Returns: list of fire records (one per (bar, signal) pair).
     Returns [] if the ticker has no bars or insufficient history.
+
+    Note: clears the global find_swings cache before each ticker to
+    prevent unbounded growth across long sweeps (each ticker has its
+    own pit_df identities; stale entries from prior tickers waste
+    memory but don't affect correctness).
     """
+    from app.book._swings import clear_swings_cache
+    clear_swings_cache()
+
     df = load_weekly_bars(ticker)
     if df.empty or len(df) < _MIN_BARS + hold_weeks:
         return []

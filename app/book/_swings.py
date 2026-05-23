@@ -102,10 +102,55 @@ def recent_swings(swings: List[Swing], n: int = 6, kind: str | None = None
     return pool[-n:]
 
 
+import os as _os
+
+_SWINGS_CACHE: dict = {}
+"""Module-level cache for find_swings_for_pattern, keyed by
+(id(df), lookback, distance). Cleared at the start of every
+analyze_ticker call (id values become reusable after GC, so per-call
+scoping avoids stale-entry collisions). Key includes id(df) because
+pandas shallow-copies df.attrs, sharing dicts between weekly and
+monthly DataFrames — per-df attrs caching would mix them up."""
+
+
+def clear_swings_cache() -> None:
+    """Drop the global swings cache. Called at the start of every
+    analyze_ticker so cache scope = single analyze call."""
+    _SWINGS_CACHE.clear()
+
+
+def _cache_disabled() -> bool:
+    """Env-toggleable cache bypass for validation tests (must give
+    bit-identical results to cache-on path)."""
+    return _os.environ.get("BACKTEST_NO_CACHE", "").lower() in ("1", "true", "yes")
+
+
 def find_swings_for_pattern(df: pd.DataFrame, lookback_bars: int,
                             distance: int = 5) -> List[Swing]:
-    """Convenience: find swings within the last `lookback_bars` of df."""
+    """Convenience: find swings within the last `lookback_bars` of df.
+
+    Performance cache (2026-05-23): pattern detectors call this with
+    the same (df, lookback, distance) repeatedly within one analyze
+    call (each detector that needs swings independently invokes it).
+    Cache by (id(df), lookback, distance). Set BACKTEST_NO_CACHE=1 to
+    disable (parity test for cache correctness).
+
+    Why module-level (not df.attrs): pandas shallow-copies df.attrs
+    on .copy() / __finalize__, sharing the inner cache dict between
+    weekly_df and monthly_df. With cache key = (lookback, distance)
+    only, monthly detectors would get weekly swings — wrong. The
+    (id(df), …) key disambiguates.
+    """
     if df is None or len(df) == 0:
         return []
+    if _cache_disabled():
+        tail = df.tail(lookback_bars).reset_index(drop=True)
+        return find_swings(tail, distance=distance)
+    key = (id(df), lookback_bars, distance)
+    cached = _SWINGS_CACHE.get(key)
+    if cached is not None:
+        return cached
     tail = df.tail(lookback_bars).reset_index(drop=True)
-    return find_swings(tail, distance=distance)
+    swings = find_swings(tail, distance=distance)
+    _SWINGS_CACHE[key] = swings
+    return swings

@@ -183,6 +183,16 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     blocked on cloud runners). When grain="W" we have no daily history;
     daily-timeframe pattern detection and daily MAs are skipped.
     """
+    # Perf caches (find_swings, resample) are keyed by id(df). After a
+    # previous call's intermediate DataFrames are GC'd, those id values
+    # become reusable — a new pit_df might collide with stale entries.
+    # Clear both caches at the start of every analyze to scope them to
+    # a single call (≈ 100 cache hits / call, GC'd at call end).
+    from app.book._swings import clear_swings_cache
+    from app.book.trend import clear_resample_cache
+    clear_swings_cache()
+    clear_resample_cache()
+
     df = df.copy()
     if "date" not in df.columns:
         df = df.reset_index().rename(columns={df.index.name or "index": "date"})

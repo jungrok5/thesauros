@@ -25,12 +25,54 @@ import pandas as pd
 MA_PERIODS = [5, 10, 20, 60, 120, 240]
 
 
+_RESAMPLE_CACHE: dict = None  # type: ignore[assignment]
+"""Per-DataFrame resample cache, keyed by f"{id(df)}:{period}".
+Cleared at the start of every analyze_ticker call so stale entries
+from previously-GC'd dataframes (whose ids may be reused) can't bleed
+into the current call's results. We avoid df.attrs because pandas
+shallow-copies attrs on .copy() / __finalize__, which would share the
+inner cache dict between weekly_df and monthly_df."""
+
+
+def _get_resample_cache():
+    global _RESAMPLE_CACHE
+    if _RESAMPLE_CACHE is None:
+        _RESAMPLE_CACHE = {}
+    return _RESAMPLE_CACHE
+
+
+def clear_resample_cache() -> None:
+    """Drop the resample cache. Called at the start of every
+    analyze_ticker to prevent id(df) collisions with stale entries."""
+    global _RESAMPLE_CACHE
+    if _RESAMPLE_CACHE is not None:
+        _RESAMPLE_CACHE.clear()
+
+
 def resample_to_period(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
     """Daily OHLCV → weekly ('W') or monthly ('M') candles.
 
     df must have columns: date (or DatetimeIndex), open, high, low, close, volume.
     Returns DataFrame indexed by period-end date.
+
+    Performance cache (2026-05-23): a single analyze_ticker call
+    resamples the SAME df to "M" twice — once inside
+    analyze_multi_timeframe and once inside analyze_ticker for pattern
+    detection. Cache the result keyed by (id(df), period) in a
+    WeakValueDictionary so entries are GC'd with the parent df.
     """
+    import os as _os
+    _disabled = _os.environ.get("BACKTEST_NO_CACHE", "").lower() in (
+        "1", "true", "yes"
+    )
+
+    cache = _get_resample_cache() if not _disabled else None
+    if cache is not None:
+        key = f"{id(df)}:{period}"
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
     d = df.copy()
     if "date" in d.columns:
         d["date"] = pd.to_datetime(d["date"])
@@ -47,6 +89,9 @@ def resample_to_period(df: pd.DataFrame, period: str = "W") -> pd.DataFrame:
     }).dropna(how="all")
     if "adj_close" in d.columns:
         agg["adj_close"] = d["adj_close"].resample(rule).last()
+
+    if cache is not None:
+        cache[key] = agg
     return agg
 
 
