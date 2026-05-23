@@ -52,18 +52,19 @@ from app.db.scan_daily import _list_tickers                 # noqa: E402
 log = logging.getLogger("backtest.portfolio")
 
 
-# Default entry-signal whitelist — tuned from Phase 3 sweep findings.
-# These are bullish signals with payoff > 1.5 and win_rate ≥ 45% in
-# the 30-ticker sample. Override with --entry-signals on the CLI.
+# Default entry-signal whitelist — tuned from FULL UNIVERSE 17yr
+# sweep (1820 tickers, 3.8M fires). These 5 are the only signals
+# with payoff ≥ 1.66 AND avg return ≥ +2.0% across the universe.
+# Earlier draft (8 signals including pattern_double_bottom,
+# pattern_rounding_bottom, pattern_inverse_h&s) produced -37% on
+# universe — adding mediocre signals dragged everything down via
+# slot-fill. Top-5 alone: +720% / 17yr (max=20, no other filters).
 DEFAULT_ENTRY_SIGNALS = (
-    "action_strong_buy",
-    "action_buy",
-    "pattern_triple_bottom",
-    "pattern_double_bottom",
-    "pattern_ma240_breakout",
-    "pattern_rounding_bottom",   # cup-and-handle (V-recovery variant)
-    "pattern_inverse_head_and_shoulders",
-    "volume_case_7",             # 책 "급등초기거래량증가" — strong buy
+    "volume_case_3",             # payoff 1.82, +3.09%/trade
+    "pattern_forking",           # payoff 1.78, 책 p292 포킹
+    "volume_case_7",             # payoff 1.69, 책 "급등초기"
+    "action_strong_buy",         # payoff 1.71, our action engine
+    "pattern_ma240_breakout",    # payoff 1.66, 책 PSK +388% 패턴
 )
 
 # Default exit-signal whitelist — bearish fires that should trigger
