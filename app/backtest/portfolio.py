@@ -199,15 +199,19 @@ def filter_exit_fires(
 def filter_entry_fires(
     fires: Sequence[Dict[str, Any]],
     entry_signals: Sequence[str],
+    min_strength: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """Keep only fires whose signal_type is in the entry-signal
-    whitelist AND direction is bullish. Dedup (ticker, entry_date)
-    — if both action_strong_buy and pattern_double_bottom fire at
-    the same bar, count once (avoid double-counting one chart event)."""
+    whitelist AND direction is bullish AND strength >= min_strength.
+    Dedup (ticker, entry_date) — if both action_strong_buy and
+    pattern_double_bottom fire at the same bar, count once (avoid
+    double-counting one chart event)."""
     sig_set = set(entry_signals)
     keep = [
         f for f in fires
-        if f.get("signal_type") in sig_set and f.get("direction") == "bullish"
+        if f.get("signal_type") in sig_set
+        and f.get("direction") == "bullish"
+        and float(f.get("strength", 0.0)) >= min_strength
     ]
     # Dedup
     seen: set = set()
@@ -232,6 +236,9 @@ def simulate(
     sell_cost_pct: float = _SELL_COST_PCT,
     regime_filter: Optional[callable] = None,
     exit_fires: Optional[Sequence[Dict[str, Any]]] = None,
+    stop_loss_pct: float = 0.0,
+    trailing_stop_pct: float = 0.0,
+    equity_weighted_sizing: bool = False,
 ) -> PortfolioState:
     """Replay buy/sell events chronologically.
 
@@ -252,6 +259,14 @@ def simulate(
     When one fires while a position is held, the position closes
     IMMEDIATELY at the fire's price. The planned 8-week exit becomes
     a no-op. Book p260-265: 쌍봉/저승사자 / 10MA 깨짐 = 즉시 청산.
+
+    `stop_loss_pct`: if > 0, sells a position whenever its weekly close
+    drops by ≥ this pct from entry price (e.g., 0.15 = -15% stop-loss).
+    Scanned forward from entry_date to planned exit; the FIRST breach
+    triggers a STOP_LOSS event. Catches "silent loser" positions where
+    no bearish signal fires but the stock drifts down for the entire
+    hold. Book doesn't explicitly mention stop-loss but it's a standard
+    risk-management complement to the book's signal-based exits.
 
     Equity is recorded at every event date AND at end_date.
     """
@@ -287,11 +302,27 @@ def simulate(
             events.append((ed, "ACTIVE_EXIT", f["ticker"],
                           f["entry_price"], -1, 0.0))
 
+    # Stop-loss events from weekly close scan during hold window.
+    if stop_loss_pct > 0:
+        sl_events = _build_stop_loss_events(
+            candidates, stop_loss_pct, start_date, end_date,
+        )
+        events.extend(sl_events)
+
+    # Trailing-stop events (drop from peak-close-since-entry).
+    if trailing_stop_pct > 0:
+        ts_events = _build_trailing_stop_events(
+            candidates, trailing_stop_pct, start_date, end_date,
+        )
+        events.extend(ts_events)
+
     # Sort order at each date:
-    #   1. ACTIVE_EXIT  (free held slots first)
-    #   2. SELL         (planned exits)
-    #   3. BUY          (new entries — by strength DESC: strongest wins
-    #                   the slot when same-day fires compete)
+    #   1. ACTIVE_EXIT     (free held slots first — signal-based)
+    #   2. STOP_LOSS       (price-based exit from entry, signal-equivalent)
+    #   3. TRAILING_STOP   (price-based exit from peak)
+    #   4. SELL            (planned exits)
+    #   5. BUY             (new entries — by strength DESC: strongest wins
+    #                       the slot when same-day fires compete)
     #
     # Phase 4.6 priority: in 100-ticker 17yr sweep, action_strong_buy
     # had sweep payoff 2.05 (best) but portfolio-only -14% (essentially
@@ -300,7 +331,10 @@ def simulate(
     # strength desc lets the strongest signal claim the slot first.
     def _event_order(e):
         kind = e[1]
-        kind_order = {"ACTIVE_EXIT": 0, "SELL": 1, "BUY": 2}.get(kind, 3)
+        kind_order = {
+            "ACTIVE_EXIT": 0, "STOP_LOSS": 1,
+            "TRAILING_STOP": 2, "SELL": 3, "BUY": 4,
+        }.get(kind, 5)
         # strength desc within BUY (negative for ascending sort).
         strength_order = -e[5] if kind == "BUY" else 0.0
         return (e[0], kind_order, strength_order)
@@ -355,6 +389,19 @@ def simulate(
             entry_sig = state.positions[ticker].entry_signal
             _close_position(event_date, ticker, price, entry_sig, exit_sig)
 
+        elif kind == "STOP_LOSS":
+            if ticker not in state.positions:
+                continue
+            entry_sig = state.positions[ticker].entry_signal
+            _close_position(event_date, ticker, price, entry_sig, "stop_loss")
+
+        elif kind == "TRAILING_STOP":
+            if ticker not in state.positions:
+                continue
+            entry_sig = state.positions[ticker].entry_signal
+            _close_position(event_date, ticker, price, entry_sig,
+                            "trailing_stop")
+
         elif kind == "SELL":
             if ticker not in state.positions:
                 continue   # already closed by active exit
@@ -373,7 +420,17 @@ def simulate(
             open_slots = max_positions - len(state.positions)
             if open_slots <= 0:
                 continue
-            allocation = state.cash / open_slots
+            if equity_weighted_sizing:
+                # Target equal-weight by total equity (cash + cost basis
+                # of open positions): every BUY uses 1/max_positions of
+                # the *current* total equity, regardless of which slot
+                # is filled. Keeps allocations stable across the run
+                # instead of shrinking late buys.
+                held_cost = sum(p.cost_basis_krw for p in state.positions.values())
+                target = (state.cash + held_cost) / max_positions
+                allocation = min(target, state.cash)
+            else:
+                allocation = state.cash / open_slots
             if allocation <= 0 or price <= 0:
                 continue
             # Pay buy fee from allocation; shares from net.
@@ -415,6 +472,105 @@ def simulate(
         del state.positions[ticker]
     state.equity_history.append((end_date, _equity(state)))
     return state
+
+
+def _build_trailing_stop_events(
+    candidates: Sequence[Dict[str, Any]],
+    trailing_stop_pct: float,
+    start_date: date,
+    end_date: date,
+) -> List[Tuple[date, str, str, float, int, float]]:
+    """For each entry candidate, scan its hold window and emit a
+    TRAILING_STOP event at the first weekly close where price has
+    dropped ≥ trailing_stop_pct from the running peak-close-since-entry.
+
+    The peak starts at entry_price and ratchets UP only as new highs
+    print. Once a drop ≥ trailing_stop_pct from the latest peak hits,
+    the trade closes at that bar's close. This is stricter than a flat
+    stop once price has moved up: e.g., entry 100, peak 130, trailing
+    10% triggers at 117 (vs flat 10% at 90).
+    """
+    from app.backtest.local_store import load_bars
+    bars_cache: Dict[str, "pd.DataFrame"] = {}
+    out: List[Tuple[date, str, str, float, int, float]] = []
+    for c in candidates:
+        ticker = c["ticker"]
+        if ticker not in bars_cache:
+            bars_cache[ticker] = load_bars(ticker, "W")
+        bars = bars_cache[ticker]
+        if bars.empty:
+            continue
+        entry_d = date.fromisoformat(c["entry_date"])
+        exit_d = date.fromisoformat(c["exit_date"])
+        if entry_d > end_date or exit_d < start_date or entry_d < start_date:
+            continue
+        entry_price = float(c["entry_price"])
+        bars_dates = bars["date"].dt.date
+        mask = (bars_dates > entry_d) & (bars_dates <= exit_d)
+        window = bars.loc[mask].sort_values("date")
+        if window.empty:
+            continue
+        peak = entry_price
+        for _, row in window.iterrows():
+            close = float(row["close"])
+            if close > peak:
+                peak = close
+            if close < peak * (1.0 - trailing_stop_pct):
+                out.append((
+                    row["date"].date(), "TRAILING_STOP",
+                    ticker, close, -1, 0.0,
+                ))
+                break
+    return out
+
+
+def _build_stop_loss_events(
+    candidates: Sequence[Dict[str, Any]],
+    stop_loss_pct: float,
+    start_date: date,
+    end_date: date,
+) -> List[Tuple[date, str, str, float, int, float]]:
+    """For each entry candidate, scan its hold window (entry+1bar to
+    planned exit) and find the FIRST weekly close where the price has
+    dropped ≥ stop_loss_pct from entry. If found, emit a STOP_LOSS
+    event at that bar's close.
+
+    Per-ticker bars are loaded ONCE and cached in a local dict so a
+    ticker with N candidates doesn't trigger N database reads.
+    """
+    from app.backtest.local_store import load_bars
+    bars_cache: Dict[str, "pd.DataFrame"] = {}
+    out: List[Tuple[date, str, str, float, int, float]] = []
+    for c in candidates:
+        ticker = c["ticker"]
+        if ticker not in bars_cache:
+            bars_cache[ticker] = load_bars(ticker, "W")
+        bars = bars_cache[ticker]
+        if bars.empty:
+            continue
+        entry_d = date.fromisoformat(c["entry_date"])
+        exit_d = date.fromisoformat(c["exit_date"])
+        if entry_d > end_date or exit_d < start_date:
+            continue
+        if entry_d < start_date:
+            continue
+        entry_price = float(c["entry_price"])
+        threshold = entry_price * (1.0 - stop_loss_pct)
+        # Slice: bars strictly AFTER entry, up to and including planned exit.
+        bars_dates = bars["date"].dt.date
+        mask = (bars_dates > entry_d) & (bars_dates <= exit_d)
+        window = bars.loc[mask]
+        if window.empty:
+            continue
+        breach_mask = window["close"] < threshold
+        if not breach_mask.any():
+            continue
+        first_breach = window.loc[breach_mask].iloc[0]
+        out.append((
+            first_breach["date"].date(), "STOP_LOSS",
+            ticker, float(first_breach["close"]), -1, 0.0,
+        ))
+    return out
 
 
 _last_close_cache: Dict[Tuple[str, date], Optional[float]] = {}
@@ -544,6 +700,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--sell-cost-pct", type=float, default=_SELL_COST_PCT * 100)
     p.add_argument("--entry-signals", nargs="+", default=None,
                    help=f"default: {' '.join(DEFAULT_ENTRY_SIGNALS)}")
+    p.add_argument("--min-strength", type=float, default=0.0,
+                   help="only take fires with strength ≥ this (signal "
+                        "confidence threshold). 0.0 = no filter (default). "
+                        "0.85 = action_strong_buy only level.")
+    p.add_argument("--stop-loss-pct", type=float, default=0.0,
+                   help="sell a position when weekly close drops ≥ this "
+                        "fraction below entry. 0.0 = disabled. "
+                        "0.15 = -15%% stop-loss (recommended starting point).")
+    p.add_argument("--equity-weighted-sizing", action="store_true",
+                   help="size each BUY at total_equity / max_positions "
+                        "instead of cash / open_slots. Stabilises "
+                        "allocation across fills.")
+    p.add_argument("--trailing-stop-pct", type=float, default=0.0,
+                   help="sell when weekly close drops ≥ this fraction below "
+                        "the highest close since entry (peak-loss). Locks in "
+                        "gains after a run-up. 0.0 = disabled. Can combine "
+                        "with --stop-loss-pct; whichever triggers first wins.")
     p.add_argument("--metrics", action="store_true",
                    help="compute Sharpe/Sortino/Calmar + alpha-beta vs KOSPI "
                         "(MTM weekly equity series — slower)")
@@ -610,7 +783,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                  len(all_fires), args.fires_csv)
     else:
         all_fires = collect_universe_fires(universe, args.hold_weeks)
-    candidates = filter_entry_fires(all_fires, entry_signals)
+    candidates = filter_entry_fires(all_fires, entry_signals,
+                                    min_strength=args.min_strength)
+    if args.min_strength > 0:
+        log.info("min-strength filter: %.2f", args.min_strength)
     log.info("collected %d fires, %d entry candidates after filter+dedup",
              len(all_fires), len(candidates))
 
@@ -639,6 +815,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.info("active exit ON: %d bearish fires (%s)",
                  len(exit_fires_list), ", ".join(exit_signals))
 
+    if args.stop_loss_pct > 0:
+        log.info("stop-loss ON: %.1f%% from entry", args.stop_loss_pct * 100)
+    if args.trailing_stop_pct > 0:
+        log.info("trailing-stop ON: %.1f%% from peak",
+                 args.trailing_stop_pct * 100)
+
     state = simulate(
         candidates,
         start_date=start_d, end_date=end_d,
@@ -648,6 +830,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         sell_cost_pct=args.sell_cost_pct / 100.0,
         regime_filter=regime_filter,
         exit_fires=exit_fires_list,
+        stop_loss_pct=args.stop_loss_pct,
+        trailing_stop_pct=args.trailing_stop_pct,
+        equity_weighted_sizing=args.equity_weighted_sizing,
     )
 
     stats = summarize(state)
