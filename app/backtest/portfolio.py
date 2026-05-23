@@ -66,6 +66,18 @@ DEFAULT_ENTRY_SIGNALS = (
     "volume_case_7",             # 책 "급등초기거래량증가" — strong buy
 )
 
+# Default exit-signal whitelist — bearish fires that should trigger
+# ACTIVE EXIT (close held position immediately, don't wait for hold
+# expiry). Book p260-265: 쌍봉/저승사자 / 10MA 깨짐 = 즉시 청산.
+DEFAULT_EXIT_SIGNALS = (
+    "action_sell",
+    "action_sell_short",
+    "pattern_double_top",
+    "pattern_triple_top",
+    "pattern_head_and_shoulders",
+    "pattern_death_messenger",
+)
+
 # KR cost model (retail) — single-direction.
 _BUY_COST_PCT = 0.00015      # 0.015% (broker fee)
 _SELL_COST_PCT = 0.0018      # 0.18% (broker 0.015% + 거래세 ~0.165%)
@@ -80,6 +92,7 @@ class Position:
     shares: float
     cost_basis_krw: float          # cash paid INCLUDING fees
     exit_date_planned: date        # for fixed-hold MVP
+    entry_signal: str = "?"        # what triggered the buy (for trade journal)
 
 
 @dataclass
@@ -151,6 +164,37 @@ def collect_universe_fires(
     return all_fires
 
 
+def filter_exit_fires(
+    fires: Sequence[Dict[str, Any]],
+    exit_signals: Sequence[str],
+) -> List[Dict[str, Any]]:
+    """Keep only fires whose signal_type is in the exit-signal
+    whitelist AND direction is bearish. Each fire becomes a potential
+    ACTIVE EXIT trigger — sorted by date with deduplication on
+    (ticker, fire_date) so a single bar's bearish signals (e.g., both
+    pattern_double_top AND action_sell_short) trigger one exit, not two.
+
+    The fire's `entry_price` (sweep's close at fire time) is what the
+    portfolio sells AT. Treat each fire as a (ticker, sell_date,
+    sell_price) tuple regardless of the original 8-week exit it had.
+    """
+    sig_set = set(exit_signals)
+    keep = [
+        f for f in fires
+        if f.get("signal_type") in sig_set and f.get("direction") == "bearish"
+    ]
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    for f in keep:
+        key = (f["ticker"], f["entry_date"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f)
+    out.sort(key=lambda f: f["entry_date"])
+    return out
+
+
 def filter_entry_fires(
     fires: Sequence[Dict[str, Any]],
     entry_signals: Sequence[str],
@@ -186,6 +230,7 @@ def simulate(
     buy_cost_pct: float = _BUY_COST_PCT,
     sell_cost_pct: float = _SELL_COST_PCT,
     regime_filter: Optional[callable] = None,
+    exit_fires: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> PortfolioState:
     """Replay buy/sell events chronologically.
 
@@ -202,9 +247,15 @@ def simulate(
     to None (no filter — current Phase 4 behavior).
     See app/backtest/market_regime.py for the KOSPI 월봉 10MA filter.
 
+    `exit_fires`: bearish-signal fires (from filter_exit_fires).
+    When one fires while a position is held, the position closes
+    IMMEDIATELY at the fire's price. The planned 8-week exit becomes
+    a no-op. Book p260-265: 쌍봉/저승사자 / 10MA 깨짐 = 즉시 청산.
+
     Equity is recorded at every event date AND at end_date.
     """
     # Build event list: (date, kind, ticker, price, candidate_idx)
+    # candidate_idx = -1 for ACTIVE_EXIT events (not from `candidates`).
     events: List[Tuple[date, str, str, float, int]] = []
     for i, c in enumerate(candidates):
         ed = date.fromisoformat(c["entry_date"])
@@ -223,37 +274,78 @@ def simulate(
             continue
         events.append((actual_exit, "SELL", c["ticker"], actual_exit_price, i))
 
-    # Stable sort: same-day SELL before BUY (frees up a slot before we try to fill).
-    events.sort(key=lambda e: (e[0], 0 if e[1] == "SELL" else 1))
+    # Active-exit events from bearish signals.
+    if exit_fires:
+        for f in exit_fires:
+            ed = date.fromisoformat(f["entry_date"])
+            if ed < start_date or ed > end_date:
+                continue
+            events.append((ed, "ACTIVE_EXIT", f["ticker"],
+                          f["entry_price"], -1))
+
+    # Sort: same-day order = ACTIVE_EXIT first (close held), then SELL
+    # (planned exit), then BUY (fill new slot). This ensures active
+    # exits free slots BEFORE planned exits or new BUYs try to use them.
+    def _event_order(e):
+        kind = e[1]
+        return (e[0], {"ACTIVE_EXIT": 0, "SELL": 1, "BUY": 2}.get(kind, 3))
+    events.sort(key=_event_order)
 
     state = PortfolioState(cash=initial_cash, initial_cash=initial_cash)
     cand_lookup = {i: c for i, c in enumerate(candidates)}
+    # Index exit_fires by (ticker, date) for fast lookup of the
+    # triggering signal_type on ACTIVE_EXIT events.
+    exit_sig_lookup: Dict[Tuple[str, str], str] = {}
+    if exit_fires:
+        for f in exit_fires:
+            exit_sig_lookup[(f["ticker"], f["entry_date"])] = f.get(
+                "signal_type", "exit"
+            )
+
+    def _close_position(event_date: date, ticker: str, price: float,
+                        entry_signal: str, exit_signal: str) -> None:
+        """Sell a held position and record the Trade. Shared by both
+        planned SELL and ACTIVE_EXIT paths."""
+        pos = state.positions.pop(ticker)
+        proceeds = pos.shares * price * (1 - sell_cost_pct)
+        state.cash += proceeds
+        pnl = proceeds - pos.cost_basis_krw
+        state.trades.append(Trade(
+            ticker=ticker,
+            entry_date=pos.entry_date,
+            exit_date=event_date,
+            entry_price=pos.entry_price,
+            exit_price=price,
+            shares=pos.shares,
+            cost_basis_krw=pos.cost_basis_krw,
+            proceeds_krw=proceeds,
+            pnl_krw=pnl,
+            pnl_pct=(pnl / pos.cost_basis_krw * 100.0)
+                    if pos.cost_basis_krw > 0 else 0.0,
+            days_held=(event_date - pos.entry_date).days,
+            signal_type=(
+                f"{entry_signal}→{exit_signal}"
+                if exit_signal else entry_signal
+            ),
+        ))
+        state.equity_history.append((event_date, _equity(state)))
 
     for event_date, kind, ticker, price, cand_idx in events:
-        if kind == "SELL":
+        if kind == "ACTIVE_EXIT":
             if ticker not in state.positions:
-                continue
-            pos = state.positions.pop(ticker)
-            proceeds = pos.shares * price * (1 - sell_cost_pct)
-            state.cash += proceeds
-            pnl = proceeds - pos.cost_basis_krw
+                continue   # nothing to close (not held)
+            exit_sig = exit_sig_lookup.get(
+                (ticker, event_date.isoformat()), "active_exit"
+            )
+            entry_sig = state.positions[ticker].entry_signal
+            _close_position(event_date, ticker, price, entry_sig, exit_sig)
+
+        elif kind == "SELL":
+            if ticker not in state.positions:
+                continue   # already closed by active exit
             cand = cand_lookup[cand_idx]
-            state.trades.append(Trade(
-                ticker=ticker,
-                entry_date=pos.entry_date,
-                exit_date=event_date,
-                entry_price=pos.entry_price,
-                exit_price=price,
-                shares=pos.shares,
-                cost_basis_krw=pos.cost_basis_krw,
-                proceeds_krw=proceeds,
-                pnl_krw=pnl,
-                pnl_pct=(pnl / pos.cost_basis_krw * 100.0)
-                        if pos.cost_basis_krw > 0 else 0.0,
-                days_held=(event_date - pos.entry_date).days,
-                signal_type=cand.get("signal_type", "?"),
-            ))
-            state.equity_history.append((event_date, _equity(state)))
+            _close_position(event_date, ticker, price,
+                            cand.get("signal_type", "?"), "")
 
         elif kind == "BUY":
             if len(state.positions) >= max_positions:
@@ -284,6 +376,7 @@ def simulate(
                 shares=shares,
                 cost_basis_krw=cost_basis,
                 exit_date_planned=date.fromisoformat(cand["exit_date"]),
+                entry_signal=cand.get("signal_type", "?"),
             )
             state.equity_history.append((event_date, _equity(state)))
 
@@ -436,6 +529,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--sell-cost-pct", type=float, default=_SELL_COST_PCT * 100)
     p.add_argument("--entry-signals", nargs="+", default=None,
                    help=f"default: {' '.join(DEFAULT_ENTRY_SIGNALS)}")
+    p.add_argument("--active-exit", action="store_true",
+                   help="enable active exit on bearish signals (action_sell, "
+                        "pattern_double_top, etc.) — close held positions "
+                        "immediately instead of waiting for hold-weeks expiry. "
+                        "Book p260-265: 쌍봉/저승사자 = 즉시 청산.")
+    p.add_argument("--exit-signals", nargs="+", default=None,
+                   help=f"override default exit set: "
+                        f"{' '.join(DEFAULT_EXIT_SIGNALS)}")
     p.add_argument("--fires-csv", default=None,
                    help="load pre-computed fires CSV (from sweep --csv), "
                         "skipping the ~14-min walk")
@@ -507,6 +608,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                  rs["n_months_above_10ma"], rs["n_months_below_10ma"],
                  rs["pct_above"] * 100)
 
+    exit_fires_list = None
+    if args.active_exit:
+        exit_signals = args.exit_signals or list(DEFAULT_EXIT_SIGNALS)
+        exit_fires_list = filter_exit_fires(all_fires, exit_signals)
+        log.info("active exit ON: %d bearish fires (%s)",
+                 len(exit_fires_list), ", ".join(exit_signals))
+
     state = simulate(
         candidates,
         start_date=start_d, end_date=end_d,
@@ -515,6 +623,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         buy_cost_pct=args.buy_cost_pct / 100.0,
         sell_cost_pct=args.sell_cost_pct / 100.0,
         regime_filter=regime_filter,
+        exit_fires=exit_fires_list,
     )
 
     stats = summarize(state)
