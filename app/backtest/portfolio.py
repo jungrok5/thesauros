@@ -254,9 +254,11 @@ def simulate(
 
     Equity is recorded at every event date AND at end_date.
     """
-    # Build event list: (date, kind, ticker, price, candidate_idx)
+    # Build event list:
+    #   (date, kind, ticker, price, candidate_idx, strength)
     # candidate_idx = -1 for ACTIVE_EXIT events (not from `candidates`).
-    events: List[Tuple[date, str, str, float, int]] = []
+    # strength = 0.0 for non-BUY events (only matters for BUY ordering).
+    events: List[Tuple[date, str, str, float, int, float]] = []
     for i, c in enumerate(candidates):
         ed = date.fromisoformat(c["entry_date"])
         xd = date.fromisoformat(c["exit_date"])
@@ -264,7 +266,8 @@ def simulate(
             continue
         if ed < start_date:
             continue                 # entry too early — skip (no warmup yet)
-        events.append((ed, "BUY", c["ticker"], c["entry_price"], i))
+        strength = float(c.get("strength", 0.5))
+        events.append((ed, "BUY", c["ticker"], c["entry_price"], i, strength))
         # exit at xd, but capped at end_date (mark-to-market close-out)
         actual_exit = min(xd, end_date)
         actual_exit_price = c["exit_price"] if xd <= end_date else _last_close_or_na(
@@ -272,7 +275,7 @@ def simulate(
         )
         if actual_exit_price is None:
             continue
-        events.append((actual_exit, "SELL", c["ticker"], actual_exit_price, i))
+        events.append((actual_exit, "SELL", c["ticker"], actual_exit_price, i, 0.0))
 
     # Active-exit events from bearish signals.
     if exit_fires:
@@ -281,14 +284,25 @@ def simulate(
             if ed < start_date or ed > end_date:
                 continue
             events.append((ed, "ACTIVE_EXIT", f["ticker"],
-                          f["entry_price"], -1))
+                          f["entry_price"], -1, 0.0))
 
-    # Sort: same-day order = ACTIVE_EXIT first (close held), then SELL
-    # (planned exit), then BUY (fill new slot). This ensures active
-    # exits free slots BEFORE planned exits or new BUYs try to use them.
+    # Sort order at each date:
+    #   1. ACTIVE_EXIT  (free held slots first)
+    #   2. SELL         (planned exits)
+    #   3. BUY          (new entries — by strength DESC: strongest wins
+    #                   the slot when same-day fires compete)
+    #
+    # Phase 4.6 priority: in 100-ticker 17yr sweep, action_strong_buy
+    # had sweep payoff 2.05 (best) but portfolio-only -14% (essentially
+    # break-even) because max_positions=10 fills early with weaker
+    # signals (action_buy, pattern_double_bottom). Sorting BUY by
+    # strength desc lets the strongest signal claim the slot first.
     def _event_order(e):
         kind = e[1]
-        return (e[0], {"ACTIVE_EXIT": 0, "SELL": 1, "BUY": 2}.get(kind, 3))
+        kind_order = {"ACTIVE_EXIT": 0, "SELL": 1, "BUY": 2}.get(kind, 3)
+        # strength desc within BUY (negative for ascending sort).
+        strength_order = -e[5] if kind == "BUY" else 0.0
+        return (e[0], kind_order, strength_order)
     events.sort(key=_event_order)
 
     state = PortfolioState(cash=initial_cash, initial_cash=initial_cash)
@@ -330,7 +344,7 @@ def simulate(
         ))
         state.equity_history.append((event_date, _equity(state)))
 
-    for event_date, kind, ticker, price, cand_idx in events:
+    for event_date, kind, ticker, price, cand_idx, _strength in events:
         if kind == "ACTIVE_EXIT":
             if ticker not in state.positions:
                 continue   # nothing to close (not held)
