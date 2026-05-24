@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
+import { searchUsTickers, type UsTicker } from "@/lib/us-tickers";
 
 interface AnalysisResult {
   ticker: string;
@@ -28,21 +30,52 @@ interface AnalysisResult {
   };
 }
 
+interface ApiError {
+  error: string;
+  kind?: string;
+  trace?: string;
+}
+
 const POPULAR = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "META", "AMZN"];
 
 export function UsAnalysisSearch() {
-  const [ticker, setTicker] = useState("");
+  const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
-  async function submit(ev?: React.FormEvent) {
-    ev?.preventDefault();
+  // Local-bundle search — instant, no network.
+  const suggestions = useMemo(
+    () => searchUsTickers(q, 8),
+    [q],
+  );
+
+  // Click outside closes dropdown.
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  async function analyze(ticker: string) {
     const t = ticker.trim().toUpperCase();
     if (!t) return;
+    // Quick sanity: ASCII letters/digits/dot/dash. Reject Korean.
+    if (!/^[A-Z0-9.\-]+$/.test(t)) {
+      setError({
+        error: `미국 종목 ticker 만 입력 가능합니다 (한국 종목은 /stocks 페이지). 입력: "${ticker}"`,
+      });
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
+    setOpen(false);
     try {
       const r = await fetch(`/api/us-analysis?ticker=${encodeURIComponent(t)}`, {
         method: "GET",
@@ -50,31 +83,102 @@ export function UsAnalysisSearch() {
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) {
-        throw new Error(body.error || `HTTP ${r.status}`);
+        setError(body as ApiError);
+        return;
       }
       setResult(body as AnalysisResult);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError({ error: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
   }
 
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || suggestions.length === 0) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        analyze(q);
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (activeIdx >= 0) analyze(suggestions[activeIdx].ticker);
+      else analyze(q);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <form onSubmit={submit} className="flex gap-2">
-        <input
-          type="text"
-          inputMode="text"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-          placeholder="e.g. AAPL, NVDA, TSLA"
-          className="flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono uppercase"
-          disabled={loading}
-        />
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (activeIdx >= 0 && suggestions[activeIdx]) {
+            analyze(suggestions[activeIdx].ticker);
+          } else {
+            analyze(q);
+          }
+        }}
+      >
+        <div className="relative flex-1 max-w-md" ref={wrapperRef}>
+          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setOpen(true);
+              setActiveIdx(-1);
+            }}
+            onFocus={() => q && setOpen(true)}
+            onKeyDown={onKeyDown}
+            placeholder="AAPL, NVDA, Apple, Microsoft, …"
+            className="w-full pl-9 pr-3 py-2 rounded-md border border-input bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-foreground/30"
+            autoComplete="off"
+            disabled={loading}
+          />
+          {open && suggestions.length > 0 && (
+            <ul
+              role="listbox"
+              className="absolute z-20 mt-1 w-full max-h-72 overflow-auto rounded-md border border-border bg-card shadow-lg"
+            >
+              {suggestions.map((s, i) => (
+                <li
+                  key={s.ticker}
+                  role="option"
+                  aria-selected={i === activeIdx}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    analyze(s.ticker);
+                  }}
+                  className={`px-3 py-2 cursor-pointer flex items-baseline gap-3 text-sm ${
+                    i === activeIdx ? "bg-muted" : "hover:bg-muted/60"
+                  }`}
+                >
+                  <span className="font-mono text-xs text-foreground/80 w-16 truncate">
+                    {s.ticker}
+                  </span>
+                  <span className="flex-1 truncate">{s.name}</span>
+                  <span className="text-xs text-muted-foreground">{s.exchange}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button
           type="submit"
-          disabled={loading || !ticker.trim()}
+          disabled={loading || !q.trim()}
           className="rounded-md bg-foreground text-background px-4 py-2 font-medium disabled:opacity-50"
         >
           {loading ? "분석 중…" : "분석"}
@@ -82,14 +186,12 @@ export function UsAnalysisSearch() {
       </form>
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        인기 검색:
+        인기:
         {POPULAR.map((t) => (
           <button
             key={t}
-            onClick={() => {
-              setTicker(t);
-              setTimeout(() => submit(), 0);
-            }}
+            type="button"
+            onClick={() => analyze(t)}
             className="font-mono px-1.5 py-0.5 rounded border border-border hover:bg-muted"
           >
             {t}
@@ -106,8 +208,19 @@ export function UsAnalysisSearch() {
       )}
 
       {error && (
-        <div className="rounded-md border border-rose-500/40 bg-rose-500/5 p-3 text-sm">
-          <span className="text-rose-700 dark:text-rose-300">❌ {error}</span>
+        <div className="rounded-md border border-rose-500/40 bg-rose-500/5 p-3 text-sm space-y-2">
+          <div className="text-rose-700 dark:text-rose-300">❌ {error.error}</div>
+          {error.kind && (
+            <div className="text-xs text-muted-foreground">
+              kind: <code>{error.kind}</code>
+            </div>
+          )}
+          {error.trace && (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">stack trace</summary>
+              <pre className="mt-2 whitespace-pre-wrap text-[10px]">{error.trace}</pre>
+            </details>
+          )}
         </div>
       )}
 
