@@ -5,40 +5,42 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * Compares 책 전략 (SL=10% / max=8 / 24w / top-5) against passive
- * alternatives using point-estimate CAGRs from the 17-year backtest.
- * Realistic costs (slip 0.2%) are used as the conservative number.
+ * Compares 책 전략 (no-SL / max=50 / 24w / top-5 / FULL 1820-ticker
+ * universe) against passive alternatives using point-estimate CAGRs
+ * from the 17-year backtest.
  *
- * CAGR sources:
- *   - 책 (이상): 27.0% — full-historic best (SL=10%/max=8 / sweep_100_24w)
- *   - 책 (보수): 21.8% — with realistic slip costs
- *   - KOSPI BH: 2.7%  — 17yr historic
- *   - 정기예금:  3.0% — Q1 2026 평균
- *   - 채권:      4.5% — 우량 회사채 평균
+ * CAGR sources (universe-honest):
+ *   - 책 (이상):  13.4% — full universe no-SL/max=50 (sweep_all_24w)
+ *   - 책 (보수): ~10%  — assume 3.4%p cost drag (slip 0.2~0.4%)
+ *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct (alpha-beta calc base)
+ *   - 정기예금:  3.0%  — Q1 2026 평균
+ *   - 채권:      4.5%  — 우량 회사채 평균
  *
- * The two-line "이상/보수" pair signals the realistic uncertainty band.
+ * ⚠️ Honest revision (2026-05-24): previously claimed 27%/21.8% based
+ * on 100-tic seed=42 sample bias. Universe verification showed REAL
+ * alpha is only +1.91%/y over KOSPI, not +15-19%/y.
  */
 
 const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.270,
-    hint: "SL=10% / max=8 / 24w / top-5 신호 — 슬리피지 0",
+    cagr: 0.134,
+    hint: "no-SL / max=50 / 24w / top-5 — 1820-ticker universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.218,
-    hint: "+거래 비용 0.2% 슬리피지",
+    cagr: 0.100,
+    hint: "+거래 비용 0.2~0.4% 슬리피지 가정 (-3~4%p 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
   {
     key: "kospi",
     label: "KOSPI 매수후 보유",
-    cagr: 0.027,
-    hint: "17년 historic",
+    cagr: 0.115,
+    hint: "17년 historic (metrics.kospi_ann_ret_pct)",
     accent: "text-zinc-700 dark:text-zinc-300",
   },
   {
@@ -193,15 +195,13 @@ export function StrategyProjector({
 
       {kospi && (
         <div className="text-xs text-muted-foreground leading-relaxed">
-          책 전략 (현실 비용 21.8%/년) 으로 {amountManwon.toLocaleString()}만원을
-          {" "}{years}년 유지하면 KOSPI BH 대비
-          {" "}<strong className="text-emerald-600 dark:text-emerald-400">
-            +{fmtKRW((rows.find((r) => r.key === "book_real")?.final ?? 0) - kospi.final)}
-          </strong>
-          {" "}추가 수익 (이론치). 단, 실제 결과는 시장 regime, 신호 정확도,
-          execution slippage 에 따라 달라집니다. SL=10%/max=8 의 17년 OOS 검증
-          (sample 4 seeds × walk-forward 3 folds) 에서 최저 +315% (보수적 CAGR
-          7~10%) 까지 떨어진 적 있습니다.
+          책 전략 (현실 비용 10%/년) 으로 {amountManwon.toLocaleString()}만원을
+          {" "}{years}년 유지하면 KOSPI BH 대비 차이는 작습니다 — 실제 outperformance
+          는 17년 데이터로 검증 시 <strong>+1.9%p/year</strong> 수준 (full
+          1820-ticker universe). 100-ticker random sample 결과 (+27%/y) 는 sample
+          bias 로 over-estimate 임을 universe 검증으로 확인 (2026-05-24).
+          책 전략의 가치는 절대 return 보다 균형 잡힌 risk-adjusted profile —
+          Sharpe 0.62, Sortino 0.81, DD 47% (KOSPI BH 대비 DD ↓).
         </div>
       )}
     </section>

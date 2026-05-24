@@ -1,17 +1,25 @@
 /**
  * BookEntrySpots — "이번 주 책 진입 자리" card.
  *
- * Queries scan_results for top-5 entry signals (production: SL=10% /
- * max=8 / 24w / top-5) fired in the last 7 days, ordered by strength
+ * Queries scan_results for top-5 entry signals (production: no-SL /
+ * max=50 / 24w / top-5) fired in the last 7 days, ordered by strength
  * desc. Shows top-N candidates the user could enter THIS WEEK if they
  * were running the production strategy live.
  *
- * Top-5 signals from sprint-1 backtest (sweep_per_signal_sl + grid):
+ * Universe-honest production winner (Sprint 2.1, 2026-05-24):
+ *   - no-SL / max=50 — full 1820-ticker universe
+ *   - +795% / CAGR 13.4% / Sharpe 0.62 / DD 47.6%
+ *   - alpha +1.91%/y over KOSPI BH (modest but real)
+ *
+ * 100-tic seed=42 sample result (max=8 / SL=10%) was over-fit and
+ * underperformed -8.8%/y on universe. Trust universe numbers.
+ *
+ * Top-5 signals:
  *   volume_case_3, pattern_forking, volume_case_7,
  *   action_strong_buy, pattern_ma240_breakout
  *
- * SL=ON 추천 subset: volume_case_3, action_strong_buy
- * (다른 신호는 SL OFF — sweep_per_signal_sl 결과)
+ * Per-signal SL policy still useful (volume_case_3 + action_strong_buy
+ * benefit from SL even on universe — TODO: verify and split).
  */
 import Link from "next/link";
 import { getServerClient } from "@/lib/supabase";
@@ -30,7 +38,9 @@ const SL_ON_PREFERRED = new Set<string>([
   "action_strong_buy",
 ]);
 
-const DEFAULT_LIMIT = 8;     // matches production max_positions
+// Universe-honest production allows max=50 positions, but dashboard
+// card shows top-12 for readability. Full list available in /screener.
+const DEFAULT_LIMIT = 12;
 
 type Spot = {
   ticker: string;
@@ -162,10 +172,10 @@ export async function BookEntrySpots({ limit = DEFAULT_LIMIT }: { limit?: number
       </div>
 
       <div className="text-xs text-muted-foreground leading-relaxed">
-        Production 백테스트 winning config — SL=10% / max=8 / 24w hold /
-        top-5 entries. SL 컬럼 = 신호별 stop-loss 추천 (volume_case_3 /
-        action_strong_buy 만 ON, 다른 신호는 OFF — sweep_per_signal_sl 결과).
-        실제 매매는 본인 책임.
+        Universe-honest production config — no-SL / max=50 / 24w hold /
+        top-5 entries (CAGR 13.4% / Sharpe 0.62 / DD 47.6%). Top {limit}만
+        표시. SL 컬럼 = 신호별 stop-loss 추천 (volume_case_3 + action_strong_buy
+        만 ON 권장 — sweep_per_signal_sl 결과). 실제 매매는 본인 책임.
       </div>
     </section>
   );

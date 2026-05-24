@@ -54,8 +54,9 @@ describe("/backtest page", () => {
     const view = await mod.default();
     render(view);
     expect(screen.getByText(/총 수익률/)).toBeInTheDocument();
-    expect(screen.getByText(/\+6380%/)).toBeInTheDocument();
-    expect(screen.getByText(/Sharpe/)).toBeInTheDocument();
+    // Fixture's total = 6380; may appear in both headline + methodology note
+    expect(screen.getAllByText(/\+6380%/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Sharpe/).length).toBeGreaterThan(0);
     expect(screen.getByText(/0\.82/)).toBeInTheDocument();
     expect(screen.getByText(/Max DD/)).toBeInTheDocument();
     expect(screen.getByText(/책 전략 17년 백테스트/)).toBeInTheDocument();

@@ -1,7 +1,11 @@
-"""Convert equity_production.csv to web-shippable JSON.
+"""Convert equity CSV to web-shippable JSON.
 
-Input:  data/equity_production.csv  (76KB, 887 weekly rows)
-Output: web-next/public/equity-production.json  (50-60KB compact)
+Input:  data/equity_universe.csv  (universe-honest, no-SL/max=50)
+Output: web-next/public/equity-production.json  (~30KB compact)
+
+Replaces the 100-tic seed=42 equity (over-fit, +6380% claim) with
+the full 1820-ticker universe result (+795%, modest +1.91%/y alpha
+over KOSPI BH). Honest numbers for the public /backtest page.
 
 JSON shape:
 {
@@ -34,26 +38,27 @@ import sys
 from pathlib import Path
 
 
-# These match the printed metrics from the most recent simulate run
-# (SL=10% / max=8 / 24w / 100-tic seed=42).
+# Universe-honest metrics from no-SL / max=50 / 24w / top-5 on full
+# 1820-ticker universe (sweep_all_24w.csv, 271K candidates). Replaces
+# the previous 100-tic seed=42 numbers which were sample-bias inflated.
 HARDCODED_SUMMARY = {
-    "total_return_pct": 6380.27,
-    "annualised_return_pct": 27.02,
-    "max_drawdown_pct": 37.07,
-    "sharpe": 0.821,
-    "sortino": 1.501,
-    "calmar": 0.729,
-    "alpha_annual_pct": 19.33,
-    "beta": 0.664,
-    "r_squared": 0.147,
+    "total_return_pct": 795.13,
+    "annualised_return_pct": 13.39,
+    "max_drawdown_pct": 47.58,
+    "sharpe": 0.620,
+    "sortino": 0.813,
+    "calmar": 0.281,
+    "alpha_annual_pct": 5.09,
+    "beta": 0.640,
+    "r_squared": 0.407,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 15.53,
+    "outperformance_ann_pct": 1.91,
 }
 
 
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
-    src = repo / "data" / "equity_production.csv"
+    src = repo / "data" / "equity_universe.csv"
     dst = repo / "web-next" / "public" / "equity-production.json"
     if not src.exists():
         print(f"missing: {src}", file=sys.stderr)
@@ -75,7 +80,7 @@ def main() -> int:
 
     initial = weekly[0]["e"]
     out = {
-        "config": "SL=10% / max=8 / 24w hold / top-5 entries / 100-ticker seed=42",
+        "config": "no-SL / max=50 / 24w hold / top-5 entries / FULL 1820-ticker universe",
         "start": weekly[0]["d"],
         "end": weekly[-1]["d"],
         "initial": initial,

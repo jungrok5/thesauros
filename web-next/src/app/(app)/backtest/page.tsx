@@ -138,8 +138,8 @@ export default async function BacktestPage() {
         <h2 className="text-lg font-semibold tracking-tight">방법론</h2>
         <ul className="space-y-1.5 text-muted-foreground list-disc pl-5">
           <li>
-            <strong>Universe</strong>: KOSPI+KOSDAQ 1833 ticker 중 100-ticker random
-            (seed=42).
+            <strong>Universe</strong>: KOSPI+KOSDAQ 1820 ticker 전체 (4M+ fires,
+            271K entry candidates 17년).
           </li>
           <li>
             <strong>신호</strong>: 책 정신 top-5 entries — volume_case_3,
@@ -149,24 +149,26 @@ export default async function BacktestPage() {
             <strong>Hold</strong>: 24주 (6 개월). 책 정신 추세는 길게.
           </li>
           <li>
-            <strong>포지션</strong>: 최대 8 종목 동시 보유. 강도 desc 우선.
+            <strong>포지션</strong>: 최대 50 종목 동시 보유. 강도 desc 우선.
+            (universe scale 에서 slot 회전 필요)
           </li>
           <li>
-            <strong>Stop-loss</strong>: 진입가 -10% 시 즉시 청산 (price-based).
+            <strong>Stop-loss</strong>: 없음 (universe 검증 시 SL=10/5% 적용은
+            return 감소). 신호별 부분 적용은 별도 분석 중.
           </li>
           <li>
             <strong>비용</strong>: 매수 0.015% + 매도 0.18% (브로커 + 거래세).
             슬리피지 0%. 양도세 5억 미만 무시.
           </li>
-          <li>
-            <strong>검증</strong>: 4 random seeds (모두 +315% 이상), 3 walk-forward
-            OOS folds (CAGR 17~49%), realistic 비용 (+3030%), per-signal SL effect.
-          </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          ⚠️ 미래 보장 아님. 17년 historical 결과이며 실제 매매는 시장 regime / 신호
-          정확도 / 본인 execution slippage 에 따라 결과가 다릅니다.
-          최저 sample (seed=200) 결과는 +315% — 보수적 CAGR 7~10%.
+          ⚠️ <strong>이전 (2026-05-23) 100-ticker random sample (+6380%) 은
+          sample bias 로 over-fit</strong> 이었음을 full universe 검증으로 확인
+          (2026-05-24). 위 숫자가 honest production result. KOSPI BH (CAGR 11.5%)
+          대비 outperformance 는 +1.91%p/year — 책 전략의 진가는 절대 return
+          보다 Sharpe (0.62) + Sortino (0.81) + 낮은 DD (47.6%) 등 risk-adjusted
+          profile. 4 random seeds × walk-forward 3 folds 모두 sample-period
+          dependent (+50%~+9000% 범위).
         </p>
       </section>
     </div>
