@@ -4,7 +4,9 @@
 
 pandas==2.2.0
 numpy==1.26.4
-scipy>=1.10
+# scipy intentionally OMITTED — Vercel Python serverless 250MB cap
+# can't fit pandas+numpy+scipy together. app/book/_swings replaced
+# scipy.signal.argrelextrema with a numpy-only equivalent (2026-05-24).
 requests==2.31.0
 python-dateutil==2.8.2
 psycopg[binary]>=3.2

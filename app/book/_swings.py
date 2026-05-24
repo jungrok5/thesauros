@@ -13,7 +13,37 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from scipy.signal import argrelextrema
+
+
+def _argrelextrema(arr: np.ndarray, comparator, order: int) -> np.ndarray:
+    """Drop-in numpy replacement for scipy.signal.argrelextrema (mode
+    'clip', the default). Edges are treated as if the boundary value
+    is repeated outside the array. Implementation: pad arr by `order`
+    on each side with the edge value, then sliding-window reduce.
+
+    Scipy is ~80 MB unzipped, too heavy for Vercel Python serverless
+    (Phase 6 /api/us-analysis 250 MB cap). app/book/_swings only uses
+    np.greater_equal / np.less_equal comparators.
+    """
+    n = arr.shape[0]
+    if n == 0:
+        return np.array([], dtype=np.int64)
+    if n < 2:
+        return np.arange(n, dtype=np.int64) if n == 1 else np.array([], dtype=np.int64)
+    padded = np.pad(arr, order, mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, 2 * order + 1)
+    center = windows[:, order]
+    if comparator is np.greater_equal:
+        mask = center >= windows.max(axis=1)
+    else:
+        mask = center <= windows.min(axis=1)
+    return np.flatnonzero(mask)
+
+
+def argrelextrema(arr: np.ndarray, comparator, order: int = 1) -> tuple:
+    """scipy.signal.argrelextrema signature shim — returns tuple to
+    match `argrelextrema(...)[0]` access pattern."""
+    return (_argrelextrema(arr, comparator, order),)
 
 
 @dataclass
