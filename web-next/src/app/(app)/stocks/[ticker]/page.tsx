@@ -36,6 +36,7 @@ import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
+import { StrategyProjector } from "@/components/strategy-projector";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
 import { NextDecisionChip } from "@/components/next-decision-chip";
 import { InvestorFlow } from "@/components/investor-flow";
@@ -467,6 +468,18 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
               dividend={ctx.dividend}
               todayIso={new Date().toISOString().slice(0, 10)}
             />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 4.5. 책 전략 N년 유지 시뮬레이션.
+              17년 backtest (SL=10%/max=8) 기반. 개별 종목 결과는 아니고
+              "이 전략을 유지하면 평균 어떻게 되나" 의 참고치.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">
+              🧮 책 전략 유지 시뮬레이션
+            </h2>
+            <StrategyProjector />
           </section>
 
           {/* ─────────────────────────────────────────────────────────
