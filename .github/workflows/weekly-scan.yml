@@ -116,6 +116,20 @@ jobs:
           fi
           python -m app.db.telegram_worker $digest_args
 
+      - name: Stop-loss alerts (holdings -10% weekly close)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          sl_args=""
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && \
+             [ "${{ inputs.send_alerts }}" != "true" ]; then
+            sl_args="--dry-run"
+          fi
+          python -m app.db.notify_stop_loss $sl_args
+
       - name: Data-quality assertions
         if: always()
         env:

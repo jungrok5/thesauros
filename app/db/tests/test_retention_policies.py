@@ -74,6 +74,7 @@ _RETENTION_EXEMPT = {
     "migrations_audit",       # append-only history, ~1 row per applied migration
     "us_bars",                # Phase 6 ad-hoc cache, self-evicts via us_ticker_cache (7d cascade in daily-data.yml)
     "us_ticker_cache",        # Phase 6 ad-hoc cache, 7d TTL via app.db.us_bars_cache.evict_stale (daily-data.yml step)
+    "stop_loss_alert_seen",   # bounded per (user × ticker × week) — naturally small (active holdings only)
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.
