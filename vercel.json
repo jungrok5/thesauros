@@ -3,14 +3,14 @@
   "framework": "nextjs",
   "buildCommand": "cd web-next && npm install && npm run build",
   "devCommand": "cd web-next && npm install && npm run dev",
-  "installCommand": "echo no-op",
+  "installCommand": "npm install --no-package-lock --no-save",
   "outputDirectory": "web-next/.next",
   "regions": ["icn1"],
   "functions": {
     "api/us-analysis.py": {
       "runtime": "@vercel/python@4.3.0",
       "maxDuration": 30,
-      "excludeFiles": "{web-next/**,data/**,book_images/**,migrations/**,scripts/**,.github/**,*.md,*.json,*.parquet,*.duckdb,*.csv,*.png}",
+      "excludeFiles": "{web-next/**,node_modules/**,data/**,book_images/**,migrations/**,scripts/**,.github/**,*.md,*.json,*.parquet,*.duckdb,*.csv,*.png}",
       "includeFiles": "app/**/*.py"
     }
   },
