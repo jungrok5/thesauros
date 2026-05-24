@@ -1,0 +1,13 @@
+{
+  "name": "thesauros",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo wrapper — Vercel framework detection only. Real app deps live in web-next/package.json.",
+  "scripts": {
+    "build": "cd web-next && npm install && npm run build",
+    "dev": "cd web-next && npm run dev"
+  },
+  "dependencies": {
+    "next": "16.2.6"
+  }
+}
