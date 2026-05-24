@@ -134,16 +134,28 @@ def format_sl_message(
     name: str, ticker: str, entry_price: float, close: float,
     drop_pct: float, threshold: float,
 ) -> str:
-    """Telegram HTML — 손절 신호 메시지."""
+    """Telegram HTML — 손절 신호 메시지.
+
+    실수 안내:
+    - SL=10% 가 universe 검증에서는 평균적 역효과 (sweep_per_signal_sl).
+    - 신호별로 ON 권장: volume_case_3, action_strong_buy.
+    - 다른 신호 (action_buy / volume_case_7 / pattern_triple_bottom 등)
+      는 SL OFF 유지가 historically 더 좋음.
+    - 그러니 이 알림은 "확인하라"는 신호이지 "무조건 팔라"는 명령 아님.
+    """
     return (
-        f"🔻 <b>{name}</b> ({ticker}) 손절 신호\n"
+        f"🔻 <b>{name}</b> ({ticker}) -{abs(drop_pct):.1f}% 도달\n\n"
         f"진입가: <code>{entry_price:,.0f}</code>\n"
         f"이번 주봉 종가: <code>{close:,.0f}</code>\n"
-        f"<b>변동: {drop_pct:+.2f}%</b> (임계: -{threshold:.0f}%)\n\n"
-        f"📕 책 정신: 손절은 빠르게, 회복 기대로 보유 연장은 추세 깨졌을 때 "
-        f"가장 큰 손실 키움. 17년 backtest 검증 = SL 적용 시 +6380% "
-        f"(no-SL +1047%).\n\n"
-        f"의사결정: <a href=\"https://thesauros.vercel.app/stocks/{ticker}\">{ticker} 분석 ↗</a>"
+        f"<b>변동: {drop_pct:+.2f}%</b> (임계 -{threshold:.0f}%)\n\n"
+        f"📊 의사결정 가이드:\n"
+        f"• 진입 신호가 <b>volume_case_3</b> 또는 <b>action_strong_buy</b> "
+        f"였다면 → 즉시 청산 (SL ON 권장 신호)\n"
+        f"• 그 외 신호 (action_buy / volume_case_7 / pattern_triple_bottom "
+        f"등) → 보유 유지 권장 (SL OFF 가 historically 더 좋음)\n"
+        f"• 모든 의사결정은 본인 책임. 17년 universe backtest 기준이며 "
+        f"이번 turn 결과는 다를 수 있음.\n\n"
+        f"🔍 <a href=\"https://thesauros2026.vercel.app/stocks/{ticker}\">{ticker} 상세 분석 ↗</a>"
     )
 
 

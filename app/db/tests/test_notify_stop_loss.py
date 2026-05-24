@@ -18,9 +18,10 @@ def test_sl_message_includes_drop_pct() -> None:
     assert "삼성전자" in msg
     assert "005930.KS" in msg
     assert "-11.43%" in msg
-    assert "임계: -10" in msg
-    # Korean book quote
-    assert "손절은 빠르게" in msg
+    assert "임계 -10" in msg
+    # Signal-based guidance (universe finding: SL is signal-dependent)
+    assert "volume_case_3" in msg
+    assert "action_strong_buy" in msg
     assert "/stocks/005930.KS" in msg
 
 
