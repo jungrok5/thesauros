@@ -1,9 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "buildCommand": "cd web-next && npm run build",
-  "devCommand": "cd web-next && npm run dev",
-  "installCommand": "cd web-next && npm install",
+  "buildCommand": "cd web-next && npm install && npm run build",
+  "devCommand": "cd web-next && npm install && npm run dev",
+  "installCommand": "echo no-op",
   "outputDirectory": "web-next/.next",
   "regions": ["icn1"],
   "functions": {
