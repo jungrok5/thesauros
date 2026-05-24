@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
-  Camera,
   Compass,
   Filter,
   Hash,
@@ -75,6 +74,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    heading: "🇺🇸 미국 (ad-hoc)",
+    items: [
+      { href: "/us-analysis", label: "미국 종목 분석", icon: Search },
+    ],
+  },
+  {
     heading: "⚙️ 시스템",
     items: [
       { href: "/feedback", label: "버그·건의", icon: MessageSquare },
@@ -83,13 +88,12 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-// 베타 기능 — 일반 사용자에게 풀기 전 관리자만 노출. 풀 때는
-// ADMIN_BETA_GROUP 항목을 NAV_GROUPS 의 적절한 그룹으로 이동시키면 됨.
+// 베타 기능 — 일반 사용자에게 풀기 전 관리자만 노출.
+// chart-vision (vision-based) 은 2026-05-24 us-analysis (Tiingo 데이터)
+// 로 대체. 별도 ADMIN_BETA_GROUP 비움.
 const ADMIN_BETA_GROUP: NavGroup = {
   heading: "🧪 베타 (관리자)",
-  items: [
-    { href: "/chart-vision", label: "차트 이미지 분석", icon: Camera },
-  ],
+  items: [],
 };
 
 const ADMIN_GROUP: NavGroup = {
@@ -101,9 +105,11 @@ const ADMIN_GROUP: NavGroup = {
 };
 
 function navGroups(isAdmin: boolean): NavGroup[] {
-  return isAdmin
-    ? [...NAV_GROUPS, ADMIN_BETA_GROUP, ADMIN_GROUP]
-    : NAV_GROUPS;
+  if (!isAdmin) return NAV_GROUPS;
+  const groups: NavGroup[] = [...NAV_GROUPS];
+  if (ADMIN_BETA_GROUP.items.length > 0) groups.push(ADMIN_BETA_GROUP);
+  groups.push(ADMIN_GROUP);
+  return groups;
 }
 
 function NavList({

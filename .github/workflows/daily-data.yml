@@ -60,6 +60,13 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: python -m app.db.retention
 
+      - name: Evict stale US bars cache (Phase 6, 7-day TTL)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: python -c "from app.db.us_bars_cache import evict_stale; n=evict_stale(); print(f'evicted {n} stale us_ticker_cache rows')"
+
       - name: Refresh bars (KR W+M resampled from FDR)
         # KR weekly bars: 매일 종가가 in-progress W bar 의 마지막 일자 1
         # row 만 갱신. 금요일 종가가 settled W bar 를 확정. FDR 가 종가
