@@ -69,13 +69,25 @@ class handler(BaseHTTPRequestHandler):     # Vercel requires lowercase `handler`
         try:
             result = analyze_us_ticker(ticker)
         except TiingoError as e:
-            self._json(502, {"error": f"data source: {e}"})
+            self._json(502, {"error": f"data source: {e}",
+                            "kind": "tiingo"})
             return
         except ValueError as e:
-            self._json(400, {"error": str(e)})
+            self._json(400, {"error": str(e), "kind": "value"})
             return
         except Exception as e:
-            self._json(500, {"error": f"analysis failed: {e}"})
+            # Surface the actual exception type + message + minimal
+            # traceback frame for production debugging. No stack from
+            # vendored libs (just the top-level frame so users see the
+            # culprit without leaking internals).
+            import traceback
+            tb = traceback.format_exc(limit=3)
+            self._json(500, {
+                "error": f"analysis failed: {type(e).__name__}: {e}",
+                "trace": tb,
+                "kind": type(e).__name__,
+                "ticker": ticker,
+            })
             return
         self._json(200, result)
 
