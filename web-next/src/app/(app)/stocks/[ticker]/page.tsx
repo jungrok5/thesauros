@@ -37,6 +37,7 @@ import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
 import { StrategyProjector } from "@/components/strategy-projector";
+import { TickerSignalHistory } from "@/components/ticker-signal-history";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
 import { NextDecisionChip } from "@/components/next-decision-chip";
 import { InvestorFlow } from "@/components/investor-flow";
@@ -471,14 +472,14 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           </section>
 
           {/* ─────────────────────────────────────────────────────────
-              그룹 4.5. 책 전략 N년 유지 시뮬레이션.
-              17년 backtest (SL=10%/max=8) 기반. 개별 종목 결과는 아니고
-              "이 전략을 유지하면 평균 어떻게 되나" 의 참고치.
+              그룹 4.5. 책 전략 N년 유지 시뮬레이션 + 종목별 신호 history.
+              17년 backtest (SL=10%/max=8) 기반.
               ───────────────────────────────────────────────────────── */}
           <section className="space-y-3">
             <h2 className="text-lg font-semibold tracking-tight">
-              🧮 책 전략 유지 시뮬레이션
+              🧮 책 전략 적용 시
             </h2>
+            <TickerSignalHistory ticker={ticker} />
             <StrategyProjector />
           </section>
 
