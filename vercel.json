@@ -1,9 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "next build",
-  "devCommand": "next dev",
-  "installCommand": "npm install",
+  "buildCommand": "cd web-next && npm install && npm run build",
+  "devCommand": "cd web-next && npm run dev",
+  "installCommand": "echo 'install handled in buildCommand'",
+  "outputDirectory": "web-next/.next",
   "regions": ["icn1"],
   "functions": {
     "api/us-analysis.py": {

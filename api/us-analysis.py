@@ -32,11 +32,12 @@ import sys
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-# Vercel mounts the repo root as the working dir, but Python serverless
-# runs from /var/task. Add the project root (sibling of web-next) to
-# sys.path so `from app.data.us_analyze import ...` resolves.
+# Vercel serverless runs from /var/task. This file lives at repo
+# root /api/us-analysis.py; the parent is the repo root containing
+# app/. Add it to sys.path so `from app.data.us_analyze import ...`
+# resolves.
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
