@@ -9,6 +9,7 @@ import {
   Compass,
   Filter,
   Hash,
+  LineChart,
   Map,
   Menu,
   MessageSquare,
@@ -49,6 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "📍 시장 분위기",
     items: [
       { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
+      { href: "/backtest", label: "백테스트 17년", icon: LineChart },
     ],
   },
   {
