@@ -8,6 +8,7 @@
  * 지표 34개 카드는 핵심 8개만 우선 노출, 나머지는 펼침 토글.
  */
 import { Compass } from "lucide-react";
+import { BookEntrySpots } from "@/components/book-entry-spots";
 import { StatePill } from "@/components/state-pill";
 import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
@@ -208,6 +209,12 @@ export default async function DashboardPage() {
         mvPqSignal={row.mv_pq_signal}
         updatedAt={updatedAt}
       />
+
+      {/* 책 전략 production winning config (SL=10% / max=8 / 24w / top-5)
+          의 이번 주 진입 후보. 거시 카드 직후에 배치해 macro → 실행으로
+          내려가는 흐름. */}
+      <BookEntrySpots />
+
 
       {/* 핵심 거시 지표 — 매매 결정에 직접 닿는 8~10개만 above-the-fold */}
       {core.length > 0 && (
