@@ -77,10 +77,14 @@ def test_main_with_no_lock_flag_bypasses():
 def test_vercel_cron_schedules_dont_collide_exactly():
     """daily-data + weekly-scan 의 schedule 이 정확히 같은 분에 잡혀
     있으면 fail. 5분 이상 간격이어야 retention DELETE race 가능성 낮음."""
-    vercel = json.loads(
-        (Path(retention.__file__).resolve().parents[2]
-         / "web-next" / "vercel.json").read_text(encoding="utf-8")
-    )
+    # vercel.json moved to repo root in Phase 6 deploy fix (2026-05-24);
+    # was previously inside web-next/. Fall back to legacy path for
+    # branches that haven't picked up the move yet.
+    repo_root = Path(retention.__file__).resolve().parents[2]
+    candidates = [repo_root / "vercel.json",
+                  repo_root / "web-next" / "vercel.json"]
+    path = next((p for p in candidates if p.exists()), candidates[0])
+    vercel = json.loads(path.read_text(encoding="utf-8"))
     crons = {c["path"]: c["schedule"] for c in vercel.get("crons", [])}
     daily = crons.get("/api/cron/daily-data")
     weekly = crons.get("/api/cron/weekly-scan")
