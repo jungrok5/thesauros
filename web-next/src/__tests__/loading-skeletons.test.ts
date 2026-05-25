@@ -25,8 +25,8 @@ const PAGES_REQUIRING_LOADING = [
   "watchlist",
   "dashboard",
   "screener",
-  "flow-ranking",
-  "volume-surge",
+  // /flow-ranking and /volume-surge were removed 2026-05-25 in the
+  // site-direction reset (책 정신 일관성 — 페이지 줄이기).
 ];
 
 describe("loading.tsx skeletons exist for heavy pages", () => {

@@ -19,17 +19,11 @@
  * Behavior (first match wins):
  *   /watchlist        → "관심 종목으로"
  *   /screener         → "스크리너로"       (preserves ?preset=…)
- *   /themes/[id]      → "테마 종목 목록으로" (preserves theme id)
- *   /flow-ranking     → "큰손 매매 랭킹으로"
- *   /volume-surge     → "거래량 폭증 목록으로"
  *   anything else     → "종목 검색"  (default)
  *
  * URL `?from=` values that the originating page should set:
  *   from=watchlist
  *   from=screener     (optionally + &preset=…)
- *   from=themes&theme=NN
- *   from=flow-ranking
- *   from=volume-surge
  *   from=stocks       (no-op — equals the default)
  */
 export type BackLink = { href: string; label: string };
@@ -39,9 +33,6 @@ const DEFAULT_BACK: BackLink = { href: "/stocks", label: "종목 검색" };
 const PATH_RULES: Array<{ prefix: string; back: BackLink }> = [
   { prefix: "/watchlist",     back: { href: "/watchlist",     label: "관심 종목으로" } },
   { prefix: "/screener",      back: { href: "/screener",      label: "스크리너로" } },
-  { prefix: "/themes",        back: { href: "/themes",        label: "테마로" } },
-  { prefix: "/flow-ranking",  back: { href: "/flow-ranking",  label: "큰손 매매 랭킹으로" } },
-  { prefix: "/volume-surge",  back: { href: "/volume-surge",  label: "거래량 폭증 목록으로" } },
 ];
 
 /** Explicit param-based decision — preferred path. Each rule maps a
@@ -53,20 +44,11 @@ function decideFromParam(
   search: URLSearchParams,
 ): BackLink | null {
   if (from === "watchlist") return { href: "/watchlist", label: "관심 종목으로" };
-  if (from === "flow-ranking") return { href: "/flow-ranking", label: "큰손 매매 랭킹으로" };
-  if (from === "volume-surge") return { href: "/volume-surge", label: "거래량 폭증 목록으로" };
   if (from === "screener") {
     const preset = search.get("preset");
     return {
       href: preset ? `/screener?preset=${encodeURIComponent(preset)}` : "/screener",
       label: "스크리너로",
-    };
-  }
-  if (from === "themes") {
-    const themeId = search.get("theme");
-    return {
-      href: themeId ? `/themes/${encodeURIComponent(themeId)}` : "/themes",
-      label: themeId ? "테마 종목 목록으로" : "테마로",
     };
   }
   return null;

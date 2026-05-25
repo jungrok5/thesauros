@@ -1,10 +1,9 @@
 /**
  * ActionPill — book-action label + book_score in one chip.
  *
- * Used by stock-list tables (/screener and /themes/[id]) so a row's
+ * Used by stock-list tables (/screener) so a row's
  * BUY/STRONG_BUY/HOLD/AVOID verdict + 10-point book score read as a
- * single visual unit. Extracted from /screener (2026-05-21) so the two
- * pages don't drift apart.
+ * single visual unit.
  *
  *   <ActionPill action="STRONG_BUY" score={0.95} />  → 🟢 강매수 · 9.5/10
  *   <ActionPill action={null} score={null} />        → 대기

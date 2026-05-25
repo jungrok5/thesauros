@@ -7,8 +7,6 @@ import {
   BookOpen,
   Compass,
   Filter,
-  Hash,
-  LineChart,
   Map,
   Menu,
   MessageSquare,
@@ -16,8 +14,6 @@ import {
   Settings,
   Shield,
   Star,
-  TrendingUp,
-  Volume2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,13 +21,20 @@ import { cn } from "@/lib/utils";
 type NavItem = { href: string; label: string; icon: typeof Compass };
 type NavGroup = { heading: string; items: NavItem[] };
 
-/** 그룹별 navigation (2026-05-21):
+/** 그룹별 navigation (2026-05-25, post site-direction reset):
  *  - 가이드: 처음 시작 + 절세
- *  - 시장 분위기: 거시 (macro)
- *  - 종목 발견: 검색 / 스크리너 / 테마
- *  - 시장 모니터: 큰손 / 거래량
+ *  - 시장 분위기: 거시 (macro) — 단일 surface, 진입 후보 / 백테스트 결과는
+ *    대시보드 안에서 노출
+ *  - 종목 발견: 검색 / 스크리너 (책 정신 매수 후보 단일 preset)
  *  - 내 종목: 관심·보유
  *  - 시스템: 버그·설정
+ *
+ *  Removed 2026-05-25 (책 정신 일관성 — 페이지 늘리지 말 것):
+ *   - /backtest (사이드바에서 footer link 로 demote, 페이지 자체는 유지)
+ *   - /themes (책에서 테마 매매 강조 X, 오히려 경계 권고)
+ *   - /flow-ranking, /volume-surge (책 정신과 직접 연관 약함 / screener
+ *     sub-filter 와 중복)
+ *   - /us-analysis (KR 폴리싱 끝나기 전까지 미국 시장 손대지 말 것)
  *
  *  /tax (세금 시뮬레이터) 는 1년에 1번 쓰는 12월 한정 도구라 사이드바
  *  상시 노출 제외. /guide 안의 "12월 절세 매도 시뮬" 박스에서 link 로
@@ -49,7 +52,6 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "📍 시장 분위기",
     items: [
       { href: "/dashboard", label: "거시 (Macro)", icon: Compass },
-      { href: "/backtest", label: "백테스트 17년", icon: LineChart },
     ],
   },
   {
@@ -57,26 +59,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/stocks", label: "종목 검색", icon: Search },
       { href: "/screener", label: "스크리너", icon: Filter },
-      { href: "/themes", label: "테마", icon: Hash },
-    ],
-  },
-  {
-    heading: "📊 시장 모니터",
-    items: [
-      { href: "/flow-ranking", label: "큰손 매매 랭킹", icon: TrendingUp },
-      { href: "/volume-surge", label: "거래량 폭증", icon: Volume2 },
     ],
   },
   {
     heading: "⭐ 내 종목",
     items: [
       { href: "/watchlist", label: "관심·보유 종목", icon: Star },
-    ],
-  },
-  {
-    heading: "🇺🇸 미국 (ad-hoc)",
-    items: [
-      { href: "/us-analysis", label: "미국 종목 분석", icon: Search },
     ],
   },
   {
@@ -89,8 +77,6 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // 베타 기능 — 일반 사용자에게 풀기 전 관리자만 노출.
-// chart-vision (vision-based) 은 2026-05-24 us-analysis (Tiingo 데이터)
-// 로 대체. 별도 ADMIN_BETA_GROUP 비움.
 const ADMIN_BETA_GROUP: NavGroup = {
   heading: "🧪 베타 (관리자)",
   items: [],

@@ -74,3 +74,5 @@ book_images/**/SUMMARY*.md
 # bars (committed test would freeze it stale — keep regenerable). The
 # vitest book-verdict-live.test.tsx skips when this file is absent.
 web-next/src/__tests__/_live_data.json
+
+.vercel

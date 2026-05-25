@@ -1,6 +1,6 @@
 /**
  * RowPrice — small two-line cell showing latest weekly close + 1-week
- * change. Used by list-page rows (/screener, /themes/[id]). Empty when
+ * change. Used by list-page rows (/screener). Empty when
  * no bar data exists for the ticker.
  *
  *   <RowPrice price={...} ticker="005930.KS" />

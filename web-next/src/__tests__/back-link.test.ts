@@ -65,23 +65,11 @@ describe("decideBackLink", () => {
     ).toEqual({ href: "/stocks", label: "종목 검색" });
   });
 
-  // Coming from list pages — user expects to go back to the same list
-  // (was bug 2026-05-20: /volume-surge → detail → back went to /stocks).
-  it("/volume-surge → 거래량 폭증 목록으로", () => {
-    expect(decideBackLink("https://app.example.com/volume-surge"))
-      .toEqual({ href: "/volume-surge", label: "거래량 폭증 목록으로" });
-  });
-
-  it("/flow-ranking → 큰손 매매 랭킹으로", () => {
-    expect(decideBackLink("https://app.example.com/flow-ranking"))
-      .toEqual({ href: "/flow-ranking", label: "큰손 매매 랭킹으로" });
-  });
-
   it("/screener preserves preset query so user lands on same preset", () => {
     expect(
-      decideBackLink("https://app.example.com/screener?preset=value-classic"),
+      decideBackLink("https://app.example.com/screener?preset=book-buy"),
     ).toEqual({
-      href: "/screener?preset=value-classic",
+      href: "/screener?preset=book-buy",
       label: "스크리너로",
     });
   });
@@ -90,6 +78,10 @@ describe("decideBackLink", () => {
     expect(decideBackLink("https://app.example.com/screener"))
       .toEqual({ href: "/screener", label: "스크리너로" });
   });
+
+  // Removed 2026-05-25: /volume-surge, /flow-ranking, /themes pages
+  // were removed in the site-direction reset (책 정신 일관성 — 페이지
+  // 줄이기). back-link rules for those paths gone with them.
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -103,19 +95,11 @@ describe("decideBackLink", () => {
 describe("decideBackLink — ?from= URL param (takes priority over Referer)", () => {
   it("from=screener → 스크리너로 (with optional preset)", () => {
     expect(
-      decideBackLink(null, { from: "screener", preset: "value-classic" }),
-    ).toEqual({ href: "/screener?preset=value-classic", label: "스크리너로" });
+      decideBackLink(null, { from: "screener", preset: "book-buy" }),
+    ).toEqual({ href: "/screener?preset=book-buy", label: "스크리너로" });
 
     expect(decideBackLink(null, { from: "screener" }))
       .toEqual({ href: "/screener", label: "스크리너로" });
-  });
-
-  it("from=themes → 테마 종목 목록으로 (with theme id)", () => {
-    expect(decideBackLink(null, { from: "themes", theme: "12" }))
-      .toEqual({ href: "/themes/12", label: "테마 종목 목록으로" });
-    // No theme id → /themes list.
-    expect(decideBackLink(null, { from: "themes" }))
-      .toEqual({ href: "/themes", label: "테마로" });
   });
 
   it("from=watchlist → 관심 종목으로", () => {
@@ -123,28 +107,21 @@ describe("decideBackLink — ?from= URL param (takes priority over Referer)", ()
       .toEqual({ href: "/watchlist", label: "관심 종목으로" });
   });
 
-  it("from=flow-ranking → 큰손 매매 랭킹으로", () => {
-    expect(decideBackLink(null, { from: "flow-ranking" }))
-      .toEqual({ href: "/flow-ranking", label: "큰손 매매 랭킹으로" });
-  });
-
-  it("from=volume-surge → 거래량 폭증 목록으로", () => {
-    expect(decideBackLink(null, { from: "volume-surge" }))
-      .toEqual({ href: "/volume-surge", label: "거래량 폭증 목록으로" });
-  });
-
   it("from= 가 Referer 보다 우선 — 둘 다 있어도 from= 따름", () => {
     expect(
       decideBackLink("https://app.example.com/watchlist",
-        { from: "screener", preset: "value-classic" }),
-    ).toEqual({ href: "/screener?preset=value-classic", label: "스크리너로" });
+        { from: "screener", preset: "book-buy" }),
+    ).toEqual({ href: "/screener?preset=book-buy", label: "스크리너로" });
   });
 
   it("URLSearchParams object 도 받음", () => {
-    const sp = new URLSearchParams("from=screener&preset=growth-quality");
+    const sp = new URLSearchParams("from=screener&preset=book-buy");
     expect(decideBackLink(null, sp))
-      .toEqual({ href: "/screener?preset=growth-quality", label: "스크리너로" });
+      .toEqual({ href: "/screener?preset=book-buy", label: "스크리너로" });
   });
+
+  // Removed 2026-05-25: from=themes / from=flow-ranking / from=volume-surge
+  // — origin pages no longer exist.
 
   it("unknown from= 값은 Referer fallback", () => {
     expect(

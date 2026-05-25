@@ -586,8 +586,8 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   );
 }
 
-// ActionPill moved to @/components/action-pill so /themes/[id] can use
-// the same chip — keeps the two stock-list pages from drifting again.
+// ActionPill moved to @/components/action-pill so other surfaces can
+// reuse the same chip.
 //
 // SubScoreControls + FilterChip moved to sub-score-controls-client.tsx
 // (client component) so chips switch instantly + show pending state

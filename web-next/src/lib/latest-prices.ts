@@ -1,7 +1,7 @@
 /**
  * Bulk-fetch latest weekly close + 1-week change for a list of tickers.
  *
- * Used by list pages (/screener, /themes/[id]) to show "5,300원 +7.2%"
+ * Used by list pages (/screener) to show "5,300원 +7.2%"
  * next to each row without paying a per-row roundtrip. Two W bars per
  * ticker is plenty for "this week vs last week" — pull the most recent
  * 2 rows, sort by bar_date in JS.

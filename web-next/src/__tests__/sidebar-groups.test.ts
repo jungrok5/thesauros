@@ -44,12 +44,11 @@ describe("/welcome page regression", () => {
 describe("sidebar group regression", () => {
   const src = fs.readFileSync(SIDEBAR_PATH, "utf8");
 
-  it("6 그룹 heading 모두 정의 — 순서대로", () => {
+  it("5 그룹 heading 모두 정의 — 순서대로 (2026-05-25 시장 모니터 / 미국 / 테마 제거)", () => {
     const orderedHeadings = [
       "📖 가이드",
       "📍 시장 분위기",
       "🔎 종목 발견",
-      "📊 시장 모니터",
       "⭐ 내 종목",
       "⚙️ 시스템",
     ];
@@ -60,6 +59,19 @@ describe("sidebar group regression", () => {
       expect(idx, `heading "${h}" out of order`).toBeGreaterThan(lastIdx);
       lastIdx = idx;
     }
+  });
+
+  it("제거된 그룹/라우트 다시 추가 금지 — site-direction reset 2026-05-25", () => {
+    // Adding these back without an explicit decision means somebody
+    // walked into the same trap again. Each entry has a memory doc
+    // explaining why it was removed (feedback_site_direction.md).
+    expect(src).not.toMatch(/📊 시장 모니터/);
+    expect(src).not.toMatch(/🇺🇸 미국/);
+    expect(src).not.toMatch(/href:\s*["']\/themes["']/);
+    expect(src).not.toMatch(/href:\s*["']\/flow-ranking["']/);
+    expect(src).not.toMatch(/href:\s*["']\/volume-surge["']/);
+    expect(src).not.toMatch(/href:\s*["']\/us-analysis["']/);
+    expect(src).not.toMatch(/href:\s*["']\/backtest["']/);
   });
 
   it("admin group heading 존재 ('🔒 관리자')", () => {

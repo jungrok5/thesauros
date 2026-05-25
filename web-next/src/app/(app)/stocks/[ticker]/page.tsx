@@ -56,8 +56,8 @@ const CANONICAL_TICKER_RE = /^[A-Z0-9]{1,12}(\.[A-Z]{1,4})?$/;
 interface PageProps {
   params: Promise<{ ticker: string }>;
   /** Originating-page hint set by list pages on their stock <Link>.
-   *  Keys we honor: `from`, `preset` (for /screener), `theme` (for
-   *  /themes/[id]). Falls back to Referer header if absent. */
+   *  Keys we honor: `from`, `preset` (for /screener).
+   *  Falls back to Referer header if absent. */
   searchParams: Promise<Record<string, string | undefined>>;
 }
 

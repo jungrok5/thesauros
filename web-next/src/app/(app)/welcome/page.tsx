@@ -313,8 +313,6 @@ export default function WelcomePage() {
           <li>· <strong className="text-foreground">/stocks/[ticker]</strong> 가격/이평선 — 종가 (직전 17 KST)</li>
           <li>· <strong className="text-foreground">/stocks/[ticker]</strong> 외인+기관 / 공시 — 매일 갱신</li>
           <li>· <strong className="text-foreground">/screener</strong> 순위 — 금요일 갱신</li>
-          <li>· <strong className="text-foreground">/themes</strong> — 토요일 갱신 (캐시: 1시간 ISR)</li>
-          <li>· <strong className="text-foreground">/flow-ranking, /volume-surge</strong> — 매일 갱신</li>
           <li>· <strong className="text-foreground">/watchlist</strong> — 실시간 (페이지 열 때 조회)</li>
         </ul>
         <div className="rounded-md border border-dashed border-border bg-muted/20 p-2 mt-2 text-[11px] text-muted-foreground leading-relaxed">
