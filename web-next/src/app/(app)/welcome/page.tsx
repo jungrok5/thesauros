@@ -348,9 +348,9 @@ export default function WelcomePage() {
           <li>
             <strong className="text-foreground">『미국 주식은 왜 자동 분석이 안 되나?』</strong>{" "}
             책 정신상 코스피·코스닥 종목 매매 + 미국은 글로벌 지수 (탑다운
-            1단계) 로만 활용. 또 Naver/Yahoo 가 cloud IP 차단으로 자동 수집도
-            어려워 2026-05-22 부로 자동 분석 중단. 미국·해외·암호화폐 차트는
-            모바일 증권 앱 스크린샷으로 차트 비전 (베타) 분석 가능.
+            1단계) 로만 활용. Naver/Yahoo 가 cloud IP 차단으로 자동 수집도
+            어려워 2026-05-22 부로 자동 분석 중단. KR 사이트가 만족스러운
+            수준이 된 다음 미국 시장 지원 재검토.
           </li>
         </ul>
       </section>

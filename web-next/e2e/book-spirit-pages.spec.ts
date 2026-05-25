@@ -90,7 +90,6 @@ test.describe("/welcome — book-spirit rule documentation", () => {
     await signInAs(page, ADMIN_EMAIL);
     await page.goto(`${BASE}/welcome`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("body")).toContainText("미국 주식");
-    await expect(page.locator("body")).toContainText("차트 비전");
   });
 });
 
@@ -141,66 +140,8 @@ test.describe("NextDecisionChip — decision-surface visibility", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// Sidebar — admin-only items must not leak to public sidebar
-// ─────────────────────────────────────────────────────────────────────
-
-test.describe("Sidebar gating", () => {
-  test("admin user sees the 베타 group containing 차트 이미지 분석", async ({ page }) => {
-    // Explicit role=admin — issue-session defaults to 'user' so the
-    // sidebar's `isAdmin` flag would be false without this.
-    await signInAs(page, ADMIN_EMAIL, "admin");
-    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
-    // Sidebar (desktop) is server-rendered with the admin items in DOM.
-    // The MobileNav variant duplicates them inside the page tree so a
-    // plain body-text check catches both.
-    await expect(page.locator("body")).toContainText("차트 이미지 분석");
-    await expect(page.locator("body")).toContainText("베타");
-  });
-
-  test("non-admin user does NOT see 차트 이미지 분석 in sidebar", async ({ page }) => {
-    // The opposite gate: book-spirit P_VISION is admin-only beta until
-    // we promote it. A regression that surfaces it to regular users
-    // would leak a paid Vision API endpoint.
-    await signInAs(page, "guard-nonadmin@e2e.test", "user");
-    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("body")).not.toContainText("차트 이미지 분석");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// /chart-vision — page reachable for admin, gated for non-admin
-// ─────────────────────────────────────────────────────────────────────
-
-test.describe("/chart-vision — admin-only beta", () => {
-  test("admin can open the chart-vision page", async ({ page }) => {
-    await signInAs(page, ADMIN_EMAIL, "admin");
-    const resp = await page.goto(`${BASE}/chart-vision`, {
-      waitUntil: "domcontentloaded",
-    });
-    expect(resp?.status()).toBeLessThan(400);
-    await expect(page.locator("body")).toContainText("차트 이미지 분석");
-    await expect(page.locator("body")).toContainText("책 정신 분석");
-    // File input present.
-    await expect(page.locator("input[type='file']")).toHaveCount(1);
-  });
-
-  test("non-admin URL access redirects to /dashboard (회고 #62)", async ({ page }) => {
-    await signInAs(page, "guard-vision@e2e.test", "user");
-    await page.goto(`${BASE}/chart-vision`, { waitUntil: "domcontentloaded" });
-    // page.tsx 의 redirect("/dashboard") 결과 — final URL 이 dashboard.
-    expect(page.url()).toContain("/dashboard");
-    // chart-vision 페이지 본문 X.
-    await expect(page.locator("body")).not.toContainText("책 정신 분석");
-  });
-
-  test("API rejects unauthenticated POST", async ({ page }) => {
-    // Don't sign in — direct POST should bounce.
-    const r = await page.request.post(`${BASE}/api/chart-vision/analyze`, {
-      multipart: {
-        file: { name: "x.png", mimeType: "image/png", buffer: Buffer.alloc(1) },
-      },
-    });
-    expect(r.status()).toBe(401);
-  });
-});
+// chart-vision admin beta + /chart-vision page tests removed 2026-05-25 —
+// the surface itself is gone (replaced first by us-analysis 2026-05-24,
+// then dropped entirely on the site-direction reset). Sidebar gating
+// invariants for admin-only items live in dedicated test files when
+// new beta surfaces are introduced.
