@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Shield, ChevronRight, Settings } from "lucide-react";
+import { Bell, Calculator, Shield, ChevronRight, Settings } from "lucide-react";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,24 @@ export default async function SettingsPage() {
               <div className="text-sm font-medium">알림 설정</div>
               <div className="text-xs text-muted-foreground mt-0.5">
                 텔레그램 연동 · 웹 푸시 · 알림 종류 (매수/매도/추세 변경 등)
+              </div>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </Link>
+
+        {/* /tax 는 1년 1번 (12월) 도구라 사이드바 상시 노출 X.
+            /guide 의 절세 박스 + 이곳 두 진입점에서 발견 가능 (2026-05-25). */}
+        <Link
+          href="/tax"
+          className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-muted/30 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <Calculator className="h-5 w-5 mt-0.5 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium">절세 매도 시뮬 (12월)</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                연말 양도세 절감 — 손실 종목 매도/재매수 시뮬레이터
               </div>
             </div>
           </div>
