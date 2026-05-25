@@ -39,6 +39,25 @@ POOL_MIN = int(os.environ.get("SUPABASE_POOL_MIN", "1"))
 POOL_MAX = int(os.environ.get("SUPABASE_POOL_MAX", "8"))
 
 
+def _read_supabase_url() -> str:
+    """Read SUPABASE_URL, falling back to NEXT_PUBLIC_SUPABASE_URL.
+
+    Vercel environments often only have the NEXT_PUBLIC_* variant
+    registered (since web-next reads it for the browser client) while
+    Python code historically required the prefix-free name. Accepting
+    either keeps the Vercel Python serverless functions working without
+    requiring users to register the same value twice.
+    """
+    url = os.environ.get("SUPABASE_URL") or os.environ.get(
+        "NEXT_PUBLIC_SUPABASE_URL"
+    )
+    if not url:
+        raise KeyError(
+            "SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) must be set"
+        )
+    return url
+
+
 def get_dsn(*, mode: str = "transaction") -> str:
     """Build a Postgres DSN for the Supabase pooler.
 
@@ -49,8 +68,15 @@ def get_dsn(*, mode: str = "transaction") -> str:
     Password is URL-encoded so passwords containing reserved chars
     (@, :, /, ?, #) don't break URI parsing.
     """
-    url = os.environ["SUPABASE_URL"]
-    pw = os.environ["SUPABASE_DB_PASSWORD"]
+    url = _read_supabase_url()
+    try:
+        pw = os.environ["SUPABASE_DB_PASSWORD"]
+    except KeyError:
+        raise KeyError(
+            "SUPABASE_DB_PASSWORD must be set (Vercel: add to "
+            "Project Settings → Environment Variables; web-next does not "
+            "use this, so it is easy to miss when copying envs from .env.local)"
+        )
     ref = url.replace("https://", "").replace(".supabase.co", "")
     region = os.environ.get("SUPABASE_REGION", DEFAULT_REGION)
     host = os.environ.get("SUPABASE_POOLER_HOST",
@@ -135,7 +161,7 @@ def get_supabase_client():
     if _supabase_client is None:
         from supabase import create_client
         _supabase_client = create_client(
-            os.environ["SUPABASE_URL"],
+            _read_supabase_url(),
             os.environ["SUPABASE_SERVICE_KEY"],
         )
     return _supabase_client
