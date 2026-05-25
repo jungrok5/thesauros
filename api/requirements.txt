@@ -10,3 +10,7 @@ numpy==1.26.4
 requests==2.31.0
 python-dateutil==2.8.2
 psycopg[binary]>=3.2
+# app.db.connection uses psycopg_pool.ConnectionPool — without this the
+# Vercel Python function fails at import with `No module named 'psycopg_pool'`
+# before our handler ever runs (silent HTML 500 instead of JSON traceback).
+psycopg-pool>=3.2
