@@ -38,9 +38,10 @@ const SL_ON_PREFERRED = new Set<string>([
   "action_strong_buy",
 ]);
 
-// Universe-honest production allows max=50 positions, but dashboard
-// card shows top-12 for readability. Full list available in /screener.
-const DEFAULT_LIMIT = 12;
+// Dashboard card = preview only (TOP 3) — full list lives in /screener
+// to avoid the dashboard/스크리너 duplication the user flagged on the
+// 2026-05-25 site-direction reset. The user can click 더보기 to expand.
+const DEFAULT_LIMIT = 3;
 
 type Spot = {
   ticker: string;
@@ -109,7 +110,7 @@ export async function BookEntrySpots({ limit = DEFAULT_LIMIT }: { limit?: number
     <section className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4 space-y-3">
       <header className="flex items-baseline justify-between flex-wrap gap-2">
         <h2 className="text-base font-semibold tracking-tight">
-          📍 이번 주 책 진입 자리 (top {limit})
+          📍 이번 주 책 진입 자리 — TOP {limit}
         </h2>
         <span className="text-xs text-muted-foreground">
           7일 내 fire / strength 내림차순 / 종목당 1회 표시
@@ -171,11 +172,17 @@ export async function BookEntrySpots({ limit = DEFAULT_LIMIT }: { limit?: number
         </table>
       </div>
 
-      <div className="text-xs text-muted-foreground leading-relaxed">
-        Universe-honest production config — no-SL / max=50 / 24w hold /
-        top-5 entries (CAGR 13.4% / Sharpe 0.62 / DD 47.6%). Top {limit}만
-        표시. SL 컬럼 = 신호별 stop-loss 추천 (volume_case_3 + action_strong_buy
-        만 ON 권장 — sweep_per_signal_sl 결과). 실제 매매는 본인 책임.
+      <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t border-emerald-500/20">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          TOP {limit} 미리보기 — 더 많은 후보는 스크리너에서. SL 컬럼 = 신호별
+          stop-loss 추천 (volume_case_3 + action_strong_buy 만 ON 권장).
+        </p>
+        <Link
+          href="/screener"
+          className="text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:underline whitespace-nowrap"
+        >
+          스크리너에서 전체 보기 →
+        </Link>
       </div>
     </section>
   );

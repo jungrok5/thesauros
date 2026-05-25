@@ -90,3 +90,20 @@ describe("sidebar group regression", () => {
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("dashboard backtest demote link (2026-05-25 reset)", () => {
+  // /backtest moved out of the sidebar but the 17-year credibility line
+  // is still the answer to "이 시스템 신뢰해도 돼?" — surfaced as a
+  // footer link on the dashboard. If the link goes away, the page
+  // becomes a black box and the user is back to guessing.
+  it("dashboard page has a /backtest link in the footer", () => {
+    const dashboardPath = path.resolve(
+      __dirname, "..", "app", "(app)", "dashboard", "page.tsx",
+    );
+    const dashSrc = fs.readFileSync(dashboardPath, "utf8");
+    expect(dashSrc).toMatch(/href=["']\/backtest["']/);
+    // The link must include the credibility numbers — without them the
+    // line is just "백테스트 자세히" and the user has no reason to click.
+    expect(dashSrc).toMatch(/CAGR/);
+  });
+});

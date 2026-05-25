@@ -7,6 +7,7 @@
  * MV=PQ를 한 카드(MarketActionCard)에 통합 (이전엔 3군데 중복). 거시
  * 지표 34개 카드는 핵심 8개만 우선 노출, 나머지는 펼침 토글.
  */
+import Link from "next/link";
 import { Compass } from "lucide-react";
 import { BookEntrySpots } from "@/components/book-entry-spots";
 import { StatePill } from "@/components/state-pill";
@@ -257,6 +258,24 @@ export default async function DashboardPage() {
           </div>
         </details>
       )}
+
+      {/* Site footer — backtest credibility line. 2026-05-25 demote:
+          /backtest page is no longer in the sidebar (was "자랑 페이지"),
+          but the 17-year universe-honest result is still the answer to
+          "이 시스템 신뢰해도 돼?" so we surface it as a one-liner here
+          with the link for users who want to dig in. */}
+      <div className="pt-2 mt-2 border-t border-border/60 text-xs text-muted-foreground leading-relaxed">
+        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 1820 종목 universe) —{" "}
+        <span className="text-foreground">CAGR 13.4% · Sharpe 0.62 · DD 47.6%</span>
+        {" "}(KOSPI BH 대비 +1.9%p/y).
+        {" "}
+        <Link
+          href="/backtest"
+          className="text-foreground hover:underline whitespace-nowrap"
+        >
+          백테스트 자세히 →
+        </Link>
+      </div>
     </div>
   );
 }
