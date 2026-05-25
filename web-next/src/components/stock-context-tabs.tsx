@@ -230,7 +230,9 @@ function FactorsTab({ fac, isStale }: { fac: FactorsEvalRow | null; isStale: boo
     <div className="space-y-4">
       <FreshnessNote updatedAt={fac.updated_at} isStale={isStale} />
       <p className="text-[11px] text-muted-foreground italic">
-        ↑ 페이지 상단의 <strong>가치투자 통과</strong> 카드에 한 줄 평이 있습니다 — 아래는 4축 점수 + 4대 스크리닝 통과 여부.
+        팩터 데이터 — 아래는 4축 점수 + 4대 스크리닝 통과 여부 (참고용,
+        책 정신은 추세/패턴/거래량 기반 매매). 책 정신 한 줄 평은 페이지
+        상단 <strong>책 정신 정리표</strong> 참조.
       </p>
       {fac.summary_text && (
         <details className="rounded-lg border border-border bg-card">

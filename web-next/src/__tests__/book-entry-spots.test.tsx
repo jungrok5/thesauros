@@ -1,8 +1,15 @@
 /**
- * BookEntrySpots — dashboard "이번 주 책 진입 자리" card.
+ * BookEntrySpots — dashboard "책 정신 매수 후보 TOP 3" card.
  *
- * Server component reads scan_results via getServerClient. Tests
- * stub the Supabase chain to return mock signal rows.
+ * 2026-05-26 — rewritten after the data-source unification. Component
+ * now calls the screener_results RPC (same as /screener page) so the
+ * dashboard preview = first 3 rows of the screener list, 1:1.
+ *
+ * Tests mock the Supabase RPC call and assert UI invariants:
+ *   - default limit = 3 (the alignment fix)
+ *   - empty state when RPC returns []
+ *   - row rendering + 더보기 link to /screener
+ *   - SL ON badge only for STRONG_BUY or volume_case_3
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -10,100 +17,73 @@ import "@testing-library/jest-dom/vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-const mockData = vi.fn();
+const mockRpc = vi.fn();
 
 vi.mock("@/lib/supabase", () => ({
   getServerClient: () => ({
-    from: () => ({
-      select: () => ({
-        in: () => ({
-          eq: () => ({
-            gte: () => ({
-              order: () => ({
-                limit: () => mockData(),
-              }),
-            }),
-          }),
-        }),
-      }),
-    }),
+    rpc: mockRpc,
   }),
 }));
 
 beforeEach(() => {
   vi.resetModules();
-  mockData.mockReset();
+  mockRpc.mockReset();
 });
 afterEach(() => cleanup());
 
 describe("BookEntrySpots", () => {
-  it("renders empty-state when no signals fired in last 7 days", async () => {
-    mockData.mockResolvedValueOnce({ data: [], error: null });
+  it("renders empty-state when RPC returns no rows", async () => {
+    mockRpc.mockResolvedValueOnce({ data: [], error: null });
     const mod = await import("@/components/book-entry-spots");
     const view = await mod.BookEntrySpots();
     render(view);
-    expect(screen.getByText(/이번 주 책 전략.*fire 종목이 없습니다/))
+    expect(screen.getByText(/책 정신 매수 후보.*종목이 없습니다/))
       .toBeInTheDocument();
   });
 
-  it("renders top spots sorted by strength desc + SL chip per signal", async () => {
-    mockData.mockResolvedValueOnce({
+  it("renders TOP 3 rows from screener_results RPC", async () => {
+    mockRpc.mockResolvedValueOnce({
       data: [
-        {
-          ticker: "005930.KS", signal_type: "action_strong_buy",
-          strength: 0.92, detected_at: "2026-05-24T00:00:00Z",
-          reason: null, tickers: { name: "삼성전자" },
-        },
-        {
-          ticker: "000660.KS", signal_type: "volume_case_3",
-          strength: 0.85, detected_at: "2026-05-23T00:00:00Z",
-          reason: null, tickers: { name: "SK하이닉스" },
-        },
-        {
-          ticker: "035720.KS", signal_type: "pattern_forking",
-          strength: 0.78, detected_at: "2026-05-22T00:00:00Z",
-          reason: null, tickers: { name: "카카오" },
-        },
+        { ticker: "339950.KQ", name: "테스트A", action: "STRONG_BUY",
+          book_score: "1.00", roe: "0.25", volume_case_num: 3,
+          catalyst_bars_since: 2 },
+        { ticker: "078520.KS", name: "테스트B", action: "BUY",
+          book_score: "0.95", roe: "0.18", volume_case_num: 7,
+          catalyst_bars_since: 5 },
+        { ticker: "066620.KQ", name: "테스트C", action: "STRONG_BUY",
+          book_score: "0.92", roe: "0.12", volume_case_num: null,
+          catalyst_bars_since: null },
       ],
       error: null,
     });
     const mod = await import("@/components/book-entry-spots");
-    const view = await mod.BookEntrySpots({ limit: 8 });
+    const view = await mod.BookEntrySpots();
     const { container } = render(view);
-    expect(screen.getByText(/삼성전자/)).toBeInTheDocument();
-    expect(screen.getByText(/SK하이닉스/)).toBeInTheDocument();
-    expect(screen.getByText(/카카오/)).toBeInTheDocument();
-    // 2개의 ON 권장 (action_strong_buy + volume_case_3), 1개 OFF (forking)
-    expect(container.textContent).toContain("10%");
-    expect(container.textContent).toContain("OFF");
+    expect(screen.getByText(/테스트A/)).toBeInTheDocument();
+    expect(screen.getByText(/테스트B/)).toBeInTheDocument();
+    expect(screen.getByText(/테스트C/)).toBeInTheDocument();
+    // STRONG_BUY + volume_case_3 → SL ON (10%) for row 1
+    // BUY + volume_case_7 → SL OFF for row 2
+    // STRONG_BUY w/o volume case → SL ON (10%) for row 3 (rule is OR)
+    const text = container.textContent ?? "";
+    expect((text.match(/10%/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(text).toContain("OFF");
   });
 
-  // Site-direction reset 2026-05-25 — dashboard surface trimmed to TOP 3
-  // preview + 스크리너 더보기 link to remove the dashboard/스크리너
-  // duplication the user flagged.
-  it("dashboard preview defaults to TOP 3 (not the legacy 12)", async () => {
-    mockData.mockResolvedValueOnce({ data: [], error: null });
-    const mod = await import("@/components/book-entry-spots");
-    // Renders empty-state shell; the literal "DEFAULT_LIMIT" used by the
-    // header is the value we want to lock down.
+  it("dashboard preview defaults to TOP 3", async () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, "..", "components", "book-entry-spots.tsx"),
       "utf8",
     );
     expect(src).toMatch(/const DEFAULT_LIMIT = 3;/);
-    // sanity — module still resolves end-to-end
-    const view = await mod.BookEntrySpots();
-    render(view);
   });
 
   it("renders 스크리너 더보기 link to /screener when there are spots", async () => {
-    mockData.mockResolvedValueOnce({
+    mockRpc.mockResolvedValueOnce({
       data: [
-        {
-          ticker: "005930.KS", signal_type: "action_strong_buy",
-          strength: 0.92, detected_at: "2026-05-24T00:00:00Z",
-          reason: null, tickers: { name: "삼성전자" },
-        },
+        { ticker: "005930.KS", name: "삼성전자", action: "BUY",
+          book_score: "0.85", roe: "0.15", volume_case_num: null,
+          catalyst_bars_since: null },
       ],
       error: null,
     });
@@ -113,5 +93,17 @@ describe("BookEntrySpots", () => {
     const moreLink = container.querySelector('a[href="/screener"]');
     expect(moreLink, "BookEntrySpots must link to /screener").not.toBeNull();
     expect(moreLink?.textContent).toMatch(/스크리너/);
+  });
+
+  // 2026-05-26 alignment guard — the unification commit must keep using
+  // the screener_results RPC. If anyone reverts to direct scan_results
+  // (the pre-unification source), this fails.
+  it("uses screener_results RPC, not direct scan_results access", async () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "..", "components", "book-entry-spots.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/screener_results/);
+    expect(src).not.toMatch(/\.from\(\s*["']scan_results["']/);
   });
 });

@@ -32,7 +32,7 @@ const SITE_URL =
 const DESC =
   "한국 종목 (KOSPI / KOSDAQ) 매주 금요일 자동 주봉 스캔 — 17종 캔들 패턴 + " +
   "추세 + 4등분선 + 외국인·기관 매매 + 거시 5축 다이얼. 텔레그램·웹 푸시 알림. " +
-  "강환국·그레이엄·마법공식·버핏형 가치투자 게이트.";
+  "17년 universe-honest 백테스트 검증 (CAGR 13.4% / Sharpe 0.62).";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     "주식", "종가매매", "추세추종", "캔들 분석", "쌍바닥", "돌반지",
     "KOSPI", "KOSDAQ", "코스피", "코스닥",
     "외국인 매매", "기관 매매", "거시 지표", "시장 레짐",
-    "강환국", "그레이엄", "마법공식", "버핏",
+    "주봉 매매", "240MA", "백테스트", "모멘텀",
     "Korean stocks", "trend following", "candlestick patterns",
   ],
   authors: [{ name: "Thesauros" }],

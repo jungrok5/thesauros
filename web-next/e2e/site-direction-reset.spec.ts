@@ -175,3 +175,77 @@ test.describe("/dashboard layout after reset", () => {
     expect(resp?.status()).toBeLessThan(400);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Dashboard ↔ /screener data-source alignment (2026-05-26 fix)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("Dashboard ↔ /screener ticker alignment", () => {
+  // The reason this test exists: the prior BookEntrySpots used the raw
+  // scan_results table while /screener used the screener_results RPC.
+  // Real-data review showed 0% overlap on the top 3 — one of the
+  // dashboard's TOP 3 wasn't in the screener at all. After the
+  // unification (BookEntrySpots → screener_results RPC), the dashboard
+  // preview should *be* the first 3 rows of the screener list.
+  test("dashboard TOP 3 tickers match the first 3 of /screener", async ({ page }) => {
+    await signIn(page);
+
+    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
+    const dashHtml = await page.content();
+    // Tickers inside the BookEntrySpots <a href="/stocks/...?from=dashboard">.
+    const dashTickers = [
+      ...dashHtml.matchAll(/\/stocks\/([A-Z0-9.]+)\?from=dashboard/g),
+    ].map((m) => m[1]);
+    // Dedup keeping order (mobile + desktop render the same link twice).
+    const dashUnique: string[] = [];
+    for (const t of dashTickers) {
+      if (!dashUnique.includes(t)) dashUnique.push(t);
+    }
+
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    const scrnHtml = await page.content();
+    const scrnTickers = [
+      ...scrnHtml.matchAll(/\/stocks\/([A-Z0-9.]+)\?from=screener/g),
+    ].map((m) => m[1]);
+    const scrnUnique: string[] = [];
+    for (const t of scrnTickers) {
+      if (!scrnUnique.includes(t)) scrnUnique.push(t);
+    }
+
+    // If either surface has no data (cron hasn't run / DB empty),
+    // skip — the alignment is undefined, not violated.
+    if (dashUnique.length === 0 || scrnUnique.length === 0) {
+      test.skip(true, "no candidate data on either surface");
+      return;
+    }
+
+    // The unification guarantee: dashboard preview = first N of screener.
+    const dashTop = dashUnique.slice(0, 3);
+    const scrnTop = scrnUnique.slice(0, 3);
+    expect(dashTop, "dashboard TOP 3 must equal screener TOP 3").toEqual(scrnTop);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// /stocks/[ticker] cleanup — value-investing card gone
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("/stocks/[ticker] book-spirit consistency", () => {
+  test("stock detail page no longer shows the '가치투자 통과' card", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    // The card had this exact label; it lived in FundamentalVerdicts grid.
+    // Removed in the alignment cycle so the screener's book-spirit-only
+    // stance isn't contradicted on the detail page.
+    await expect(page.locator("body")).not.toContainText("가치투자 통과");
+
+    // The other half of the strip ("재무 건전성") stays — that one is
+    // pure 안전성/수익성 evaluation, not a value-investing frame.
+    // Skipped if the financials_eval row is missing for this ticker
+    // (empty component renders nothing).
+  });
+});

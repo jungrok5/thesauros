@@ -1,34 +1,33 @@
 /**
- * Above-the-fold strip of "한 줄 평" cards for the stock detail page:
+ * Above-the-fold "재무 건전성" card on the stock detail page.
  *
- *   ┌─────────────────────────┬─────────────────────────┐
- *   │ 재무 건전성             │ 가치투자 통과 (팩터)    │
- *   │ 🟢 우수 / 🟡 양호 …    │ 🟢 우수 / 🟡 양호 …    │
- *   │ one-liner               │ one-liner               │
- *   │ · takeaway              │ · takeaway              │
- *   │ · takeaway              │ · takeaway              │
- *   └─────────────────────────┴─────────────────────────┘
+ *   ┌────────────────────────────────────────────────────┐
+ *   │ 재무 건전성                                        │
+ *   │ 🟢 우수 / 🟡 양호 / 🟠 부진 / 🔴 적자              │
+ *   │ one-liner                                          │
+ *   │ · takeaway                                         │
+ *   │ · takeaway                                         │
+ *   └────────────────────────────────────────────────────┘
  *
- * Previously buried inside the 종목 정보 → 재무제표 / 팩터 tabs at the
- * very bottom of the page. Surfaced up top so the user gets the
- * fundamental judgment alongside the trend-following verdict without
- * scrolling + tab-clicking. The tabs still own the deep-dive (3y
- * table, factor grid, gate badges).
+ * 2026-05-26 site-direction reset: dropped the second "가치투자 통과
+ * (팩터)" card. The screener already removed the value-investing
+ * presets (그레이엄/버핏/마법공식/딥밸류) for book-spirit consistency —
+ * exposing a "가치투자 통과" verdict on stock detail was the same
+ * value-investing frame in a different surface, and the user flagged
+ * it during the alignment review. The raw factor data is still
+ * available in the 종목 정보 → 팩터 탭 for those who want to dig.
  */
 import {
   interpretFinancials,
-  interpretFactors,
   type Interpretation,
 } from "@/lib/fundamentals-interpret";
 import type {
   FinancialsEvalRow,
-  FactorsEvalRow,
 } from "@/lib/supabase";
 import { DataFreshness } from "@/components/data-freshness";
 
 interface Props {
   fin: FinancialsEvalRow | null;
-  fac: FactorsEvalRow | null;
 }
 
 const TONE: Record<
@@ -57,36 +56,21 @@ const TONE: Record<
   },
 };
 
-export function FundamentalVerdicts({ fin, fac }: Props) {
-  // Page renders nothing if neither table has a row yet — keeps the
-  // detail page tidy for freshly-added tickers that haven't been
-  // evaluated by the weekly cron.
-  if (!fin && !fac) return null;
+export function FundamentalVerdicts({ fin }: Props) {
+  // Page renders nothing if the financials_eval row is missing —
+  // keeps the detail page tidy for freshly-added tickers that
+  // haven't been evaluated by the weekly cron yet.
+  if (!fin) return null;
 
   return (
-    <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {fin ? (
-        <VerdictCard
-          label="재무 건전성"
-          subLabel="DART / SEC 재무 → 성장 · 수익 · 안전 가중 평가"
-          interp={interpretFinancials(fin)}
-          deepLink="📋 재무제표 탭에서 3년 추이 + 룰별 평가"
-          asOf={fin.updated_at}
-        />
-      ) : (
-        <Empty label="재무 건전성" />
-      )}
-      {fac ? (
-        <VerdictCard
-          label="가치투자 통과"
-          subLabel="PER · PBR · 4축 + 4대 스크리닝 (강환국 · 그레이엄 · 마법공식 · 버핏)"
-          interp={interpretFactors(fac)}
-          deepLink="🎯 팩터 탭에서 4축 점수 + 게이트 통과 여부"
-          asOf={fac.updated_at}
-        />
-      ) : (
-        <Empty label="가치투자 통과" />
-      )}
+    <section className="max-w-2xl">
+      <VerdictCard
+        label="재무 건전성"
+        subLabel="DART / SEC 재무 → 성장 · 수익 · 안전 가중 평가"
+        interp={interpretFinancials(fin)}
+        deepLink="📋 재무제표 탭에서 3년 추이 + 룰별 평가"
+        asOf={fin.updated_at}
+      />
     </section>
   );
 }
@@ -145,11 +129,3 @@ function VerdictCard({
   );
 }
 
-function Empty({ label }: { label: string }) {
-  return (
-    <article className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-xs text-muted-foreground">
-      <div className="font-medium text-foreground/80 mb-1">{label}</div>
-      데이터 미적재 — 주간 cron 후 자동 채워짐.
-    </article>
-  );
-}

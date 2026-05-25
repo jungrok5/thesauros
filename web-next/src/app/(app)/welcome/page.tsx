@@ -45,10 +45,10 @@ const STEPS: Array<{
   {
     num: "2",
     icon: Search,
-    title: "종목 발견 — 검색 · 스크리너 · 테마",
+    title: "종목 발견 — 검색 · 스크리너",
     body:
-      "관심 종목 이름/코드를 알면 검색. 조건으로 찾고 싶으면 스크리너 (PER < 15 + 책 점수 등). " +
-      "테마별 분류는 테마 페이지에서.",
+      "관심 종목 이름/코드를 알면 검색. 조건으로 찾고 싶으면 스크리너 — " +
+      "추세 + 패턴 + 거래량 통과한 '책 정신 매수 후보' 만 노출.",
     cta: { href: "/stocks", label: "종목 검색 시작" },
   },
   {
@@ -212,7 +212,6 @@ export default function WelcomePage() {
                 <td className="py-2 pr-3 align-top space-y-0.5">
                   <div>· DART 재무 (fundamentals)</div>
                   <div>· DART 전체 공시 (disclosures)</div>
-                  <div>· 테마 + 멤버 (themes / theme_members)</div>
                   <div>· 어닝 캘린더 + 애널리스트 컨센서스 + 5% 보유</div>
                 </td>
                 <td className="py-2 align-top text-muted-foreground">없음 (데이터 적재만)</td>

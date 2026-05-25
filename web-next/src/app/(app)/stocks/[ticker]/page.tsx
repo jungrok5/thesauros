@@ -462,7 +462,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
             <h2 className="text-lg font-semibold tracking-tight">
               🏛️ 펀더멘털 검증
             </h2>
-            <FundamentalVerdicts fin={ctx.fin} fac={ctx.fac} />
+            <FundamentalVerdicts fin={ctx.fin} />
             <ShortAndDividendCards
               shorts={ctx.shorts}
               dividend={ctx.dividend}
