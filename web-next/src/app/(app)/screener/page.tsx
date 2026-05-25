@@ -1,10 +1,15 @@
 /**
- * /screener — preset-driven stock screener.
+ * /screener — book-spirit buy-candidate screener.
  *
- * Tone: each preset has a built-in oneLiner + action so the user
- * doesn't just see a list of tickers — they understand "이 검색이
- * 어떤 종목 찾는 거" and "발견하면 어떻게 행동할지". Matches the
- * established tone of every other interpretation card on the site.
+ * 2026-05-25 site-direction reset: collapsed from 6 presets to 1.
+ * The page no longer asks the user which philosophy to use — it just
+ * runs the "책 정신 매수 후보" filter (actionIn=[STRONG_BUY,BUY] +
+ * bookScoreMin=0.7 + roeMin=0.05) and lets the user refine via the
+ * sub-score chips (volume / zone / catalyst).
+ *
+ * The PRESETS array + findPreset lookup are still wired through so
+ * a future, book-compatible preset can be added without restructuring
+ * the page. Today there's exactly one entry.
  */
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Filter } from "lucide-react";
@@ -21,7 +26,6 @@ import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 import { SubScoreChips } from "@/components/sub-score-chips";
 import { NextDecisionChip } from "@/components/next-decision-chip";
-import { PresetCardsClient } from "./preset-cards-client";
 import { SubScoreControlsClient } from "./sub-score-controls-client";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
@@ -40,10 +44,6 @@ export const dynamic = "force-dynamic";
 
 interface SearchParams {
   preset?: string;
-  // 매수 신호 필터 — value-classic 같은 펀더만 보는 preset 의 1위가
-  // 차트 약해서 HOLD 인 케이스를 사용자가 "강매수 1위" 로 오해하는
-  // 사고가 있어서, 페이지 자체에 토글 추가 (2026-05-20).
-  buy_only?: string;
   // 2026-05-21 sub-score filters (universe-wide via RPC):
   vol_surge?: string;       // "1" → volume_case in (3, 9)
   zone?: string;            // "safe75" | "warn50" | "danger25" | "broken"
@@ -91,19 +91,24 @@ async function runPreset(
   // Single RPC — DB-side LEFT JOIN factors_eval × tickers × analyze_results,
   // WHERE + ORDER + LIMIT 다 처리해서 ~50 rows 만 응답. (migration 034
   // base + 043 sub-score 확장, 2026-05-21)
+  //
+  // The RPC schema still accepts the value-investing parameters
+  // (graham/buffett/magic/kang/per/pbr/etc.) from the pre-2026-05-25
+  // preset set — we just pass null for them. Kept stable so the DB
+  // migration doesn't have to churn alongside frontend simplification.
   const { data, error } = await sb.rpc("screener_results", {
-    p_per_min: f.perMin ?? null,
-    p_per_max: f.perMax ?? null,
-    p_pbr_max: f.pbrMax ?? null,
+    p_per_min: null,
+    p_per_max: null,
+    p_pbr_max: null,
     p_roe_min: f.roeMin ?? null,
-    p_debt_ratio_max: f.debtRatioMax ?? null,
-    p_op_margin_min: f.opMarginMin ?? null,
-    p_revenue_growth_min: f.revenueGrowthMin ?? null,
-    p_passes_graham: f.passesGraham ?? null,
-    p_passes_buffett: f.passesBuffett ?? null,
-    p_passes_magic: f.passesMagicFormula ?? null,
-    p_passes_kang: f.passesKangValue ?? null,
-    p_action: f.action ?? null,
+    p_debt_ratio_max: null,
+    p_op_margin_min: null,
+    p_revenue_growth_min: null,
+    p_passes_graham: null,
+    p_passes_buffett: null,
+    p_passes_magic: null,
+    p_passes_kang: null,
+    p_action: null,
     p_action_in: f.actionIn ?? null,
     p_book_score_min: f.bookScoreMin ?? null,
     p_limit: 50,
@@ -205,22 +210,25 @@ function zoneRank(z: string | null): number {
   return 2;
 }
 
-/** Action distribution via RPC. */
+/** Action distribution via RPC.
+ *
+ *  Same RPC-schema-stability note as runPreset — pass null for the
+ *  value-investing filters that the active preset doesn't use. */
 async function fetchDistribution(preset: ScreenerPreset) {
   const sb = getServerClient();
   const f = preset.filter;
   const { data, error } = await sb.rpc("screener_action_distribution", {
-    p_per_min: f.perMin ?? null,
-    p_per_max: f.perMax ?? null,
-    p_pbr_max: f.pbrMax ?? null,
+    p_per_min: null,
+    p_per_max: null,
+    p_pbr_max: null,
     p_roe_min: f.roeMin ?? null,
-    p_debt_ratio_max: f.debtRatioMax ?? null,
-    p_op_margin_min: f.opMarginMin ?? null,
-    p_revenue_growth_min: f.revenueGrowthMin ?? null,
-    p_passes_graham: f.passesGraham ?? null,
-    p_passes_buffett: f.passesBuffett ?? null,
-    p_passes_magic: f.passesMagicFormula ?? null,
-    p_passes_kang: f.passesKangValue ?? null,
+    p_debt_ratio_max: null,
+    p_op_margin_min: null,
+    p_revenue_growth_min: null,
+    p_passes_graham: null,
+    p_passes_buffett: null,
+    p_passes_magic: null,
+    p_passes_kang: null,
   });
   if (error || !data) {
     console.error("screener_action_distribution rpc:", error?.message);
@@ -254,8 +262,9 @@ function fmtPct(v: number | null, digits = 1): string {
 
 export default async function ScreenerPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const preset = findPreset(sp.preset);
-  const buyOnly = sp.buy_only === "1";
+  // Single-preset page — fall back to the default (book-buy) if the URL
+  // doesn't name one (or names a removed slug from the old preset set).
+  const preset = findPreset(sp.preset) ?? PRESETS[0];
   const subFilters: SubFilters = {
     volSurge: sp.vol_surge === "1",
     zone:
@@ -273,23 +282,20 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
   // Two RPC calls in parallel — results (≤50 rows, sub-filtered) +
   // full-universe action distribution (whole-preset counts; ignores
   // sub-filters so the header is stable when user toggles them).
-  const [allHits, distribution, lastAnalysisAt] = preset
-    ? await Promise.all([
-        runPreset(preset, subFilters),
-        fetchDistribution(preset),
-        fetchLatestAnalysisRun(),
-      ])
-    : [[], { strong_buy: 0, buy: 0, hold: 0, avoid: 0, none: 0 }, null];
+  const [allHits, distribution, lastAnalysisAt] = await Promise.all([
+    runPreset(preset, subFilters),
+    fetchDistribution(preset),
+    fetchLatestAnalysisRun(),
+  ]);
   const priceMap: Map<string, LatestPrice> = allHits.length > 0
     ? await fetchLatestPrices(allHits.map((h) => h.ticker))
     : new Map();
   const totalPassing =
     distribution.strong_buy + distribution.buy + distribution.hold +
     distribution.avoid + distribution.none;
-  let hits = buyOnly
-    ? allHits.filter((h) => h.action === "STRONG_BUY" || h.action === "BUY")
-    : allHits;
-  hits = applySort2(hits, sort2);
+  // preset 이 actionIn=[STRONG_BUY,BUY] 강제 → 결과 항상 매수 신호.
+  // 별도 buy_only toggle 불필요 (2026-05-25 site-direction reset).
+  const hits = applySort2(allHits, sort2);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -308,9 +314,9 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
           <DataFreshness asOf={lastAnalysisAt} cadence="weekly" label="분석" />
         </div>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          KOSPI / KOSDAQ 약 2,700 종목 중 조건에 맞는 후보 발굴.
-          아래 검색 중 하나 선택하면 즉시 결과 표시. 톤 일관: 종목만 보여주는 게
-          아니라 “이런 종목 발견 시 어떻게 행동할지” 함께 안내.
+          KOSPI / KOSDAQ 약 2,700 종목 중 책 정신 매수 후보를 보여줍니다 —
+          추세 정배열 + 240일 평균선 위 + 적자 X. 종목만 노출 X, 발견 후 행동
+          가이드도 함께.
         </p>
       </header>
 
@@ -318,14 +324,8 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
           충동을 줄이는 게 목적. 다음 매매 결정 = 다음 금요일 15:30 KST. */}
       <NextDecisionChip />
 
-      {/* Preset 선택 — client component 로 분리. 클릭 즉시 active state
-          반영 + isPending 스피너 표시. 서버 RSC fetch 가 끝나면 결과
-          영역이 swap. (2026-05-21 — 반응 지연 사용자 보고 fix) */}
-      <PresetCardsClient presets={PRESETS} />
-
       {/* 결과 */}
-      {preset && (
-        <section className="space-y-3">
+      <section className="space-y-3">
           <header className="rounded-xl border-2 border-foreground/20 bg-muted/30 p-4 space-y-3">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-lg">{preset.emoji}</span>
@@ -363,23 +363,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
             <div className="rounded-md bg-background/70 border border-border p-2.5 text-xs leading-relaxed">
               <span className="font-medium">💡 발견 후 액션:</span> {preset.action}
             </div>
-            {distribution.strong_buy + distribution.buy === 0
-              && allHits.length > 0 && (
-              <div className="rounded-md border border-rose-500/40 bg-rose-500/5 p-2.5 text-xs leading-relaxed text-rose-700 dark:text-rose-300">
-                ⚠️ 이 조건 통과 종목 중 차트가 매수 자리인 종목은 <strong>0 개</strong>.
-                펀더는 좋지만 차트 추세가 약함 — 책 정신상 “지금 매수” 자리 아님.
-                차트가 회복될 때까지 관망하거나, 다른 검색 (예: 📚 책 정신 매수 후보)
-                으로 차트 + 펀더 동시 통과 종목을 보세요.
-              </div>
-            )}
-            {/* 정렬 안내 — buy_only 토글 + filter/sort2 chip 은 모두
-                SubScoreControlsClient 안에 통합. 클라이언트에서 즉시
-                active state + isPending 표시. */}
+            {/* 정렬 안내 — filter/sort2 chip 은 SubScoreControlsClient
+                안에 통합. 클라이언트에서 즉시 active state + isPending 표시. */}
             <div className="text-[11px] text-muted-foreground">
               <strong>정렬:</strong> 책 점수 (book_score) 높은 순 → ROE 높은 순.
-              {!preset.filter.actionIn && !preset.filter.action && (
-                <> 같은 점수면 <strong>1위가 강매수가 아닐 수 있음</strong> — 차트 chip 확인 필수.</>
-              )}
             </div>
 
             <SubScoreControlsClient preset={preset.slug} />
@@ -581,7 +568,6 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
             </div>
           )}
         </section>
-      )}
     </div>
   );
 }
