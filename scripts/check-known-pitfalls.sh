@@ -78,6 +78,26 @@ else
   echo "  ⚠ python not available — skipping client-import audit"
 fi
 
+echo "[check] api/requirements.txt covers known us-analysis cold-start deps"
+# 2026-05-25 incident: app.db.connection imports `from psycopg_pool import
+# ConnectionPool` but api/requirements.txt only had `psycopg[binary]`. Vercel
+# Python function crashed at import time before our handler ran → silent
+# HTML 500 instead of JSON traceback. Append here when a new external
+# import enters the us-analysis handler chain.
+needed=("pandas" "numpy" "requests" "python-dateutil" "psycopg" "psycopg-pool")
+missing=()
+for pkg in "${needed[@]}"; do
+  if ! grep -qiE "^[[:space:]]*${pkg}([[:space:]]|\[|>|<|=|~|$)" api/requirements.txt; then
+    missing+=("${pkg}")
+  fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "  ✗ api/requirements.txt missing: ${missing[*]}"
+  fail=1
+else
+  echo "  ✓ ${#needed[@]} known cold-start deps present"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
   echo "Static pitfall check FAILED — fix the above before committing."
