@@ -97,13 +97,19 @@ function nextFridayDecisionKst(nowUtc: Date): Date {
   }
   const target = new Date(kst);
   target.setUTCDate(target.getUTCDate() + daysAhead);
-  target.setUTCHours(15, 30, 0, 0);
+  // Want: KST 15:30 on that target date. KST = UTC + 9, so the wall-clock
+  // 15:30 KST corresponds to a 06:30 UTC instant. Setting setUTCHours(15, 30)
+  // here (the previous bug — surfaced 2026-05-26 as "다음 결정 D-3 · 05. 30. (토)"
+  // on a Tuesday, off by both day AND hour) would put the instant at UTC
+  // 15:30 = 00:30 KST the next day, which is what made the chip render the
+  // following Saturday's date.
+  target.setUTCHours(6, 30, 0, 0);
   return target;
 }
 
 // Exported for unit tests + future re-use; keep alongside the phase
 // function so the contract is in one place.
-export { phaseFor };
+export { phaseFor, nextFridayDecisionKst };
 export type { Phase };
 
 interface Props {
@@ -112,15 +118,40 @@ interface Props {
   className?: string;
 }
 
+/** Drop the time portion and return a YYYY-MM-DD instant in UTC for
+ *  Asia/Seoul. Used to compute calendar-day deltas (D-X) rather than
+ *  raw-instant deltas — the user's mental model is "토요일에서 다음 주
+ *  금요일까지 6일", which is calendar-day arithmetic, not 5.5-day
+ *  Math.floor on milliseconds.
+ */
+function kstCalendarDate(d: Date): Date {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "Asia/Seoul",
+  }).format(d);   // e.g. "2026-05-23"
+  return new Date(`${ymd}T00:00:00Z`);
+}
+
 export function NextDecisionChip({ compact = false, className }: Props) {
   const nowUtc = new Date();
   const phase = phaseFor(nowUtc);
   const style = PHASE_STYLE[phase];
   const nextDecisionKst = nextFridayDecisionKst(nowUtc);
-  const kstNow = new Date(nowUtc.getTime() + KST_OFFSET_HOURS * 3600 * 1000);
-  const diffMs = nextDecisionKst.getTime() - kstNow.getTime();
-  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  const diffHours = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)));
+  // D-X is computed in KST calendar days, not raw instant ms. Previously
+  // the chip computed `Math.floor(diffMs / 86400000)` on raw instants,
+  // which combined with the `setUTCHours(15, 30)` bug (since fixed)
+  // produced "D-3 · 05. 30. (토)" on a Tuesday — both off-by-one wrong.
+  // After the setUTCHours fix the raw-instant floor would give D-5 for
+  // "토 10시 → 다음 금" while the user reads the calendar as 6 days.
+  // Calendar-day delta matches user intuition.
+  const todayKst = kstCalendarDate(nowUtc);
+  const targetKst = kstCalendarDate(nextDecisionKst);
+  const diffDays = Math.max(0, Math.round(
+    (targetKst.getTime() - todayKst.getTime()) / (86_400_000),
+  ));
+  // Hours-until used only on the same-day branch (다음 결정 = 오늘).
+  const diffMs = nextDecisionKst.getTime() - nowUtc.getTime();
+  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
 
   const dayLabel =
     diffDays === 0

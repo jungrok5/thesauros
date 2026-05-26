@@ -40,10 +40,16 @@ describe("NextDecisionChip — when 'next decision' is", () => {
     expect(container.textContent).toMatch(/오늘/);
   });
 
-  it("Friday 16:00 KST → D-6 (today's close already settled, next Friday 15:30 → ~6d23h)", () => {
+  it("Friday 16:00 KST → D-7 (today's close already settled, next Friday is 7 calendar days away)", () => {
+    // 2026-05-22 (Fri) 16:00 KST. The close already happened at 15:30
+    // so "다음 결정" is the NEXT Friday — 5/29 (Fri). Calendar-day diff
+    // is exactly 7 (5/22 → 5/29). Previously this case read "D-6" only
+    // because the off-by-9h timestamp bug in setUTCHours(15, 30) made
+    // Math.floor on raw ms truncate to 6; with the calendar-day diff
+    // post-fix the honest count is 7.
     renderAt("2026-05-22T07:00:00Z");  // 07 UTC = 16 KST
     const { container } = render(<NextDecisionChip />);
-    expect(container.textContent).toMatch(/D-6/);
+    expect(container.textContent).toMatch(/D-7/);
   });
 
   it("Saturday 10:00 KST → D-6", () => {

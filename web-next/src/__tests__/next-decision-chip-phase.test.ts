@@ -10,12 +10,20 @@
  * the book's "decision is settled" line gets drawn.
  */
 import { describe, it, expect } from "vitest";
-import { phaseFor } from "@/components/next-decision-chip";
+import { phaseFor, nextFridayDecisionKst } from "@/components/next-decision-chip";
 
 // Helper: build a UTC Date that corresponds to a specific KST wall-clock.
 // KST = UTC+9 → the UTC instant 9 hours earlier renders as that KST time.
 function kst(yyyy: number, mm: number, dd: number, hh: number, min: number) {
   return new Date(Date.UTC(yyyy, mm - 1, dd, hh - 9, min, 0));
+}
+
+function formatKst(d: Date): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    weekday: "short", hour: "2-digit", minute: "2-digit",
+    timeZone: "Asia/Seoul", hourCycle: "h23",
+  }).format(d);
 }
 
 describe("NextDecisionChip phaseFor", () => {
@@ -51,5 +59,48 @@ describe("NextDecisionChip phaseFor", () => {
   // "관망" immediately, not the leftover weekend frame.
   it("Mon 00:00 KST is 'wait', not 'review'", () => {
     expect(phaseFor(kst(2026, 6, 1, 0, 0))).toBe("wait");
+  });
+});
+
+describe("nextFridayDecisionKst — returns the upcoming Friday 15:30 KST", () => {
+  // 2026-05-25 (Mon) is week-0; 5/29 = Fri.
+  it("Mon → upcoming Friday 15:30 KST", () => {
+    const target = nextFridayDecisionKst(kst(2026, 5, 25, 10, 0));
+    const out = formatKst(target);
+    // Visible portion must read the Friday date AND 15:30 — the bug
+    // surfaced as "05. 30. (토) 15:30" (Saturday) because setUTCHours(15,30)
+    // shifted the instant by +9h on conversion. Lock both date + hour.
+    expect(out).toContain("2026");
+    expect(out).toContain("금");
+    expect(out).toContain("15:30");
+    expect(out).not.toContain("토");   // explicit anti-regression
+  });
+
+  it("Tue 10:00 KST → upcoming Friday (D-3), shows 금 + 15:30", () => {
+    const target = nextFridayDecisionKst(kst(2026, 5, 26, 10, 0));
+    const out = formatKst(target);
+    expect(out).toContain("금");
+    expect(out).toContain("15:30");
+    expect(out).not.toContain("토");
+  });
+
+  it("Fri pre-15:30 → today (same Friday), 15:30", () => {
+    const target = nextFridayDecisionKst(kst(2026, 5, 29, 10, 0));
+    const out = formatKst(target);
+    // Date in KST must be 2026-05-29 (Friday)
+    expect(out).toContain("05.");
+    expect(out).toContain("29.");
+    expect(out).toContain("금");
+    expect(out).toContain("15:30");
+  });
+
+  it("Fri post-close → NEXT Friday (D-7), still 금 + 15:30 not 토", () => {
+    const target = nextFridayDecisionKst(kst(2026, 5, 29, 16, 0));
+    const out = formatKst(target);
+    expect(out).toContain("06.");
+    expect(out).toContain("05.");
+    expect(out).toContain("금");
+    expect(out).toContain("15:30");
+    expect(out).not.toContain("토");
   });
 });
