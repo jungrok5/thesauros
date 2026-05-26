@@ -10,6 +10,7 @@
  */
 import Link from "next/link";
 import { HelpTip } from "@/components/help-tip";
+import { NextDecisionChip } from "@/components/next-decision-chip";
 import { ArrowRight } from "lucide-react";
 
 interface Props {
@@ -133,6 +134,11 @@ export function MarketActionCard({
           </Link>
         </div>
       </div>
+
+      {/* 책 정신 시간 anchor — guidance 결론과 함께 "언제" 도 보임.
+          이전엔 stocks/[ticker] 에만 있어서 dashboard 만 보는 사용자가
+          "오늘 매매 시점인가" 답을 얻지 못했음 (2026-05-26 site review). */}
+      <NextDecisionChip />
 
       {/* 한 row 매트릭스 — 레짐 / 5축 / VIX / 수익률곡선 / MV=PQ */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-x-4 gap-y-2 text-xs">

@@ -248,4 +248,84 @@ test.describe("/stocks/[ticker] book-spirit consistency", () => {
     // Skipped if the financials_eval row is missing for this ticker
     // (empty component renders nothing).
   });
+
+  // 2026-05-26 reviewer pass: 외부 의견 (애널/큰손/실적) 이 결론 뒤에
+  // 풀로 펼쳐져 있어서 초보가 결론을 흔들렸음. default fold 로 demote.
+  test("외부 의견 · 일정 is rendered inside a <details> (collapsed by default)", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    const html = await page.content();
+    // Section may not render at all if all 3 source tables are empty —
+    // skip in that case (the assertion is about HOW it renders, not that
+    // it always renders).
+    if (!html.includes("외부 의견 · 일정")) {
+      test.skip(true, "no consensus/holders/earnings data for 005930.KS");
+      return;
+    }
+    // The heading must sit inside a <summary> tag (the <details> trigger),
+    // not inside an <h2> as the prior layout had it.
+    expect(html).toMatch(
+      /<summary[^>]*>[\s\S]{0,300}외부 의견 · 일정[\s\S]{0,200}<\/summary>/,
+    );
+    // And the parent details must NOT carry `open` — default collapsed.
+    const detailsOpenMatch = html.match(
+      /<details\s+open[^>]*>[\s\S]{0,500}외부 의견 · 일정/,
+    );
+    expect(detailsOpenMatch, "외부 의견 details must not be open by default")
+      .toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Dashboard MarketActionCard surfaces NextDecisionChip (M15 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("Dashboard surfaces the 'when' anchor (NextDecisionChip)", () => {
+  // Previously the chip only rendered on /stocks/[ticker] and /screener.
+  // Users landing on /dashboard could see "🟢 매수 우호" without any
+  // indication of WHEN to act — book spirit is "Friday close decisions,
+  // nothing on the other days." The chip now lives inside MarketActionCard
+  // so the time anchor is right next to the macro verdict.
+  test("dashboard renders the 다음 매매 결정 chip", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
+    const body = page.locator("body");
+    await expect(body).toContainText("다음 매매 결정");
+    await expect(body).toContainText("15:30 KST");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// /settings/alerts preset shortcuts (M17 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("/settings/alerts has 3 preset shortcuts", () => {
+  // 8 toggles with no entry point overwhelmed first-time users — either
+  // everything-ON (telegram flood) or defaults-without-meaning. The 3
+  // presets give a single-click answer (초보 / 책 정신 / 전체).
+  test("renders all three presets visible at the top of the form", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/settings/alerts`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("[data-testid='preset-beginner']")).toBeVisible();
+    await expect(page.locator("[data-testid='preset-book']")).toBeVisible();
+    await expect(page.locator("[data-testid='preset-all']")).toBeVisible();
+  });
+
+  test("clicking 초보 preset turns ON enter / exit / disclosure", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/settings/alerts`, { waitUntil: "domcontentloaded" });
+    await page.locator("[data-testid='preset-beginner']").click();
+    // The 3 toggles 초보 preset turns ON. We don't assert the inverse
+    // (other toggles OFF) here because the data-testid for checkboxes
+    // can match mobile + desktop instances and strict-mode .not.toBeChecked
+    // on multiple matches is flaky. The unit/snapshot test on the form
+    // covers the OFF half via the React state shape directly.
+    await expect(page.locator("[data-testid='pref-enable_enter']")).toBeChecked();
+    await expect(page.locator("[data-testid='pref-enable_exit']")).toBeChecked();
+    await expect(page.locator("[data-testid='pref-enable_disclosure']")).toBeChecked();
+  });
 });

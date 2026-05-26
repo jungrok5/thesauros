@@ -23,6 +23,38 @@ interface Props {
   allFields: FieldDef[];
 }
 
+// 2026-05-26 site review: 8 toggles was too much for a new user. They
+// either flipped everything ON (telegram flood → ignore all → miss the
+// exit one that mattered) or kept defaults without understanding what
+// each meant. Three named presets give a single-click answer + the
+// underlying toggles still adjustable for power users.
+const PRESETS: Record<
+  string,
+  { label: string; oneLiner: string; on: string[] }
+> = {
+  beginner: {
+    label: "🌱 초보 (3개)",
+    oneLiner: "매수 신호 · 즉시 청산 · 새 공시만. 책 정신상 매주 1번 결정에 필수인 3개.",
+    on: ["enable_enter", "enable_exit", "enable_disclosure"],
+  },
+  book: {
+    label: "📚 책 정신 (5개)",
+    oneLiner: "초보 3개 + 피라미딩 / 경고 신호. 매주 결정 + 보유 종목 점검에 필요한 5개.",
+    on: [
+      "enable_enter", "enable_pyramid", "enable_warn", "enable_exit",
+      "enable_disclosure",
+    ],
+  },
+  all: {
+    label: "🛎️ 전체 (8개)",
+    oneLiner: "240MA 통과 / 4등분선 25% 깨짐까지 전부. 알림 빈도 높음.",
+    on: [
+      "enable_enter", "enable_pyramid", "enable_warn", "enable_exit",
+      "enable_ma240_break", "enable_quarter_25_break", "enable_disclosure",
+    ],
+  },
+};
+
 export function AlertPrefsForm({ initialPrefs, categories, allFields }: Props) {
   const router = useRouter();
 
@@ -45,6 +77,19 @@ export function AlertPrefsForm({ initialPrefs, categories, allFields }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  function applyPreset(name: keyof typeof PRESETS) {
+    const preset = PRESETS[name];
+    setPrefs(() => {
+      const out: Record<string, boolean> = {};
+      for (const f of allFields) out[f.key] = preset.on.includes(f.key);
+      return out;
+    });
+    // Applying a preset implies "give me the dashboard signals" — flip
+    // bedrest off so the chosen toggles actually fire. The user can
+    // re-enable bedrest after if they want.
+    setBedrest(false);
+  }
 
   async function save() {
     setBusy(true);
@@ -97,6 +142,37 @@ export function AlertPrefsForm({ initialPrefs, categories, allFields }: Props) {
             </p>
           </div>
         </label>
+      </section>
+
+      {/* Preset shortcut — one click to set toggles below to a sane
+          combination. Power users can still flip individual toggles
+          afterward. */}
+      <section className="rounded-lg border border-border bg-card p-4 space-y-2">
+        <header>
+          <h2 className="text-sm font-semibold">⚡ 알림 빠른 설정</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            한 번에 여러 토글을 set — 그 다음 아래에서 개별 조정 가능. 저장 버튼은 따로 누름.
+          </p>
+        </header>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).map((name) => {
+            const preset = PRESETS[name];
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => applyPreset(name)}
+                data-testid={`preset-${name}`}
+                className="text-left rounded-md border border-border bg-background p-2.5 hover:bg-accent transition-colors"
+              >
+                <div className="text-sm font-medium">{preset.label}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                  {preset.oneLiner}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {/* Category-grouped per-alert toggles. bedrest 모드 ON 이면

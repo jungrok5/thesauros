@@ -484,21 +484,36 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
 
           {/* ─────────────────────────────────────────────────────────
               그룹 5. 외부 의견 / 일정 — 참고 정보.
-              컨센서스 (목표주가) + 큰손 5% 지분 + 실적 발표 일정. 각
-              카드는 데이터 없으면 자체적으로 null 반환해서 렌더 X.
+              컨센서스 (목표주가) + 큰손 5% 지분 + 실적 발표 일정.
+
+              2026-05-26 site review: 책 정신 결론 (그룹 1 의 BookVerdict)
+              뒤에 펀더 + 외부 의견이 나란히 있어서 초보가 결론을 흔들림.
+              외부 의견은 default 접힘 + "참고용" 명시 — 사용자가 직접
+              펼쳐야 보임. 책 정신 일관성 + 초보 안전.
               ───────────────────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <h2 className="text-lg font-semibold tracking-tight">
-              🔍 외부 의견 · 일정
-            </h2>
-            <ConsensusCard
-              consensus={ctx.consensus}
-              currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
-              asOf={ctx.consensus[0]?.updated_at ?? null}
-            />
-            <HoldersCard holders={ctx.holders} />
-            <EarningsCalendarCard earnings={ctx.earnings} />
-          </section>
+          {(ctx.consensus.length > 0
+            || ctx.holders.length > 0
+            || ctx.earnings.length > 0) && (
+            <details className="rounded-lg border border-border bg-card">
+              <summary className="px-4 py-3 cursor-pointer hover:bg-muted/40 flex items-baseline justify-between gap-2">
+                <span className="text-lg font-semibold tracking-tight">
+                  🔍 외부 의견 · 일정
+                </span>
+                <span className="text-[11px] text-muted-foreground font-normal">
+                  참고용 — 책 정신 결론이 우선
+                </span>
+              </summary>
+              <div className="px-4 pb-4 pt-2 space-y-3">
+                <ConsensusCard
+                  consensus={ctx.consensus}
+                  currentPrice={ctx.latestBar?.close ?? result?.last_close ?? null}
+                  asOf={ctx.consensus[0]?.updated_at ?? null}
+                />
+                <HoldersCard holders={ctx.holders} />
+                <EarningsCalendarCard earnings={ctx.earnings} />
+              </div>
+            </details>
+          )}
 
           {/* ─────────────────────────────────────────────────────────
               그룹 6. 심화 정보 — 공시 / 재무 / 펀더 상세 탭.
