@@ -144,9 +144,10 @@ async function resolveTicker(raw: string): Promise<TickerInfo | null> {
 }
 
 async function getOpenPaperLots(ticker: string): Promise<number> {
-  // How many active 모의 투자 lots does the current user already
-  // have on this ticker? Used by PaperBuyButton to surface a "추매"
-  // hint inside the buy modal before the user clicks.
+  // How many BUY fills does the current user's open position on this
+  // ticker have? Each prior 매수/추매 is a buy fill. Used by
+  // PaperBuyButton to surface a "추매 N건째" hint in the modal so
+  // a fat-finger duplicate is obvious.
   const session = await auth();
   if (!session?.user?.email) return 0;
   try {
@@ -155,12 +156,19 @@ async function getOpenPaperLots(ticker: string): Promise<number> {
       session.user.name ?? null,
     );
     const sb = getServerClient();
-    const { count } = await sb
-      .from("paper_trades")
-      .select("id", { count: "exact", head: true })
+    const { data: pos } = await sb
+      .from("paper_positions")
+      .select("id")
       .eq("user_id", userId)
       .eq("ticker", ticker)
-      .eq("status", "open");
+      .eq("status", "open")
+      .maybeSingle();
+    if (!pos) return 0;
+    const { count } = await sb
+      .from("paper_fills")
+      .select("id", { count: "exact", head: true })
+      .eq("position_id", pos.id)
+      .eq("side", "buy");
     return count ?? 0;
   } catch {
     return 0;

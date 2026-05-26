@@ -75,7 +75,9 @@ _RETENTION_EXEMPT = {
     "us_bars",                # Phase 6 ad-hoc cache, self-evicts via us_ticker_cache (7d cascade in daily-data.yml)
     "us_ticker_cache",        # Phase 6 ad-hoc cache, 7d TTL via app.db.us_bars_cache.evict_stale (daily-data.yml step)
     "stop_loss_alert_seen",   # bounded per (user × ticker × week) — naturally small (active holdings only)
-    "paper_trades",           # user-owned forward-test trades (bounded by user × ticker); win_rate/payoff stats need full closed-trade history — no time-based purge
+    "paper_trades",           # legacy table (replaced by paper_positions + paper_fills in migration 052) — kept until drop migration; bounded by user × ticker
+    "paper_positions",        # broker-standard position store (migration 052) — bounded by user × ticker × open-era; win_rate/payoff stats need full closed history
+    "paper_fills",            # append-only buy/sell log for paper_positions (migration 052); bounded by N positions × fills, retention via position lifecycle (cascade on delete)
 }
 
 # Tables created in migrations but later dropped — ignored by discovery.

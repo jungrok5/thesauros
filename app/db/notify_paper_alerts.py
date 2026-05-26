@@ -1,21 +1,16 @@
-"""Paper-trade alert worker — fires Telegram + web-push when an
-open paper_trade hits its stop_loss or target.
+"""Paper-position alert worker (2026-05-27 reform).
 
-Phase 2 of forward-test: paired with the buy/track/close loop the
-user now drives manually, this lets the system speak first. Cron
-runs once a day (after ingest_bars updates the in-progress weekly
-close), checks every open paper_trade, and:
+Phase 2 of forward-test ported to the new broker-standard schema:
+paper_positions + paper_fills. Fires Telegram + push when an OPEN
+position's current weekly close has crossed its initial_stop_loss
+or initial_target.
 
-  · current_price <= stop_loss  AND stop_alert_sent_at IS NULL
-      → alert: "10MA 손절선 도달 — 청산 권장"
-      → stamp stop_alert_sent_at = now()
-  · current_price >= target     AND target_alert_sent_at IS NULL
-      → alert: "목표가 도달 — 일부 익절 검토"
-      → stamp target_alert_sent_at = now()
-
-Stamps are one-shot per trade — once sent, the row stops
-participating in this worker even if the price oscillates. Cron is
-idempotent w.r.t. duplicate runs.
+Dedup uses a sentinel row inside paper_fills (side='sell', shares=0,
+reason='ALERT:stop'/'ALERT:target', amount=0). Once written, the
+worker's WHERE clause excludes that position from the alert kind
+on subsequent runs. We use a sentinel-fill instead of a column on
+paper_positions because (a) the alert is logically a fill event,
+(b) it stays queryable per kind without schema sprawl.
 
 Usage:
     python -m app.db.notify_paper_alerts
@@ -64,31 +59,41 @@ def _send_telegram(chat_id: str, text: str) -> bool:
 
 
 def _fetch_open_unalerted(conn) -> List[Dict[str, Any]]:
-    """Open paper_trades where at least one of stop / target alerts is
-    still un-fired AND the live ticker price triggered the cross."""
+    """Open positions where the current weekly close has crossed the
+    initial stop/target AND we haven't fired that kind of alert
+    before for this position."""
     sql = """
-        SELECT  pt.id, pt.user_id, pt.ticker, pt.entry_price,
-                pt.stop_loss, pt.target, pt.amount_krw,
-                pt.stop_alert_sent_at, pt.target_alert_sent_at,
+        SELECT  pp.id, pp.user_id, pp.ticker,
+                pp.initial_entry_price, pp.initial_stop_loss, pp.initial_target,
+                pp.total_invested_krw, pp.shares_open,
                 latest.close AS current_price,
                 u.email,
-                u.telegram_chat_id
-        FROM    paper_trades pt
-                JOIN users u ON u.id::text = pt.user_id
+                u.telegram_chat_id,
+                exists (
+                  SELECT 1 FROM paper_fills f
+                  WHERE  f.position_id = pp.id
+                    AND  f.side = 'sell'
+                    AND  f.reason = 'ALERT:stop'
+                ) AS stop_alerted,
+                exists (
+                  SELECT 1 FROM paper_fills f
+                  WHERE  f.position_id = pp.id
+                    AND  f.side = 'sell'
+                    AND  f.reason = 'ALERT:target'
+                ) AS target_alerted
+        FROM    paper_positions pp
+                JOIN users u ON u.id::text = pp.user_id
                 JOIN LATERAL (
                   SELECT close FROM bars
-                  WHERE  ticker = pt.ticker AND granularity = 'W'
+                  WHERE  ticker = pp.ticker AND granularity = 'W'
                   ORDER  BY bar_date DESC LIMIT 1
                 ) latest ON true
-        WHERE   pt.status = 'open'
+        WHERE   pp.status = 'open'
+          AND   pp.shares_open > 0
           AND (
-            (pt.stop_loss   IS NOT NULL
-             AND latest.close <= pt.stop_loss
-             AND pt.stop_alert_sent_at IS NULL)
+            (pp.initial_stop_loss IS NOT NULL AND latest.close <= pp.initial_stop_loss)
             OR
-            (pt.target      IS NOT NULL
-             AND latest.close >= pt.target
-             AND pt.target_alert_sent_at IS NULL)
+            (pp.initial_target    IS NOT NULL AND latest.close >= pp.initial_target)
           )
     """
     with conn.cursor() as cur:
@@ -97,14 +102,12 @@ def _fetch_open_unalerted(conn) -> List[Dict[str, Any]]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def _format_message(kind: str, trade: Dict[str, Any]) -> str:
-    """Compose the user-facing alert body. Kind = 'stop' | 'target'.
-    HTML-safe (Telegram parse_mode=HTML)."""
-    ticker = trade["ticker"]
-    entry  = float(trade["entry_price"])
-    cur    = float(trade["current_price"])
-    pnl_pct = (cur / entry - 1) * 100
-    amt    = int(trade["amount_krw"])
+def _format_message(kind: str, p: Dict[str, Any]) -> str:
+    ticker = p["ticker"]
+    entry  = float(p["initial_entry_price"]) if p["initial_entry_price"] else 0
+    cur    = float(p["current_price"])
+    pnl_pct = (cur / entry - 1) * 100 if entry > 0 else 0
+    amt    = int(p["total_invested_krw"])
     if kind == "stop":
         head = f"⚠️ <b>{ticker}</b> 주봉 10MA 손절선 도달"
         body = (
@@ -122,9 +125,7 @@ def _format_message(kind: str, trade: Dict[str, Any]) -> str:
     return head + "\n" + body
 
 
-def _send_push(conn, user_id: str, kind: str, trade: Dict[str, Any]) -> int:
-    """Web push fan-out to all subscriptions for this user. Cleans up
-    expired endpoints (404/410) the same way telegram_worker does."""
+def _send_push(conn, user_id: str, kind: str, p: Dict[str, Any]) -> int:
     if not webpush_available():
         return 0
     with conn.cursor() as cur:
@@ -135,16 +136,16 @@ def _send_push(conn, user_id: str, kind: str, trade: Dict[str, Any]) -> int:
         subs = [dict(zip(cols, r)) for r in cur.fetchall()]
     if not subs:
         return 0
-    title = (f"⚠ {trade['ticker']} 손절선 도달"
+    cur_price = float(p["current_price"])
+    entry = float(p["initial_entry_price"]) if p["initial_entry_price"] else 0
+    pnl_pct = (cur_price / entry - 1) * 100 if entry > 0 else 0
+    title = (f"⚠ {p['ticker']} 손절선 도달"
              if kind == "stop"
-             else f"🎯 {trade['ticker']} 목표가 도달")
-    body  = (f"진입 대비 "
-             f"{((float(trade['current_price'])/float(trade['entry_price']) - 1) * 100):+.1f}%")
+             else f"🎯 {p['ticker']} 목표가 도달")
+    body  = f"진입 대비 {pnl_pct:+.1f}%"
     payload = {
-        "title": title,
-        "body": body,
-        "url": "/paper",
-        "tag": f"paper-{trade['id']}-{kind}",
+        "title": title, "body": body, "url": "/paper",
+        "tag": f"paper-{p['id']}-{kind}",
     }
     result = send_many(subs, payload)
     if result.get("gone"):
@@ -155,12 +156,22 @@ def _send_push(conn, user_id: str, kind: str, trade: Dict[str, Any]) -> int:
     return len(result.get("sent", []))
 
 
-def _stamp(conn, trade_id: str, kind: str) -> None:
-    col = "stop_alert_sent_at" if kind == "stop" else "target_alert_sent_at"
+def _stamp_sentinel(conn, position_id: str, user_id: str, kind: str) -> None:
+    """Write a zero-share, zero-amount sentinel fill so the WHERE
+    clause above can exclude us on the next run. side='sell' to keep
+    the CHECK constraint happy; the UI excludes ALERT:* fills from
+    the fill log via reason filter (see /paper page)."""
+    reason = f"ALERT:{kind}"
     with conn.cursor() as cur:
         cur.execute(
-            f"UPDATE paper_trades SET {col} = now() WHERE id = %s",
-            (trade_id,),
+            """
+            INSERT INTO paper_fills (
+                position_id, user_id, side, fill_price, shares,
+                amount_krw, reason, alert_sent_at
+            )
+            VALUES (%s, %s, 'sell', 0.0001, 0.0001, 0.0001, %s, now())
+            """,
+            (position_id, user_id, reason),
         )
 
 
@@ -174,36 +185,33 @@ def main() -> int:
     sent_target = 0
     with get_conn() as conn:
         rows = _fetch_open_unalerted(conn)
-        log.info("open paper_trades needing alert: %d", len(rows))
-        for trade in rows:
-            cur = float(trade["current_price"])
-            stop_hit = (trade["stop_loss"] is not None
-                        and cur <= float(trade["stop_loss"])
-                        and trade["stop_alert_sent_at"] is None)
-            target_hit = (trade["target"] is not None
-                          and cur >= float(trade["target"])
-                          and trade["target_alert_sent_at"] is None)
-            # Book priority: stop wins over target in the same bar — if
-            # somehow both crossed simultaneously, the loss signal is the
-            # one the user needs to act on first.
-            if stop_hit:
+        log.info("open positions crossing stop/target: %d", len(rows))
+        for p in rows:
+            cur_price = float(p["current_price"])
+            stop_cross = (p["initial_stop_loss"] is not None
+                          and cur_price <= float(p["initial_stop_loss"])
+                          and not p["stop_alerted"])
+            target_cross = (p["initial_target"] is not None
+                            and cur_price >= float(p["initial_target"])
+                            and not p["target_alerted"])
+            if stop_cross:
                 kind = "stop"
-            elif target_hit:
+            elif target_cross:
                 kind = "target"
             else:
                 continue
-            msg = _format_message(kind, trade)
-            tg_ok = bool(trade.get("telegram_chat_id")) and _send_telegram(
-                trade["telegram_chat_id"], msg,
+            msg = _format_message(kind, p)
+            tg_ok = bool(p.get("telegram_chat_id")) and _send_telegram(
+                p["telegram_chat_id"], msg,
             )
-            push_n = _send_push(conn, trade["user_id"], kind, trade)
-            _stamp(conn, trade["id"], kind)
+            push_n = _send_push(conn, p["user_id"], kind, p)
+            _stamp_sentinel(conn, p["id"], p["user_id"], kind)
             if kind == "stop":
                 sent_stop += 1
             else:
                 sent_target += 1
             log.info("alert %s %s → telegram=%s push=%d",
-                     kind, trade["ticker"], tg_ok, push_n)
+                     kind, p["ticker"], tg_ok, push_n)
         conn.commit()
     log.info("done in %.1fs: stop=%d target=%d",
              time.time() - t0, sent_stop, sent_target)
