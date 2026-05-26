@@ -86,4 +86,46 @@ describe("paper-trades computeStats", () => {
     expect(s.best_pct).toBe(12);  // not 50 (open)
     expect(s.worst_pct).toBe(-7);
   });
+
+  it("computes payoff (avg_win / |avg_loss|) like the backtest", () => {
+    const s = computeStats([
+      row({ status: "closed_target", pnl_pct: 10 }),
+      row({ status: "closed_target", pnl_pct: 20 }),
+      row({ status: "closed_stop", pnl_pct: -5 }),
+      row({ status: "closed_stop", pnl_pct: -10 }),
+    ]);
+    // wins mean = 15, losses mean = -7.5, payoff = 15/7.5 = 2.0
+    expect(s.avg_win_pct).toBe(15);
+    expect(s.avg_loss_pct).toBe(-7.5);
+    expect(s.payoff).toBeCloseTo(2.0, 5);
+    expect(s.avg_pnl_pct).toBeCloseTo(3.75, 2);
+  });
+
+  it("payoff is null when no losers yet (defensive — div by zero)", () => {
+    const s = computeStats([
+      row({ status: "closed_target", pnl_pct: 12 }),
+      row({ status: "closed_target", pnl_pct: 8 }),
+    ]);
+    expect(s.avg_win_pct).toBe(10);
+    expect(s.avg_loss_pct).toBeNull();
+    expect(s.payoff).toBeNull();
+  });
+
+  it("avg_hold_days uses entry_date/exit_date when both set", () => {
+    const s = computeStats([
+      row({
+        status: "closed_target",
+        entry_date: "2026-05-01",
+        exit_date: "2026-05-11",         // 10 days
+        pnl_pct: 12,
+      }),
+      row({
+        status: "closed_stop",
+        entry_date: "2026-04-01",
+        exit_date: "2026-04-21",         // 20 days
+        pnl_pct: -8,
+      }),
+    ]);
+    expect(s.avg_hold_days).toBe(15);
+  });
 });

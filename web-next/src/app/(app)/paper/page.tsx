@@ -17,7 +17,8 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { ensureUserId } from "@/lib/supabase";
 import {
-  fetchAllTradesForUser, computeStats, type PaperTradeLive,
+  fetchAllTradesForUser, computeStats, BACKTEST_REFERENCE,
+  type PaperTradeLive,
 } from "@/lib/paper-trades";
 import { PaperCloseButton } from "@/components/paper-close-button";
 
@@ -66,19 +67,31 @@ export default async function PaperPage() {
           />
         </div>
         {stats.closed_n > 0 && (
-          <div className="flex flex-wrap gap-3 text-xs pt-2 border-t border-border/50">
-            <span className="text-muted-foreground">청산 완료 {stats.closed_n}건</span>
-            {stats.win_rate != null && (
-              <span>승률 <strong>{Math.round(stats.win_rate * 100)}%</strong></span>
-            )}
-            {stats.best_pct != null && (
-              <span>최고 <strong className="text-emerald-600 dark:text-emerald-400">
-                +{stats.best_pct.toFixed(1)}%</strong></span>
-            )}
-            {stats.worst_pct != null && (
-              <span>최저 <strong className="text-rose-600 dark:text-rose-400">
-                {stats.worst_pct.toFixed(1)}%</strong></span>
-            )}
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <div className="flex flex-wrap gap-3 text-xs">
+              <span className="text-muted-foreground">청산 완료 {stats.closed_n}건</span>
+              {stats.win_rate != null && (
+                <span>승률 <strong>{Math.round(stats.win_rate * 100)}%</strong></span>
+              )}
+              {stats.avg_pnl_pct != null && (
+                <span>평균 <strong>{stats.avg_pnl_pct >= 0 ? "+" : ""}{stats.avg_pnl_pct.toFixed(1)}%/trade</strong></span>
+              )}
+              {stats.payoff != null && (
+                <span>payoff <strong>{stats.payoff.toFixed(2)}</strong></span>
+              )}
+              {stats.avg_hold_days != null && (
+                <span>평균 보유 <strong>{stats.avg_hold_days}일</strong></span>
+              )}
+              {stats.best_pct != null && (
+                <span>최고 <strong className="text-emerald-600 dark:text-emerald-400">
+                  +{stats.best_pct.toFixed(1)}%</strong></span>
+              )}
+              {stats.worst_pct != null && (
+                <span>최저 <strong className="text-rose-600 dark:text-rose-400">
+                  {stats.worst_pct.toFixed(1)}%</strong></span>
+              )}
+            </div>
+            <BacktestComparison stats={stats} />
           </div>
         )}
       </section>
@@ -105,6 +118,62 @@ export default async function PaperPage() {
         </section>
       )}
     </div>
+  );
+}
+
+
+/** Phase 3 — side-by-side "your forward-test vs 17y backtest" panel.
+ *  Renders only when the user has ≥1 closed trade so the comparison
+ *  has something to compare. Each row pairs the same metric so the
+ *  user sees "내 결과가 backtest 보다 좋아? 나빠?" at a glance. */
+function BacktestComparison({ stats }: {
+  stats: ReturnType<typeof computeStats>;
+}) {
+  const yours = [
+    { label: "승률", user: stats.win_rate != null ? `${Math.round(stats.win_rate * 100)}%` : "—",
+      ref: `${Math.round(BACKTEST_REFERENCE.win_rate * 100)}%` },
+    { label: "평균 수익률 / trade",
+      user: stats.avg_pnl_pct != null
+        ? `${stats.avg_pnl_pct >= 0 ? "+" : ""}${stats.avg_pnl_pct.toFixed(2)}%`
+        : "—",
+      ref: `+${BACKTEST_REFERENCE.avg_pnl_pct.toFixed(2)}%` },
+    { label: "winner 평균",
+      user: stats.avg_win_pct != null
+        ? `+${stats.avg_win_pct.toFixed(1)}%` : "—",
+      ref: `+${BACKTEST_REFERENCE.avg_win_pct.toFixed(1)}%` },
+    { label: "loser 평균",
+      user: stats.avg_loss_pct != null
+        ? `${stats.avg_loss_pct.toFixed(1)}%` : "—",
+      ref: `${BACKTEST_REFERENCE.avg_loss_pct.toFixed(1)}%` },
+    { label: "payoff (winner/|loser|)",
+      user: stats.payoff != null ? stats.payoff.toFixed(2) : "—",
+      ref: BACKTEST_REFERENCE.payoff.toFixed(2) },
+  ];
+  return (
+    <details className="rounded-md border border-border bg-background/50 px-3 py-2 text-[11px] leading-relaxed">
+      <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground select-none">
+        📊 내 forward-test vs 17년 backtest 비교 — 클릭해서 열기
+      </summary>
+      <div className="mt-3 space-y-2">
+        <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50 pb-1">
+          <div>지표</div>
+          <div className="text-right">내 forward-test</div>
+          <div className="text-right">17년 backtest</div>
+        </div>
+        {yours.map((r) => (
+          <div key={r.label} className="grid grid-cols-3 gap-2 font-mono">
+            <div className="text-muted-foreground font-sans">{r.label}</div>
+            <div className="text-right">{r.user}</div>
+            <div className="text-right text-muted-foreground">{r.ref}</div>
+          </div>
+        ))}
+        <p className="text-[10px] text-muted-foreground pt-2 border-t border-border/50 leading-relaxed">
+          ⚠️ 표본 크기 차이 — backtest = 271K trades × 17년, 내 paper =
+          {" "}{stats.closed_n}건. 적은 표본이라 변동성 큼. 책 정신: 분산 + 시간이
+          시스템 가치를 만든다. 1-2건의 outcome 으로 system 평가 X.
+        </p>
+      </div>
+    </details>
   );
 }
 

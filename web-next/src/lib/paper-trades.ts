@@ -148,6 +148,13 @@ export interface PaperStats {
   win_rate: number | null;     // closed trades only — null when no closes yet
   best_pct: number | null;
   worst_pct: number | null;
+  // Phase 3 — backtest-comparable stats.
+  avg_pnl_pct: number | null;         // mean of closed P&L %
+  avg_win_pct: number | null;         // mean of POSITIVE closed P&L %
+  avg_loss_pct: number | null;        // mean of NEGATIVE closed P&L %
+  payoff: number | null;              // avg_win / |avg_loss| — same metric the
+                                      // 17y backtest reports (1.87 production).
+  avg_hold_days: number | null;
 }
 
 export function computeStats(rows: PaperTradeLive[]): PaperStats {
@@ -162,7 +169,24 @@ export function computeStats(rows: PaperTradeLive[]): PaperStats {
   const closedWithPnl = closed
     .map((r) => r.pnl_pct)
     .filter((p): p is number => p != null && Number.isFinite(p));
-  const wins = closedWithPnl.filter((p) => p > 0).length;
+  const wins = closedWithPnl.filter((p) => p > 0);
+  const losses = closedWithPnl.filter((p) => p < 0);
+  const mean = (arr: number[]): number => arr.length
+    ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const avgWin = wins.length ? mean(wins) : null;
+  const avgLoss = losses.length ? mean(losses) : null;
+  const payoff = (avgWin != null && avgLoss != null && avgLoss !== 0)
+    ? avgWin / Math.abs(avgLoss) : null;
+  // hold_days only available for closed trades with both dates set.
+  const holds = closed
+    .map((r) => {
+      if (!r.exit_date) return null;
+      const e = Date.parse(r.entry_date);
+      const x = Date.parse(r.exit_date);
+      if (!Number.isFinite(e) || !Number.isFinite(x)) return null;
+      return Math.max(0, Math.round((x - e) / 86_400_000));
+    })
+    .filter((d): d is number => d != null);
   return {
     open_n: open.length,
     closed_n: closed.length,
@@ -171,9 +195,28 @@ export function computeStats(rows: PaperTradeLive[]): PaperStats {
     total_pnl_krw: pnl,
     total_pnl_pct: pnlPct,
     win_rate: closedWithPnl.length
-      ? wins / closedWithPnl.length
+      ? wins.length / closedWithPnl.length
       : null,
     best_pct: closedWithPnl.length ? Math.max(...closedWithPnl) : null,
     worst_pct: closedWithPnl.length ? Math.min(...closedWithPnl) : null,
+    avg_pnl_pct: closedWithPnl.length ? mean(closedWithPnl) : null,
+    avg_win_pct: avgWin,
+    avg_loss_pct: avgLoss,
+    payoff,
+    avg_hold_days: holds.length ? Math.round(mean(holds)) : null,
   };
 }
+
+/** Constants from the 17y universe-honest backtest — used by /paper
+ *  to surface "your forward-test vs 17년 historical" comparison.
+ *  Source: HARDCODED_SUMMARY in scripts/build_equity_json.py +
+ *  trade-level stats logged during the same simulation. */
+export const BACKTEST_REFERENCE = {
+  cagr_pct: 14.9,
+  sharpe: 0.66,
+  win_rate: 0.45,
+  avg_pnl_pct: 2.02,
+  avg_win_pct: 12.85,
+  avg_loss_pct: -6.86,
+  payoff: 1.87,
+} as const;
