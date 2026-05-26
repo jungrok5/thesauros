@@ -455,24 +455,12 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           </section>
 
           {/* ─────────────────────────────────────────────────────────
-              그룹 4. 펀더멘털 검증 — PER/PBR/ROE + 배당/공매도.
-              차트는 추세, 여기는 회사의 "재무 상태".
-              ───────────────────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <h2 className="text-lg font-semibold tracking-tight">
-              🏛️ 펀더멘털 검증
-            </h2>
-            <FundamentalVerdicts fin={ctx.fin} />
-            <ShortAndDividendCards
-              shorts={ctx.shorts}
-              dividend={ctx.dividend}
-              todayIso={new Date().toISOString().slice(0, 10)}
-            />
-          </section>
+              그룹 3.5. 책 전략 N년 유지 시뮬레이션 + 종목별 신호 history.
+              17년 backtest (no-SL / max=50 / 24w / top-5, universe winner).
 
-          {/* ─────────────────────────────────────────────────────────
-              그룹 4.5. 책 전략 N년 유지 시뮬레이션 + 종목별 신호 history.
-              17년 backtest (SL=10%/max=8) 기반.
+              2026-05-26 site review M23: 책 전략은 책 정신의 핵심 검증
+              근거 — 펀더(그룹 4) 보다 먼저 와야 함. 사용자 mental model:
+              결론 → 차트 → "이 신호 historically 어땠나" → 펀더 (보조).
               ───────────────────────────────────────────────────────── */}
           <section className="space-y-3">
             <h2 className="text-lg font-semibold tracking-tight">
@@ -481,6 +469,46 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
             <TickerSignalHistory ticker={ticker} />
             <StrategyProjector />
           </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 4. 펀더멘털 검증 — 재무 건전성 한 줄 평.
+              차트는 추세, 여기는 회사의 "재무 상태".
+
+              2026-05-26: 공매도+배당 카드는 책 정신 직접 연관 약함 —
+              아래 별도 섹션 (default fold) 로 분리. 펀더 섹션에서는
+              재무 건전성 (적자/안전) 만 노출 → 책 정신 보조 일관.
+              ───────────────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">
+              🏛️ 펀더멘털 검증
+            </h2>
+            <FundamentalVerdicts fin={ctx.fin} />
+          </section>
+
+          {/* ─────────────────────────────────────────────────────────
+              그룹 4.5. 배당 · 공매도 — 책 정신 직접 연관 약한 보조 정보.
+              default 접힘. 사용자가 "배당 받으려면? 공매도 부담은?"
+              구체 의문 들 때만 펼침. (2026-05-26 site review.)
+              ───────────────────────────────────────────────────────── */}
+          {(ctx.shorts.length > 0 || ctx.dividend != null) && (
+            <details className="rounded-lg border border-border bg-card">
+              <summary className="px-4 py-3 cursor-pointer hover:bg-muted/40 flex items-baseline justify-between gap-2">
+                <span className="text-lg font-semibold tracking-tight">
+                  💰 배당 · 공매도
+                </span>
+                <span className="text-[11px] text-muted-foreground font-normal">
+                  참고용 — 책 정신은 추세 + 거래량 우선
+                </span>
+              </summary>
+              <div className="px-4 pb-4 pt-2">
+                <ShortAndDividendCards
+                  shorts={ctx.shorts}
+                  dividend={ctx.dividend}
+                  todayIso={new Date().toISOString().slice(0, 10)}
+                />
+              </div>
+            </details>
+          )}
 
           {/* ─────────────────────────────────────────────────────────
               그룹 5. 외부 의견 / 일정 — 참고 정보.

@@ -389,6 +389,54 @@ test.describe("BookChart pattern markers", () => {
 // Watchlist holding 종목 stop-price guard (M21 — 2026-05-26)
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// /stocks/[ticker] section ordering + fold (M23 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("/stocks/[ticker] section ordering after M23 regroup", () => {
+  // The book's mental model: 결론 → 차트 → "이 신호 historically 어땠나"
+  // → 펀더 (보조). Previously 책 전략 was after 펀더, so a reader who
+  // ran out of attention at 펀더 never saw the strategy projection that
+  // is THE book-spirit verification. Moved 책 전략 above 펀더.
+  test("'🧮 책 전략 적용 시' renders before '🏛️ 펀더멘털 검증'", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+    const html = await page.content();
+    const stratIdx = html.indexOf("🧮 책 전략 적용 시");
+    const fundIdx = html.indexOf("🏛️ 펀더멘털 검증");
+    // Skip when ticker has no data — verdict shell missing.
+    if (stratIdx === -1 || fundIdx === -1) {
+      test.skip(true, "stock page sections not rendered for this ticker");
+      return;
+    }
+    expect(stratIdx, "책 전략 must come before 펀더").toBeLessThan(fundIdx);
+  });
+
+  test("'💰 배당 · 공매도' lives in a default-collapsed <details>", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+    const html = await page.content();
+    if (!html.includes("💰 배당 · 공매도")) {
+      test.skip(true, "no dividend/short data for this ticker");
+      return;
+    }
+    expect(html).toMatch(
+      /<summary[^>]*>[\s\S]{0,300}💰 배당 · 공매도[\s\S]{0,200}<\/summary>/,
+    );
+    const detailsOpen = html.match(
+      /<details\s+open[^>]*>[\s\S]{0,500}💰 배당 · 공매도/,
+    );
+    expect(detailsOpen, "💰 배당 · 공매도 details must not be open by default")
+      .toBeNull();
+  });
+});
+
 test.describe("Watchlist holding requires a stop loss", () => {
   // Direct UI test would need a holding row in the user's watchlist —
   // out of scope for an empty-DB E2E. Read the source guard instead:
