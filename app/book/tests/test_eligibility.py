@@ -292,9 +292,13 @@ def test_stretched_240ma_borderline_50pct_stays_ok():
     assert v["grade"] == "OK"
 
 
-def test_missing_monthly_240ma_downgrades_buy():
-    """F8 — monthly ma_240 is None (신규 상장) blocks bullish eligibility.
-    The 339950.KQ case the audit confirmed."""
+def test_missing_monthly_240ma_does_NOT_downgrade_buy_alone():
+    """F8 walked back 2026-05-26 — initial rollout treated missing
+    monthly 240MA as a CONDITIONAL trigger but it caught 8/10 candidates
+    on the TOP 10 audit run. The book's canonical 240MA gate is WEEKLY
+    (ch.4 '1년 매수 심리'); monthly 240MA is the longer-horizon variant
+    and shouldn't block bullish eligibility on its own. BookVerdict
+    surfaces a warning when monthly_240 is missing — that's enough."""
     blob = _result(
         action="STRONG_BUY",
         trend={
@@ -303,9 +307,7 @@ def test_missing_monthly_240ma_downgrades_buy():
         },
     )
     v = compute_eligibility(blob)
-    assert v["grade"] == "CONDITIONAL"
-    assert v["reason_code"] == "missing_monthly_240"
-    assert "월봉 240MA" in v["body"]
+    assert v["grade"] == "OK"  # not downgraded by missing monthly alone
 
 
 def test_candle_reversal_at_top_downgrades_buy():

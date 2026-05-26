@@ -95,11 +95,21 @@ def is_240ma_stretched(result: Dict[str, Any]) -> bool:
 
 
 def is_monthly_240ma_missing(result: Dict[str, Any]) -> bool:
-    """월봉 240MA 미계산 = 책의 핵심 안전 게이트 누락 (신규 상장 종목 —
-    240개월 ≈ 20년 데이터 부재). F8 (2026-05-26 audit) — 책 정신상 장기
-    추세 확인 불가 종목에 bullish 라벨 줘선 안 됨. Was previously surfaced
-    in BookVerdict warnings but did NOT downgrade eligibility, so the
-    page card stayed 🟢 STRONG_BUY on tickers without the gate."""
+    """월봉 240MA 미계산 (신규 상장 / 20년 데이터 부재). Returns True iff
+    the monthly 240MA can't be computed.
+
+    2026-05-26 F8 (initial) treated this as a CONDITIONAL trigger on the
+    theory that monthly 240MA was a load-bearing safety gate. A trigger
+    run against the TOP 10 immediately showed the rule was over-strict:
+    8 of 10 candidates were downgraded for this reason alone, and the
+    book actually defines '240MA = 1년 매수 심리' against the WEEKLY
+    240MA (book ch.4) — monthly 240MA is the longer-horizon variant,
+    not the canonical safety gate.
+
+    Kept as a helper so BookVerdict can still surface a warning ("⚠️
+    월봉 240MA 미계산 — 장기 차트 부족") on the page without blocking
+    the verdict. compute_eligibility() no longer uses this for the
+    CONDITIONAL routing — see commit message for rationale."""
     monthly = (result.get("trend") or {}).get("monthly") or {}
     return monthly.get("ma_240") is None
 
@@ -238,27 +248,28 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         # New gates from 2026-05-26 TOP-10 manual audit (book-rule
         # parity). Order matters — strictest book-rule violations first
         # so the downgrade reason names the most fundamental issue.
+        #
+        # NOTE: is_monthly_240ma_missing was originally a downgrade
+        # trigger (F8) but rolling it out against TOP 10 showed it
+        # caught 8/10 candidates — the book's canonical 240MA is
+        # WEEKLY (ch.4 "1년 매수 심리"), and the monthly variant is
+        # the longer-horizon variant, not the load-bearing gate.
+        # BookVerdict still surfaces a warning when monthly_240 is
+        # missing; eligibility no longer downgrades on it alone.
         stretched_240 = is_240ma_stretched(result)
-        missing_monthly = is_monthly_240ma_missing(result)
         candle_top = is_candle_reversal_at_top(result)
         ambush = (not stale_pattern and not post_rally
-                  and not stretched_240 and not missing_monthly
+                  and not stretched_240
                   and not candle_top
                   and is_ambush_setup(result))
         downgrade = (
             ambush or stale_pattern or post_rally
-            or stretched_240 or missing_monthly or candle_top
+            or stretched_240 or candle_top
         )
         if downgrade:
             if stretched_240:
                 reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
                 reason_code = "stretched_240"
-            elif missing_monthly:
-                reason = (
-                    "월봉 240MA 미계산 — 책의 핵심 안전 게이트 누락 "
-                    "(신규 상장 / 장기 차트 부족)"
-                )
-                reason_code = "missing_monthly_240"
             elif post_rally:
                 reason = "랠리 후 조정 (반전 위험)"
                 reason_code = "post_rally"
