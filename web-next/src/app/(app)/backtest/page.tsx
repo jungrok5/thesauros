@@ -138,8 +138,8 @@ export default async function BacktestPage() {
         <h2 className="text-lg font-semibold tracking-tight">방법론</h2>
         <ul className="space-y-1.5 text-muted-foreground list-disc pl-5">
           <li>
-            <strong>Universe</strong>: KOSPI+KOSDAQ 1820 ticker 전체 (4M+ fires,
-            271K entry candidates 17년).
+            <strong>Universe</strong>: KOSPI+KOSDAQ 2701 ticker 전체 (4.05M fires
+            17년, 2026-05-26 re-sweep w/ 책 정신 reform).
           </li>
           <li>
             <strong>신호</strong>: 책 정신 top-5 entries — volume_case_3,
@@ -162,12 +162,14 @@ export default async function BacktestPage() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          ⚠️ <strong>이전 (2026-05-23) 100-ticker random sample (+6380%) 은
-          sample bias 로 over-fit</strong> 이었음을 full universe 검증으로 확인
-          (2026-05-24). 위 숫자가 honest production result. KOSPI BH (CAGR 11.5%)
-          대비 outperformance 는 +1.91%p/year — 책 전략의 진가는 절대 return
-          보다 Sharpe (0.62) + Sortino (0.81) + 낮은 DD (47.6%) 등 risk-adjusted
-          profile. 4 random seeds × walk-forward 3 folds 모두 sample-period
+          위 숫자가 honest production result (2026-05-26 re-sweep, 책 정신
+          reform: F7~F14 eligibility gates + weekly-first pattern sort +
+          fake_volume penalty + 삼중바닥 detector fix). KOSPI BH (CAGR 11.5%)
+          대비 outperformance <strong>+3.4%p/year</strong> — 책 전략의 진가는
+          절대 return 보다 Sharpe (0.66) + Sortino (0.77) + 낮은 DD (51.5%) 등
+          risk-adjusted profile. ⚠️ 이전 (2026-05-23) 100-ticker random sample
+          (+6380%) 은 sample bias 로 over-fit 이었음을 full universe 검증으로
+          확인 — 4 random seeds × walk-forward 3 folds 모두 sample-period
           dependent (+50%~+9000% 범위).
         </p>
       </section>

@@ -227,7 +227,7 @@ test.describe("/dashboard layout after reset", () => {
     await expect(backtestLink).toBeVisible();
     // Numbers must be in the same DOM region so the link has a
     // reason to be clicked.
-    await expect(page.locator("body")).toContainText("CAGR 13.4%");
+    await expect(page.locator("body")).toContainText("CAGR 14.9%");
   });
 
   test("/backtest is still reachable (page kept, only demoted)", async ({ page }) => {

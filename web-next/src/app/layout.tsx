@@ -32,7 +32,7 @@ const SITE_URL =
 const DESC =
   "한국 종목 (KOSPI / KOSDAQ) 매주 금요일 자동 주봉 스캔 — 17종 캔들 패턴 + " +
   "추세 + 4등분선 + 외국인·기관 매매 + 거시 5축 다이얼. 텔레그램·웹 푸시 알림. " +
-  "17년 universe-honest 백테스트 검증 (CAGR 13.4% / Sharpe 0.62).";
+  "17년 universe-honest 백테스트 검증 (CAGR 14.9% / Sharpe 0.66).";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

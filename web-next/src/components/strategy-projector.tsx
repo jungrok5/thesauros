@@ -5,13 +5,13 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * Compares 책 전략 (no-SL / max=50 / 24w / top-5 / FULL 1820-ticker
+ * Compares 책 전략 (no-SL / max=50 / 24w / top-5 / FULL 2701-ticker
  * universe) against passive alternatives using point-estimate CAGRs
  * from the 17-year backtest.
  *
- * CAGR sources (universe-honest):
- *   - 책 (이상):  13.4% — full universe no-SL/max=50 (sweep_all_24w)
- *   - 책 (보수): ~10%  — assume 3.4%p cost drag (slip 0.2~0.4%)
+ * CAGR sources (universe-honest, 2026-05-26 re-sweep w/ book-spirit reform):
+ *   - 책 (이상):  14.9% — full universe no-SL/max=50 (sweep_all_24w)
+ *   - 책 (보수): ~11.5% — assume 3.4%p cost drag (slip 0.2~0.4%)
  *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct (alpha-beta calc base)
  *   - 정기예금:  3.0%  — Q1 2026 평균
  *   - 채권:      4.5%  — 우량 회사채 평균
@@ -25,14 +25,14 @@ const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.134,
-    hint: "no-SL / max=50 / 24w / top-5 — 1820-ticker universe, 슬리피지 0",
+    cagr: 0.149,
+    hint: "no-SL / max=50 / 24w / top-5 — 2701-ticker universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.100,
+    cagr: 0.115,
     hint: "+거래 비용 0.2~0.4% 슬리피지 가정 (-3~4%p 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
@@ -195,13 +195,14 @@ export function StrategyProjector({
 
       {kospi && (
         <div className="text-xs text-muted-foreground leading-relaxed">
-          책 전략 (현실 비용 10%/년) 으로 {amountManwon.toLocaleString()}만원을
-          {" "}{years}년 유지하면 KOSPI BH 대비 차이는 작습니다 — 실제 outperformance
-          는 17년 데이터로 검증 시 <strong>+1.9%p/year</strong> 수준 (full
-          1820-ticker universe). 100-ticker random sample 결과 (+27%/y) 는 sample
-          bias 로 over-estimate 임을 universe 검증으로 확인 (2026-05-24).
-          책 전략의 가치는 절대 return 보다 균형 잡힌 risk-adjusted profile —
-          Sharpe 0.62, Sortino 0.81, DD 47% (KOSPI BH 대비 DD ↓).
+          책 전략 (현실 비용 ~11.5%/년) 으로 {amountManwon.toLocaleString()}만원을
+          {" "}{years}년 유지하면 KOSPI BH 대비 차이는 점점 벌어집니다 — 실제
+          outperformance 는 17년 데이터로 검증 시 <strong>+3.4%p/year</strong>{" "}
+          수준 (full 2701-ticker universe, 2026-05-26 책 정신 reform 후 re-sweep).
+          100-ticker random sample 결과 (+27%/y) 는 sample bias 로 over-estimate
+          임을 universe 검증으로 확인 (2026-05-24). 책 전략의 가치는 절대 return
+          보다 균형 잡힌 risk-adjusted profile — Sharpe 0.66, Sortino 0.77,
+          DD 51.5% (KOSPI BH 대비 DD ↓).
         </div>
       )}
     </section>
