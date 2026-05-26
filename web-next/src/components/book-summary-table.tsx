@@ -248,11 +248,24 @@ function nextDecisionLine(): string {
 
 function flowLine(flow: FlowSummary | null | undefined): string | null {
   if (!flow) return null;
-  const f = Math.round(flow.foreignNet / 1e8);
-  const i = Math.round(flow.institutionNet / 1e8);
-  const fStr = f === 0 ? "0" : (f > 0 ? `+${f}` : `${f}`);
-  const iStr = i === 0 ? "0" : (i > 0 ? `+${i}` : `${i}`);
-  return `7일 합산: 외인 ${fStr}억 · 기관 ${iStr}억`;
+  return `7일 합산: 외인 ${fmtKrw(flow.foreignNet)} · 기관 ${fmtKrw(flow.institutionNet)}`;
+}
+
+/** Pick "조원" vs "억원" automatically so 7-day flow on a large-cap
+ *  ticker doesn't read as "-30345억" (hard to parse at a glance).
+ *  Threshold: ≥ 1조원 (1 trillion KRW) → 조 단위 with 1 decimal.
+ *  Below that → 억 단위, integer. (2026-05-26 audit pass.) */
+function fmtKrw(krw: number): string {
+  const ABS = Math.abs(krw);
+  if (ABS >= 1e12) {
+    const trillions = krw / 1e12;
+    const sign = trillions > 0 ? "+" : "";
+    return `${sign}${trillions.toFixed(1)}조`;
+  }
+  const eok = Math.round(krw / 1e8);
+  if (eok === 0) return "0";
+  const sign = eok > 0 ? "+" : "";
+  return `${sign}${eok.toLocaleString("ko-KR")}억`;
 }
 
 interface Props {

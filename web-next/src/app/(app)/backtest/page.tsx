@@ -146,7 +146,7 @@ export default async function BacktestPage() {
             pattern_forking, volume_case_7, action_strong_buy, pattern_ma240_breakout.
           </li>
           <li>
-            <strong>Hold</strong>: 24주 (6 개월). 책 정신 추세는 길게.
+            <strong>Hold</strong>: 24주 (약 5.5개월). 책 정신 추세는 길게.
           </li>
           <li>
             <strong>포지션</strong>: 최대 50 종목 동시 보유. 강도 desc 우선.
