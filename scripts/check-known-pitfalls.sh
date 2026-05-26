@@ -114,6 +114,35 @@ else
   echo "  ✓ dead /themes ingest steps absent"
 fi
 
+echo "[check] no onClick in server components (passing event handlers to client props 500s)"
+# 2026-05-27 incident: /paper page (server component) had
+# <Link onClick={(e) => e.stopPropagation()}> — Next.js can't
+# serialize function props from server → client across the RSC
+# boundary, threw "Event handlers cannot be passed to client
+# component props" at render time, page died with 500 in production.
+# The "200 with error" in vercel logs is misleading; Next.js streams
+# the HTTP 200 envelope before the render error fires.
+#
+# Rule: any onClick / onChange / onSubmit etc in a TSX file under
+# web-next/src that does NOT start with "use client" is a regression.
+violations=$(
+  grep -rlE 'on(Click|Change|Submit|Input|Focus|Blur|MouseEnter|MouseLeave|KeyDown|KeyUp)=\{' web-next/src --include="*.tsx" --include="*.ts" 2>/dev/null \
+    | while read -r f; do
+        # "use client" can appear after a top-of-file JSDoc block, so
+        # scan the whole file's first ~30 lines instead of just head -3.
+        head -30 "$f" 2>/dev/null \
+          | grep -qE '^"use client"|^'"'"'use client'"'"'' && continue
+        echo "$f"
+      done
+)
+if [ -n "$violations" ]; then
+  echo "  ✗ server components with event handler props (will 500 at runtime):"
+  for f in $violations; do echo "      $f"; done
+  fail=1
+else
+  echo "  ✓ no server components leak event handlers"
+fi
+
 echo "[check] proxy.ts isPublic whitelist covers /api/cron/ + /api/telegram/webhook"
 # 2026-05-26 incident: proxy.ts NextAuth middleware 401-blocks all /api/*
 # without a session. Vercel Cron calls /api/cron/daily-data without a

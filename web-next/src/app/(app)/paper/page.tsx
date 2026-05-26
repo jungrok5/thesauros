@@ -212,7 +212,6 @@ function PositionRow({ p, closable }: {
       <summary className="grid grid-cols-12 gap-2 items-center px-3 py-2.5 text-xs cursor-pointer hover:bg-muted/40 select-none">
         <div className="col-span-3">
           <Link href={`/stocks/${encodeURIComponent(p.ticker)}?from=paper`}
-            onClick={(e) => e.stopPropagation()}
             className="block hover:underline">
             <div className="font-mono text-[11px]">{p.ticker}</div>
             <div className="text-[10px] text-muted-foreground mt-0.5">
