@@ -94,6 +94,26 @@ def is_240ma_stretched(result: Dict[str, Any]) -> bool:
     return last > ma240 * 1.5
 
 
+def is_below_weekly_240ma(result: Dict[str, Any]) -> bool:
+    """주봉 240MA 아래 = 책의 가장 본질적인 매수 룰 위반.
+    F10 (2026-05-26 second audit) — surfaced via 041930.KQ (SY동아):
+    last_close 7,080 vs weekly 240MA 8,031 (-12%), BookVerdict 페이지가
+    "주봉 240MA 아래 -12% — 책 기준 죽은 차트 영역" 명시하는데도
+    eligibility=OK 라서 sortByBookSpirit 1위로 올라왔음.
+
+    Book ch.4 "240MA = 1년 매수 심리": 240MA 위에서만 매수 검토.
+    아래면 추세 살아있지 않음. 이건 stretched 보다도 본질적인 위반이라
+    stretched/post-rally/candle-top 보다 먼저 평가."""
+    weekly = (result.get("trend") or {}).get("weekly") or {}
+    ma240 = weekly.get("ma_240")
+    last = result.get("last_close")
+    if not (isinstance(ma240, (int, float)) and ma240 > 0):
+        return False  # 240MA 미계산은 별도 missing_monthly_240 게이트가 다룸
+    if not isinstance(last, (int, float)) or last <= 0:
+        return False
+    return last < ma240
+
+
 def is_monthly_240ma_missing(result: Dict[str, Any]) -> bool:
     """월봉 240MA 미계산 (신규 상장 / 20년 데이터 부재). Returns True iff
     the monthly 240MA can't be computed.
@@ -256,18 +276,23 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         # the longer-horizon variant, not the load-bearing gate.
         # BookVerdict still surfaces a warning when monthly_240 is
         # missing; eligibility no longer downgrades on it alone.
+        below_240 = is_below_weekly_240ma(result)
         stretched_240 = is_240ma_stretched(result)
         candle_top = is_candle_reversal_at_top(result)
         ambush = (not stale_pattern and not post_rally
+                  and not below_240
                   and not stretched_240
                   and not candle_top
                   and is_ambush_setup(result))
         downgrade = (
             ambush or stale_pattern or post_rally
-            or stretched_240 or candle_top
+            or below_240 or stretched_240 or candle_top
         )
         if downgrade:
-            if stretched_240:
+            if below_240:
+                reason = "주봉 240MA 아래 — 책 기준 죽은 차트 영역"
+                reason_code = "below_weekly_240"
+            elif stretched_240:
                 reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
                 reason_code = "stretched_240"
             elif post_rally:

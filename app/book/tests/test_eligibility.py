@@ -342,7 +342,7 @@ def test_candle_reversal_alone_without_top_stays_ok():
 def test_audit_gates_priority_order():
     """When multiple downgrade gates trigger, the most fundamental
     book-rule violation wins so the user sees the strictest reason.
-    Order: stretched_240 > missing_monthly_240 > post_rally > candle_top
+    Order: below_weekly_240 > stretched_240 > post_rally > candle_top
     > stale > ambush."""
     # stretched_240 wins over missing_monthly_240
     blob = _result(
@@ -355,3 +355,53 @@ def test_audit_gates_priority_order():
     )
     v = compute_eligibility(blob)
     assert v["reason_code"] == "stretched_240"
+
+
+def test_below_weekly_240ma_downgrades_buy():
+    """F10 (2026-05-26 second audit) — surfaced via 041930.KQ:
+    last_close 7,080 vs weekly 240MA 8,031 (-12%) yet eligibility=OK
+    so it ranked #1 in the screener. Book ch.4 '240MA = 1년 매수 심리':
+    아래면 죽은 차트, 매수 X."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=88.0,    # below ma_240 100
+        trend={
+            "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+            "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0},
+        },
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "below_weekly_240"
+    assert "240MA 아래" in v["body"]
+
+
+def test_below_weekly_240ma_outranks_stretched_in_priority():
+    """Pathological case (price below 240MA AND somehow > 1.5x of stale
+    240MA reading) — the more fundamental "추세 죽음" violation must
+    take precedence in the reason naming."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=88.0,    # below ma_240
+        trend={
+            "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+            "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0},
+        },
+    )
+    v = compute_eligibility(blob)
+    assert v["reason_code"] == "below_weekly_240"
+
+
+def test_exactly_at_weekly_240ma_stays_ok():
+    """last_close == weekly ma_240 is the boundary — should NOT trigger
+    the dead-chart downgrade (only strictly below)."""
+    blob = _result(
+        action="BUY",
+        last_close=100.0,
+        trend={
+            "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+            "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0},
+        },
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "OK"
