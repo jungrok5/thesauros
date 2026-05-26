@@ -39,20 +39,25 @@ from pathlib import Path
 
 
 # Universe-honest metrics from no-SL / max=50 / 24w / top-5 on full
-# 1820-ticker universe (sweep_all_24w.csv, 271K candidates). Replaces
-# the previous 100-tic seed=42 numbers which were sample-bias inflated.
+# 2701-ticker universe (KOSPI+KOSDAQ, sweep_all_24w.csv,
+# 4.05M fires) — re-swept 2026-05-26 with the new book-spirit rule
+# set: F7-F14 eligibility gates, weekly-first pattern_sort_key,
+# fake_volume penalty in _signal_score, fixed triple-bottom detector
+# (rising_volume = c > a). Replaces the previous 2026-05-24 numbers
+# (795% / 13.4%) that used the older detector with strict
+# a<b<c volume monotonic.
 HARDCODED_SUMMARY = {
-    "total_return_pct": 795.13,
-    "annualised_return_pct": 13.39,
-    "max_drawdown_pct": 47.58,
-    "sharpe": 0.620,
-    "sortino": 0.813,
-    "calmar": 0.281,
-    "alpha_annual_pct": 5.09,
-    "beta": 0.640,
-    "r_squared": 0.407,
+    "total_return_pct": 1028.22,
+    "annualised_return_pct": 14.90,
+    "max_drawdown_pct": 51.46,
+    "sharpe": 0.656,
+    "sortino": 0.772,
+    "calmar": 0.290,
+    "alpha_annual_pct": 6.66,
+    "beta": 0.650,
+    "r_squared": 0.356,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 1.91,
+    "outperformance_ann_pct": 3.42,
 }
 
 
