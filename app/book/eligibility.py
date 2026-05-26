@@ -110,6 +110,23 @@ def is_weekly_240ma_missing(result: Dict[str, Any]) -> bool:
     return weekly.get("ma_240") is None
 
 
+def is_below_weekly_ma10(result: Dict[str, Any]) -> bool:
+    """주봉 10MA 아래 = 책 ch.4 단기 추세 사망 라인. F13 (2026-05-26
+    seventh audit) — surfaced via audit_200 4건 (011500 한농화성,
+    005720 넥센, 005880 대한해운, 000390 SP삼화): all had action=BUY
+    + score 0.72~0.92 + eligibility=OK while weekly.above_ma_10=False.
+
+    Distinct from is_below_weekly_240ma (F10): 240MA 아래 = 추세 자체
+    죽음 (장기). 10MA 아래 = 추세 일시 이탈 또는 끝. Book recommends
+    closing at 10MA breakdown but doesn't always mean re-entry blocked
+    forever — only that THIS bar isn't an entry. CONDITIONAL not AVOID.
+
+    Note: `weekly.above_ma_10` is a pre-computed boolean from the trend
+    analyzer; this gate just trusts it (False ⇒ price < ma_10)."""
+    weekly = (result.get("trend") or {}).get("weekly") or {}
+    return weekly.get("above_ma_10") is False
+
+
 def is_below_weekly_240ma(result: Dict[str, Any]) -> bool:
     """주봉 240MA 아래 = 책의 가장 본질적인 매수 룰 위반.
     F10 (2026-05-26 second audit) — surfaced via 041930.KQ (SY동아):
@@ -325,19 +342,21 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         # missing; eligibility no longer downgrades on it alone.
         below_240 = is_below_weekly_240ma(result)
         weekly_240_missing = is_weekly_240ma_missing(result)
+        below_ma10 = is_below_weekly_ma10(result)
         stretched_240 = is_240ma_stretched(result)
         candle_top = is_candle_reversal_at_top(result)
         indecision = is_indecision_candle(result) and not candle_top
         ambush = (not stale_pattern and not post_rally
                   and not below_240
                   and not weekly_240_missing
+                  and not below_ma10
                   and not stretched_240
                   and not candle_top
                   and not indecision
                   and is_ambush_setup(result))
         downgrade = (
             ambush or stale_pattern or post_rally
-            or below_240 or weekly_240_missing
+            or below_240 or weekly_240_missing or below_ma10
             or stretched_240 or candle_top or indecision
         )
         if downgrade:
@@ -350,6 +369,12 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
                     "책의 핵심 안전 게이트 부재"
                 )
                 reason_code = "weekly_240_missing"
+            elif below_ma10:
+                reason = (
+                    "주봉 10MA 아래 — 책 ch.4 단기 추세 사망 라인. "
+                    "재진입은 10MA 회복 후"
+                )
+                reason_code = "below_weekly_ma10"
             elif stretched_240:
                 reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
                 reason_code = "stretched_240"

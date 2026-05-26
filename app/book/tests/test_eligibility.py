@@ -478,6 +478,34 @@ def test_at_top_reversal_keeps_F9_reason_not_F12():
     assert v["reason_code"] != "indecision_candle"
 
 
+def test_below_weekly_ma10_downgrades_buy():
+    """F13 (2026-05-26 audit_200): action=BUY + score>=0.7 종목 4건이
+    weekly.above_ma_10=False 인데도 eligibility=OK. 책 ch.4: 주봉 10MA
+    아래 = 단기 추세 사망 라인. CONDITIONAL — 재진입은 10MA 회복 후."""
+    blob = _result(
+        action="BUY",
+        last_close=90.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": False, "ma_10": 100.0, "ma_240": 80.0}},
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "below_weekly_ma10"
+    assert "주봉 10MA" in v["body"]
+
+
+def test_above_weekly_ma10_stays_ok():
+    """Regression — true above_ma_10 stays OK."""
+    blob = _result(
+        action="BUY",
+        last_close=110.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 100.0, "ma_240": 80.0}},
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "OK"
+
+
 def test_clean_candle_at_normal_position_still_OK():
     """Sanity — body 양봉, tags 비어있음, upper_wick 정상 → F12 안 fire."""
     blob = _result(

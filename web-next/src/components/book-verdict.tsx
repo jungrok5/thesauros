@@ -163,6 +163,39 @@ export function pickFreshBullishPattern(
   result: AnalysisResult,
 ): { kind: string; breakout: number; runupPct: number } | null {
   const last = result.last_close;
+
+  // 2026-05-26 fix: prefer whatever pattern the analyzer's entry_plan
+  // chose — that's the book-spirit pick (weekly-first + fake_volume
+  // penalty, see app/book/analyzer.py:pattern_sort_key). The old
+  // runup-closest local heuristic disagreed with the backend on
+  // 000370.KS: backend picked catalyst (weekly clean 0.80) for the
+  // entry_plan, frontend headline still narrated 삼중바닥 (the
+  // closest-runup pattern). Surface the same pattern in both places.
+  const ep = result.entry_plan;
+  if (ep && typeof ep.based_on === "string") {
+    const kind = ep.based_on.split("(", 1)[0].trim();
+    const tfMatch = ep.based_on.match(/\(([^)]+)\)/);
+    const tf = tfMatch ? tfMatch[1].trim() : null;
+    for (const p of result.patterns) {
+      if (!p.completed || p.direction !== "bullish") continue;
+      if (p.kind !== kind) continue;
+      if (tf && p.timeframe && p.timeframe !== tf) continue;
+      const bl = breakoutLevel(p);
+      if (bl == null) continue;
+      const runup = (last / bl - 1) * 100;
+      // Even when honoring entry_plan we keep the negative-runup
+      // guardrail — a backend pick whose price has fallen back below
+      // its breakout is pattern-invalidation territory and shouldn't
+      // be narrated as fresh entry.
+      if (runup < 0) continue;
+      return { kind: p.kind, breakout: bl, runupPct: runup };
+    }
+    // Fallthrough: entry_plan exists but the matching pattern isn't
+    // in the array, OR its breakout level can't be derived (e.g.,
+    // analyzer used the 10MA-fallback path with no underlying pattern).
+    // Use the legacy heuristic below.
+  }
+
   let best: { kind: string; breakout: number; runupPct: number } | null = null;
   for (const p of result.patterns) {
     if (!p.completed || p.direction !== "bullish") continue;
