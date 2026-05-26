@@ -412,6 +412,54 @@ test.describe("BookChart pattern markers", () => {
 // (F1 — 2026-05-26)
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// Screener exposes eligibility chip (F2 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("screener exposes the eligibility safety chip", () => {
+  // F2: even when book_score sorts an ineligible ticker to rank 1
+  // (the 339950.KQ case — 책의 핵심 안전 게이트 누락 yet ranked first),
+  // the screener row must surface that dissonance via a chip — user
+  // sees "조건부 / 관망 / 회피" before clicking through.
+  test("EligibilityChip component is wired through the screener page", async ({}) => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "src/app/(app)/screener/page.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/EligibilityChip/);
+    expect(src).toMatch(/fetchEligibilityMap/);
+    // The chip carries a data-eligibility attribute so E2E + a11y
+    // pickers can target it.
+    expect(src).toMatch(/data-eligibility=\{grade\}/);
+    // Three downgrade tones must all be wired so the user can tell
+    // CONDITIONAL/WATCH/AVOID apart without hovering.
+    expect(src).toMatch(/AVOID/);
+    expect(src).toMatch(/CONDITIONAL/);
+    expect(src).toMatch(/WATCH/);
+  });
+
+  test("rendered /screener exposes at least one data-eligibility chip", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    // Skip when DB has no analyze_results rows for the screener hits
+    // (no eligibility data → no chips). Test guards behavior when
+    // the data IS present.
+    const chips = page.locator("[data-eligibility]");
+    const count = await chips.count();
+    if (count === 0) {
+      test.skip(true, "no eligibility data on screener results today");
+      return;
+    }
+    // Every chip's attribute value must be a valid downgrade grade.
+    for (let i = 0; i < Math.min(count, 5); i++) {
+      const v = await chips.nth(i).getAttribute("data-eligibility");
+      expect(["CONDITIONAL", "WATCH", "AVOID"]).toContain(v);
+    }
+  });
+});
+
 test.describe("verdict cards never contradict each other", () => {
   // The 339950.KQ case that triggered this guard: screener rank 1
   // (book_score 1.00, action=STRONG_BUY) but the analyzer's eligibility

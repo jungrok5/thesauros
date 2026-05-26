@@ -73,7 +73,46 @@ type Hit = {
   volume_dir: string | null;
   quarter_zone: string | null;
   catalyst_bars_since: number | null;
+  // F2 — analyzer's eligibility verdict (canonical truth). When grade
+  // is not "OK", screener_results sorted-by-book_score can put an
+  // unsafe ticker at rank 1 (339950.KQ case 2026-05-26: rank 1 but
+  // "조건부 — 매수 X" on detail page). Chip surfaces the dissonance
+  // up front so the user doesn't click through expecting a clean buy.
+  eligibility_grade?: "OK" | "CONDITIONAL" | "WATCH" | "AVOID" | null;
+  eligibility_icon?: string | null;
 };
+
+async function fetchEligibilityMap(
+  tickers: string[],
+): Promise<Map<string, { grade: string; icon: string } | null>> {
+  const out = new Map<string, { grade: string; icon: string } | null>();
+  if (tickers.length === 0) return out;
+  const sb = getServerClient();
+  // Use PostgREST's JSON-path selector so we don't pull every full
+  // analyze_results.result row (each ~4-8 KB) — only the eligibility
+  // subtree. .in() + .limit() avoids the silent 1000-row cap.
+  const { data, error } = await sb
+    .from("analyze_results")
+    .select("ticker, eligibility:result->eligibility")
+    .in("ticker", tickers)
+    .limit(tickers.length);
+  if (error || !data) {
+    console.error("fetchEligibilityMap:", error?.message);
+    return out;
+  }
+  for (const row of data as Array<{
+    ticker: string;
+    eligibility: { grade?: string; icon?: string } | null;
+  }>) {
+    const e = row.eligibility;
+    if (e && typeof e.grade === "string") {
+      out.set(row.ticker, { grade: e.grade, icon: e.icon ?? "" });
+    } else {
+      out.set(row.ticker, null);
+    }
+  }
+  return out;
+}
 
 type SubFilters = {
   volSurge: boolean;
@@ -287,9 +326,21 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
     fetchDistribution(preset),
     fetchLatestAnalysisRun(),
   ]);
-  const priceMap: Map<string, LatestPrice> = allHits.length > 0
-    ? await fetchLatestPrices(allHits.map((h) => h.ticker))
-    : new Map();
+  const [priceMap, eligibilityMap] = allHits.length > 0
+    ? await Promise.all([
+        fetchLatestPrices(allHits.map((h) => h.ticker)),
+        fetchEligibilityMap(allHits.map((h) => h.ticker)),
+      ])
+    : [new Map<string, LatestPrice>(), new Map<string, { grade: string; icon: string } | null>()];
+  // Annotate each Hit with its eligibility verdict so chip rendering
+  // is a pure UI concern (no second lookup per row).
+  for (const h of allHits) {
+    const e = eligibilityMap.get(h.ticker);
+    if (e) {
+      h.eligibility_grade = e.grade as Hit["eligibility_grade"];
+      h.eligibility_icon = e.icon;
+    }
+  }
   const totalPassing =
     distribution.strong_buy + distribution.buy + distribution.hold +
     distribution.avoid + distribution.none;
@@ -489,7 +540,13 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                           {fmtPct(h.op_margin)}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          <ActionPill action={h.action} score={h.book_score} />
+                          <div className="flex flex-col items-center gap-1">
+                            <ActionPill action={h.action} score={h.book_score} />
+                            <EligibilityChip
+                              grade={h.eligibility_grade}
+                              icon={h.eligibility_icon}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-2">
                           <SubScoreChips
@@ -532,6 +589,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                         <div className="flex items-center gap-2 flex-wrap">
                           <RowPrice price={priceMap.get(h.ticker) ?? null} ticker={h.ticker} />
                           <ActionPill action={h.action} score={h.book_score} />
+                          <EligibilityChip
+                            grade={h.eligibility_grade}
+                            icon={h.eligibility_icon}
+                          />
                         </div>
                       </div>
                       <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
@@ -569,6 +630,47 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
           )}
         </section>
     </div>
+  );
+}
+
+/**
+ * EligibilityChip — small color-coded chip next to ActionPill exposing
+ * the analyzer's safety-gate verdict. F2 (2026-05-26) addressed the
+ * 339950.KQ case where book_score 1.00 + STRONG_BUY put a ticker at
+ * rank 1 even though `eligibility.grade` was CONDITIONAL ("월봉 240MA
+ * 미계산 — 책의 핵심 안전 게이트 누락"). Sort order is preserved
+ * (book_score winners stay at rank 1), but the user sees a 조건부 /
+ * 관망 / 회피 chip on those rows before clicking through.
+ */
+function EligibilityChip({
+  grade,
+  icon,
+}: {
+  grade?: Hit["eligibility_grade"];
+  icon?: string | null;
+}) {
+  if (!grade || grade === "OK") return null;
+  const tone =
+    grade === "AVOID"
+      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+      : grade === "CONDITIONAL"
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        : "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300";
+  const label =
+    grade === "AVOID" ? "회피"
+      : grade === "CONDITIONAL" ? "조건부"
+        : "관망";
+  return (
+    <span
+      data-eligibility={grade}
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
+      title={
+        `책 정신 적합도: ${label} — book_score 가 높아도 실제 매수 자리 ` +
+        "아닐 수 있음. 상세 페이지의 한 줄 평 확인."
+      }
+    >
+      {icon || "⚠"} {label}
+    </span>
   );
 }
 
