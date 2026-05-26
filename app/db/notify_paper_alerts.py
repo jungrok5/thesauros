@@ -74,7 +74,7 @@ def _fetch_open_unalerted(conn) -> List[Dict[str, Any]]:
                 u.email,
                 u.telegram_chat_id
         FROM    paper_trades pt
-                JOIN users u ON u.id = pt.user_id
+                JOIN users u ON u.id::text = pt.user_id
                 JOIN LATERAL (
                   SELECT close FROM bars
                   WHERE  ticker = pt.ticker AND granularity = 'W'
