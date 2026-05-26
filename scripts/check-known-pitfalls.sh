@@ -98,6 +98,22 @@ else
   echo "  ✓ ${#needed[@]} known cold-start deps present"
 fi
 
+echo "[check] dead /themes pipeline did not get re-added to weekly cron"
+# 2026-05-26 audit: /themes surface was removed in the 2026-05-25
+# site-direction reset but weekly-fundamentals.yml kept calling
+# ingest_themes + publish_theme_metrics, silently populating ~1 MB/wk
+# of orphan rows. Frontend has zero callers. If this re-appears it
+# means someone is regenerating a dead surface's data — investigate
+# whether the surface itself is coming back before letting this pass.
+if grep -qE "ingest_themes|publish_theme_metrics" .github/workflows/weekly-fundamentals.yml; then
+  echo "  ✗ weekly-fundamentals.yml calls ingest_themes / publish_theme_metrics"
+  echo "    but /themes surface is dead. Either restore the surface or drop"
+  echo "    the cron step (see 2026-05-26 audit)."
+  fail=1
+else
+  echo "  ✓ dead /themes ingest steps absent"
+fi
+
 echo "[check] proxy.ts isPublic whitelist covers /api/cron/ + /api/telegram/webhook"
 # 2026-05-26 incident: proxy.ts NextAuth middleware 401-blocks all /api/*
 # without a session. Vercel Cron calls /api/cron/daily-data without a
