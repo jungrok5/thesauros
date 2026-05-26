@@ -98,6 +98,25 @@ else
   echo "  ✓ ${#needed[@]} known cold-start deps present"
 fi
 
+echo "[check] proxy.ts isPublic whitelist covers /api/cron/ + /api/telegram/webhook"
+# 2026-05-26 incident: proxy.ts NextAuth middleware 401-blocks all /api/*
+# without a session. Vercel Cron calls /api/cron/daily-data without a
+# session (bearer auth only). Missing it from isPublic killed cron
+# dispatch silently from 2026-05-22 (daily-data/weekly-scan split day) —
+# macro_state went 4 days stale, CI red on test_macro_state_freshness.
+# Cron + telegram handlers self-guard with their own secrets; both MUST
+# stay public from middleware's perspective.
+proxy="web-next/src/proxy.ts"
+if ! grep -q 'pathname.startsWith("/api/cron/")' "$proxy"; then
+  echo "  ✗ proxy.ts isPublic missing /api/cron/ — Vercel Cron will 401-bounce."
+  fail=1
+elif ! grep -q '/api/telegram/webhook' "$proxy"; then
+  echo "  ✗ proxy.ts isPublic missing /api/telegram/webhook — Telegram updates will 401-bounce."
+  fail=1
+else
+  echo "  ✓ /api/cron/ + /api/telegram/webhook both whitelisted"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
   echo "Static pitfall check FAILED — fix the above before committing."

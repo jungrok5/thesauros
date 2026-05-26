@@ -16,6 +16,13 @@ export default auth((req) => {
     pathname.startsWith("/api/e2e-test/") ||
     // Telegram webhook — guarded inside the handler by TELEGRAM_WEBHOOK_SECRET.
     pathname === "/api/telegram/webhook" ||
+    // Vercel Cron → workflow_dispatch — guarded inside the handler by
+    // verifyCronAuth() comparing Authorization: Bearer ${CRON_SECRET}.
+    // Without this, NextAuth middleware below 401s every cron tick
+    // before _dispatch.ts can run, silently breaking daily-data /
+    // weekly-scan dispatch (root cause of macro_state staleness
+    // 2026-05-22 onward).
+    pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
