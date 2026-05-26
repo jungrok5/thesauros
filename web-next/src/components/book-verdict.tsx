@@ -753,10 +753,16 @@ function collectWarnings(r: AnalysisResult): string[] {
       );
     }
     // 거래량 단조 룰 미충족 — book treats this as "페이크 캔들" risk.
+    // 2026-05-26: surface the timeframe so users can tell when the
+    // warning is about a *different* timeframe's pattern than the one
+    // the entry_plan is built on. Without the (weekly/monthly) tag,
+    // users saw "삼중바닥 페이크 의심" next to "근거: 삼중바닥 (weekly)
+    // clean" and inferred the wrong pattern was being warned about.
     const fake = (p.extra as { fake_volume?: boolean } | undefined)?.fake_volume;
     if (fake && p.completed && !p.invalidated) {
+      const tf = p.timeframe ? ` (${p.timeframe})` : "";
       out.push(
-        `${p.kind} 거래량 룰 미충족 — 책 p254/p276: "페이크 캔들" 의심. confidence 자동 감소.`,
+        `${p.kind}${tf} 거래량 룰 미충족 — 책 p254/p276: "페이크 캔들" 의심. confidence 자동 감소.`,
       );
     }
   }

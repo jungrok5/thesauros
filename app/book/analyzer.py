@@ -404,60 +404,70 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
         as_of_ts = pd.to_datetime(df["date"].iloc[-1])
         STALE_DAYS = 60
         last_close = float(df["close"].iloc[-1])
-        for p in all_patterns:
-            if not (p["completed"] and p["direction"] == "bullish"):
-                continue
-            if p.get("invalidated"):
-                # Pattern's precondition failed (price dropped below its
-                # bottom / neckline). Don't surface its entry plan.
-                continue
-            # Sanity: bullish plan must have entry < target and stop < entry.
-            entry_v = p.get("entry")
-            target_v = p.get("target")
-            stop_v = p.get("stop")
-            if entry_v is None or target_v is None or stop_v is None:
-                continue
-            if not (stop_v < entry_v < target_v):
-                continue
-            # Freshness: skip if the pattern completed too long ago — the
-            # breakout has already happened and the plan would be stale.
-            det = p.get("detected_at")
-            if det:
-                try:
-                    det_ts = pd.to_datetime(det)
-                    if (as_of_ts - det_ts) > timedelta(days=STALE_DAYS):
-                        continue
-                except Exception:
-                    pass
-            # Don't enter at a stale entry far below current price either.
-            if entry_v < last_close * 0.7:
-                continue
-            # Tighten the stop with a trailing 주봉 10MA when the pattern's
-            # traditional stop (pattern bottom) is too far below current
-            # price to be practical. Book's rule "10MA 이탈 = 청산" gives
-            # the natural trailing stop once a breakout has run.
-            tight_stop = None
-            if multi.weekly and multi.weekly.ma_10:
-                tight_stop = multi.weekly.ma_10 * 0.97
-            elif multi.monthly and multi.monthly.ma_10:
-                tight_stop = multi.monthly.ma_10 * 0.97
-            effective_stop = max(stop_v, tight_stop) if tight_stop else stop_v
-            # FINAL sanity — the trailing-stop tightening above could in
-            # principle push effective_stop above target_v (for a pattern
-            # whose target is very close to current price). Drop instead
-            # of surfacing a stop > target plan to the user.
-            if not (effective_stop < entry_v < target_v):
-                continue
-            entry_block = {
-                "entry": entry_v,
-                "stop": effective_stop,
-                "target": target_v,
-                "based_on": (
-                    f"{p['kind']} ({p.get('timeframe', 'daily')})"
-                    + ("  · 손절은 주봉 10MA" if effective_stop != stop_v else "")
-                ),
-            }
-            break
+        # 2026-05-26 — two-pass: prefer non-fake patterns. Some tickers
+        # have fake_volume on EVERY bullish pattern (e.g., 069730.KS
+        # weekly 삼중바닥 conf=0.56 fake — the only completed bullish
+        # weekly pattern). In that case the second pass accepts fake
+        # rather than no entry_plan at all; the BookVerdict still
+        # surfaces the fake-volume warning chip so the user sees it.
+        passes = (False, True)   # first pass = clean only, then allow fake
+        for allow_fake in passes:
+            if entry_block is not None:
+                break
+            for p in all_patterns:
+                if not (p["completed"] and p["direction"] == "bullish"):
+                    continue
+                if p.get("invalidated"):
+                    continue
+                if not allow_fake and (p.get("extra") or {}).get("fake_volume"):
+                    continue
+                # Sanity: bullish plan must have entry < target and stop < entry.
+                entry_v = p.get("entry")
+                target_v = p.get("target")
+                stop_v = p.get("stop")
+                if entry_v is None or target_v is None or stop_v is None:
+                    continue
+                if not (stop_v < entry_v < target_v):
+                    continue
+                # Freshness: skip if the pattern completed too long ago — the
+                # breakout has already happened and the plan would be stale.
+                det = p.get("detected_at")
+                if det:
+                    try:
+                        det_ts = pd.to_datetime(det)
+                        if (as_of_ts - det_ts) > timedelta(days=STALE_DAYS):
+                            continue
+                    except Exception:
+                        pass
+                # Don't enter at a stale entry far below current price either.
+                if entry_v < last_close * 0.7:
+                    continue
+                # Tighten the stop with a trailing 주봉 10MA when the pattern's
+                # traditional stop (pattern bottom) is too far below current
+                # price to be practical. Book's rule "10MA 이탈 = 청산" gives
+                # the natural trailing stop once a breakout has run.
+                tight_stop = None
+                if multi.weekly and multi.weekly.ma_10:
+                    tight_stop = multi.weekly.ma_10 * 0.97
+                elif multi.monthly and multi.monthly.ma_10:
+                    tight_stop = multi.monthly.ma_10 * 0.97
+                effective_stop = max(stop_v, tight_stop) if tight_stop else stop_v
+                # FINAL sanity — the trailing-stop tightening above could in
+                # principle push effective_stop above target_v (for a pattern
+                # whose target is very close to current price). Drop instead
+                # of surfacing a stop > target plan to the user.
+                if not (effective_stop < entry_v < target_v):
+                    continue
+                entry_block = {
+                    "entry": entry_v,
+                    "stop": effective_stop,
+                    "target": target_v,
+                    "based_on": (
+                        f"{p['kind']} ({p.get('timeframe', 'daily')})"
+                        + ("  · 손절은 주봉 10MA" if effective_stop != stop_v else "")
+                    ),
+                }
+                break
         # Fallback: 10MA-based stop. Prefer daily; under weekly input
         # (US via Naver) fall back to weekly MA.
         if entry_block is None:

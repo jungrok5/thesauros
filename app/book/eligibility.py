@@ -110,6 +110,40 @@ def is_weekly_240ma_missing(result: Dict[str, Any]) -> bool:
     return weekly.get("ma_240") is None
 
 
+def is_entry_plan_fake(result: Dict[str, Any]) -> bool:
+    """Entry_plan based on a fake_volume pattern → CONDITIONAL.
+    F14 (2026-05-26 audit_50): even after analyzer's two-pass (prefer
+    clean patterns), some tickers have ONLY fake patterns or stale
+    clean ones, so entry_plan falls back to a fake pattern. The
+    BookVerdict surface then carries a 매수 verdict with a 페이크 의심
+    chip — confusing.
+
+    Book p254/p276: 페이크 캔들 의심 = 매수 신뢰도 낮음. 만약 진입
+    계획이 fake-only 패턴 위에 있다면 결국 매수 자리는 아님.
+    CONDITIONAL — clean 신호 회복 시 재진입.
+
+    audit_50 examples (Top 50 of 2026-05-26 universe rescan):
+      161000.KS — clean catalyst stale 63 days → fallback to weekly
+                  삼중바닥 fake 0.56
+      069730.KS — clean 역H&S 0.80 stale → fallback to weekly 삼중바닥
+                  fake 0.56
+      068930.KQ — only weekly fake 0.56 + monthly catalyst 0.60
+                  (analyzer prefers weekly → fake)
+    """
+    ep = result.get("entry_plan") or {}
+    based_on = ep.get("based_on")
+    if not isinstance(based_on, str) or "(" not in based_on:
+        return False
+    kind = based_on.split("(", 1)[0].strip()
+    tf = based_on.split("(", 1)[1].split(")")[0].strip()
+    for p in (result.get("patterns") or []):
+        if not isinstance(p, dict):
+            continue
+        if p.get("kind") == kind and p.get("timeframe") == tf:
+            return bool((p.get("extra") or {}).get("fake_volume"))
+    return False
+
+
 def is_below_weekly_ma10(result: Dict[str, Any]) -> bool:
     """주봉 10MA 아래 = 책 ch.4 단기 추세 사망 라인. F13 (2026-05-26
     seventh audit) — surfaced via audit_200 4건 (011500 한농화성,
@@ -343,6 +377,7 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         below_240 = is_below_weekly_240ma(result)
         weekly_240_missing = is_weekly_240ma_missing(result)
         below_ma10 = is_below_weekly_ma10(result)
+        entry_plan_fake = is_entry_plan_fake(result)
         stretched_240 = is_240ma_stretched(result)
         candle_top = is_candle_reversal_at_top(result)
         indecision = is_indecision_candle(result) and not candle_top
@@ -350,6 +385,7 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
                   and not below_240
                   and not weekly_240_missing
                   and not below_ma10
+                  and not entry_plan_fake
                   and not stretched_240
                   and not candle_top
                   and not indecision
@@ -357,6 +393,7 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         downgrade = (
             ambush or stale_pattern or post_rally
             or below_240 or weekly_240_missing or below_ma10
+            or entry_plan_fake
             or stretched_240 or candle_top or indecision
         )
         if downgrade:
@@ -375,6 +412,12 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
                     "재진입은 10MA 회복 후"
                 )
                 reason_code = "below_weekly_ma10"
+            elif entry_plan_fake:
+                reason = (
+                    "진입 계획의 패턴이 거래량 룰 미충족 (페이크 의심) — "
+                    "clean 신호 회복 후 재진입"
+                )
+                reason_code = "entry_plan_fake"
             elif stretched_240:
                 reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
                 reason_code = "stretched_240"

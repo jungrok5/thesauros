@@ -478,6 +478,52 @@ def test_at_top_reversal_keeps_F9_reason_not_F12():
     assert v["reason_code"] != "indecision_candle"
 
 
+def test_entry_plan_fake_downgrades_buy():
+    """F14 (2026-05-26 audit_50): entry_plan based_on a fake_volume
+    pattern → CONDITIONAL. Even after analyzer's two-pass clean-first
+    selection, some tickers only have fake or stale-clean patterns,
+    falling back to fake. Eligibility surfaces the fake fallback so
+    the user doesn't see 매수 + ⚠ 페이크 의심 in the same card."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=120.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0}},
+        patterns=[{
+            "kind": "삼중바닥", "timeframe": "weekly",
+            "completed": True, "direction": "bullish", "confidence": 0.56,
+            "extra": {"fake_volume": True},
+            "entry": 120, "stop": 100, "target": 150,
+        }],
+        entry_plan={"based_on": "삼중바닥 (weekly)  · 손절은 주봉 10MA",
+                    "entry": 120, "stop": 100, "target": 150},
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "entry_plan_fake"
+    assert "페이크 의심" in v["body"]
+
+
+def test_entry_plan_clean_pattern_stays_ok():
+    """Regression — non-fake entry_plan base pattern stays OK."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=120.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0}},
+        patterns=[{
+            "kind": "장대양봉 catalyst", "timeframe": "weekly",
+            "completed": True, "direction": "bullish", "confidence": 0.85,
+            "extra": {},
+            "entry": 120, "stop": 100, "target": 150,
+        }],
+        entry_plan={"based_on": "장대양봉 catalyst (weekly)",
+                    "entry": 120, "stop": 100, "target": 150},
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "OK"
+
+
 def test_below_weekly_ma10_downgrades_buy():
     """F13 (2026-05-26 audit_200): action=BUY + score>=0.7 종목 4건이
     weekly.above_ma_10=False 인데도 eligibility=OK. 책 ch.4: 주봉 10MA
