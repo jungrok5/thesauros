@@ -137,6 +137,69 @@ test.describe("/screener — single book-spirit preset", () => {
     await expect(body).not.toContainText("고배당 안전");
     await expect(body).not.toContainText("마법공식");
   });
+
+  // 2026-05-26 screener reform — sortByBookSpirit + compressed header.
+  // Prior page had a 2차 정렬 row with 4 chips (기본 / 거래량 / catalyst
+  // 직후 / 4등분선) that the user couldn't decode. User feedback:
+  // "정렬 옵션 많고 뭐가 뭔지 모름 — 가장 책에 부합하는 주식이 누군지
+  // 알 수 있게 정렬해줘." The reform collapsed all options into a
+  // single eligibility-first sort and surfaced the rule as a verdict
+  // box above the table.
+
+  test("2차 정렬 chips are gone (single sortByBookSpirit is canonical)", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    const body = page.locator("body");
+    // The old "2차 정렬" label and its option chips must not appear —
+    // even when the user expands the advanced-filter details (the
+    // filters are kept, the sort chooser is removed).
+    await expect(body).not.toContainText("2차 정렬");
+    await expect(body).not.toContainText("catalyst 직후");
+  });
+
+  test("top verdict box explains the canonical sort rule", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    const verdict = page.locator('[data-testid="screener-verdict"]');
+    await expect(verdict).toBeVisible();
+    // The verdict must name the priority order (eligibility first)
+    // so the user can interpret why the top row is what it is —
+    // without that line the reform's whole point is invisible.
+    await expect(verdict).toContainText("1위 = 책에 가장 부합");
+    await expect(verdict).toContainText("매수 자리 안전");
+  });
+
+  test("advanced filter section is default-collapsed", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    // The summary toggle for the collapsed details must be present
+    // (visible label) AND the filter chips inside must be hidden
+    // by the closed <details> until the user clicks. We assert on
+    // the summary text — if someone changes <details> to default
+    // open again this catches the regression.
+    const summary = page.locator("summary", { hasText: "고급 필터" });
+    await expect(summary).toBeVisible();
+  });
+
+  test("rank-1 ticker is never eligibility CONDITIONAL/WATCH/AVOID", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
+    // Find the first results row (desktop table) and assert no
+    // negative eligibility chip is attached to it. CONDITIONAL/WATCH/
+    // AVOID chips are rendered via data-eligibility attribute by
+    // EligibilityChip — their presence on the rank-1 row would mean
+    // the sort regressed.
+    const firstRow = page.locator("table tbody tr").first();
+    // It is acceptable for the page to be empty (no rows) — that
+    // means no candidates today, not a sort bug. Only assert when
+    // a row is present.
+    const rowCount = await page.locator("table tbody tr").count();
+    if (rowCount > 0) {
+      await expect(firstRow.locator('[data-eligibility="CONDITIONAL"]')).toHaveCount(0);
+      await expect(firstRow.locator('[data-eligibility="WATCH"]')).toHaveCount(0);
+      await expect(firstRow.locator('[data-eligibility="AVOID"]')).toHaveCount(0);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

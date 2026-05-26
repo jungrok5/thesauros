@@ -26,6 +26,7 @@ import { RowPrice } from "@/components/row-price";
 import { fetchLatestPrices, type LatestPrice } from "@/lib/latest-prices";
 import { SubScoreChips } from "@/components/sub-score-chips";
 import { NextDecisionChip } from "@/components/next-decision-chip";
+import { sortByBookSpirit } from "@/lib/screener-sort";
 import { SubScoreControlsClient } from "./sub-score-controls-client";
 
 /** Latest analyzer-run timestamp across analyze_results (weekly cadence). */
@@ -48,8 +49,9 @@ interface SearchParams {
   vol_surge?: string;       // "1" → volume_case in (3, 9)
   zone?: string;            // "safe75" | "warn50" | "danger25" | "broken"
   catalyst_max?: string;    // "4" → catalyst_bars_since <= 4
-  // 2026-05-21 secondary sort (within same book_score):
-  sort2?: string;           // "vol" | "catalyst" | "zone"
+  // 2026-05-26 — secondary sort UI removed (sortByBookSpirit is the
+  // single canonical sort). The `sort2` URL key is silently ignored
+  // so old bookmarks don't 404; it just no-ops.
 }
 
 interface PageProps {
@@ -195,59 +197,7 @@ async function runPreset(
   }));
 }
 
-/** Secondary sort within the same book_score band. Default sort within
- *  the RPC is already (book_score, action priority, ROE, ticker); this
- *  applies a stable JS re-sort to bubble the requested dimension up. */
-function applySort2(hits: Hit[], sort2: string | null): Hit[] {
-  if (!sort2) return hits;
-  // Group by (book_score rounded to 0.01, action priority) — then sort
-  // within each group by the chosen secondary key. Keeps the top-level
-  // RPC ordering intact.
-  const buckets = new Map<string, Hit[]>();
-  const order: string[] = [];
-  for (const h of hits) {
-    const key = `${(h.book_score ?? 0).toFixed(2)}|${h.action ?? ""}`;
-    if (!buckets.has(key)) {
-      buckets.set(key, []);
-      order.push(key);
-    }
-    buckets.get(key)!.push(h);
-  }
-  const compare: Record<string, (a: Hit, b: Hit) => number> = {
-    // 거래량 폭증 (case 3/9 우선) → 매집 (7/12) → 분배 (8/10/11) → 기타
-    vol: (a, b) => volumeRank(b.volume_case_num) - volumeRank(a.volume_case_num),
-    // catalyst 가장 최근 직후 우선 (null = 가장 뒤)
-    catalyst: (a, b) =>
-      (a.catalyst_bars_since ?? 999) - (b.catalyst_bars_since ?? 999),
-    // safe75 > warn50 > 그외 > danger25/broken
-    zone: (a, b) => zoneRank(b.quarter_zone) - zoneRank(a.quarter_zone),
-  };
-  const cmp = compare[sort2];
-  if (!cmp) return hits;
-  const out: Hit[] = [];
-  for (const k of order) {
-    const arr = buckets.get(k)!;
-    arr.sort(cmp);
-    out.push(...arr);
-  }
-  return out;
-}
-
-function volumeRank(c: number | null): number {
-  if (c === 3 || c === 9) return 5;     // 매수 폭증
-  if (c === 7 || c === 12) return 4;    // 매집 감소
-  if (c === 0) return 3;                // 미분류
-  if (c === 8 || c === 10 || c === 11) return 1;  // 분배
-  return 2;
-}
-
-function zoneRank(z: string | null): number {
-  if (z === "safe75") return 4;
-  if (z === "warn50") return 3;
-  if (z === "danger25") return 2;
-  if (z === "broken") return 1;
-  return 2;
-}
+// sortByBookSpirit moved to @/lib/screener-sort (pure module for vitest).
 
 /** Action distribution via RPC.
  *
@@ -313,10 +263,6 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
         : null,
     catalystMax: sp.catalyst_max ? Number(sp.catalyst_max) : null,
   };
-  const sort2 =
-    sp.sort2 === "vol" || sp.sort2 === "catalyst" || sp.sort2 === "zone"
-      ? sp.sort2
-      : null;
 
   // Two RPC calls in parallel — results (≤50 rows, sub-filtered) +
   // full-universe action distribution (whole-preset counts; ignores
@@ -346,7 +292,9 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
     distribution.avoid + distribution.none;
   // preset 이 actionIn=[STRONG_BUY,BUY] 강제 → 결과 항상 매수 신호.
   // 별도 buy_only toggle 불필요 (2026-05-25 site-direction reset).
-  const hits = applySort2(allHits, sort2);
+  // 책정신 단일 정렬 (eligibility > book_score > catalyst > ROE) —
+  // 2026-05-26 정렬 옵션 제거 reform.
+  const hits = sortByBookSpirit(allHits);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -365,9 +313,7 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
           <DataFreshness asOf={lastAnalysisAt} cadence="weekly" label="분석" />
         </div>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          KOSPI / KOSDAQ 약 2,700 종목 중 책 정신 매수 후보를 보여줍니다 —
-          추세 정배열 + 240일 평균선 위 + 적자 X. 종목만 노출 X, 발견 후 행동
-          가이드도 함께.
+          KOSPI / KOSDAQ ~2,700 종목 중 책 정신 매수 후보 — 정배열 + 240MA 위 + 적자 X.
         </p>
       </header>
 
@@ -377,7 +323,10 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
 
       {/* 결과 */}
       <section className="space-y-3">
-          <header className="rounded-xl border-2 border-foreground/20 bg-muted/30 p-4 space-y-3">
+          <header
+            data-testid="screener-header"
+            className="rounded-xl border-2 border-foreground/20 bg-muted/30 p-4 space-y-3"
+          >
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-lg">{preset.emoji}</span>
               <h2 className="text-base font-semibold">{preset.title}</h2>
@@ -385,10 +334,23 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                 · 펀더 통과 {totalPassing} 종목
               </span>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {preset.oneLiner}
-            </p>
-            {/* 액션 분포 — 1위가 강매수가 아닐 수 있다는 점 명시. */}
+
+            {/* 한 줄 평 — 1위가 책에 가장 부합한다는 점 명시. 사용자 혼동
+                방지 (2026-05-26: book_score 1.0 / eligibility CONDITIONAL
+                인 종목이 OK 종목을 누르고 1위로 가던 문제). */}
+            <div
+              data-testid="screener-verdict"
+              className="rounded-md bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm leading-relaxed"
+            >
+              🥇 <strong>1위 = 책에 가장 부합</strong> — 매수 자리 안전
+              (🟢 OK) → 신호 강함 (1.00) → 신선도 → ROE 순.
+              <span className="block text-xs text-muted-foreground mt-1">
+                조건부 / 관망 / 회피 chip 붙은 종목은 시스템 만점이라도
+                진입 자리 아님 — OK 종목 먼저 위에 옴.
+              </span>
+            </div>
+
+            {/* 액션 분포 한 줄 */}
             <div className="flex items-center gap-2 flex-wrap text-[11px]">
               <span className="text-muted-foreground">차트 신호:</span>
               <span className="rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5">
@@ -411,67 +373,26 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
                 </span>
               )}
             </div>
-            <div className="rounded-md bg-background/70 border border-border p-2.5 text-xs leading-relaxed">
-              <span className="font-medium">💡 발견 후 액션:</span> {preset.action}
-            </div>
-            {/* 정렬 안내 — filter/sort2 chip 은 SubScoreControlsClient
-                안에 통합. 클라이언트에서 즉시 active state + isPending 표시. */}
-            <div className="text-[11px] text-muted-foreground">
-              <strong>정렬:</strong> 책 점수 (book_score) 높은 순 → ROE 높은 순.
-            </div>
 
-            <SubScoreControlsClient preset={preset.slug} />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              💡 <strong>발견 후:</strong> {preset.action}
+            </p>
 
-            {/* chip 의미 가이드 — default open (2026-05-21). 사용자가
-                익숙해지면 직접 접고, 페이지 reload 시는 다시 펼침
-                (localStorage 추적 비용 vs UX 가치 비교 후 단순 open 유지). */}
-            <details open className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] leading-relaxed">
-              <summary className="cursor-pointer font-medium text-muted-foreground select-none">
-                💡 chip + 필터 의미 — 클릭하면 접기
+            {/* 고급 필터 — default collapsed (2026-05-26 reform: 사용자
+                "정렬 옵션 많고 뭐가 뭔지 모름" 피드백). 정렬은 책정신
+                단일 정렬로 고정 (sortByBookSpirit), 옵션 제거. universe
+                좁히고 싶을 때만 펼침. */}
+            <details className="rounded-md border border-border bg-background/50 px-3 py-2 text-[11px] leading-relaxed">
+              <summary className="cursor-pointer font-medium text-muted-foreground select-none hover:text-foreground">
+                🔧 고급 필터 (펼치기)
               </summary>
-              <div className="mt-2 space-y-2.5 text-muted-foreground">
-                <div>
-                  <div className="font-semibold text-foreground mb-1">📊 거래량 chip (세부 column)</div>
-                  <ul className="space-y-0.5 pl-2">
-                    <li>· <strong>📊 바닥 폭증</strong> / <strong>급등 폭증</strong> — 거래량이 평소 대비 폭증한 양봉. 책: 세력이 들어오는 자리.</li>
-                    <li>· <strong>💧 매집 감소</strong> / <strong>수렴 감소</strong> — 상승 중인데 거래량 감소. 책: 매물 소진 = 다음 발사 자리.</li>
-                    <li>· <strong>🌪️ 분배 의심</strong> — 천장 폭증/세력 위임. 책: 매도 신호 — 매수 자격 X.</li>
-                  </ul>
-                </div>
-                <div>
-                  <div className="font-semibold text-foreground mb-1">🎯 4등분선 chip — 직전 장대양봉을 4등분한 매매 자리</div>
-                  <ul className="space-y-0.5 pl-2">
-                    <li>· <strong>🎯 safe75</strong> — 75% 위 안전지대. 책: 다음 봉 상승 확률 75%. 매수 자리.</li>
-                    <li>· <strong>🎯 warn50</strong> — 50% 경계. 안전지대 살짝 벗어남. 조정 중.</li>
-                    <li>· <strong>🎯 danger25</strong> — 25~50% 매입원가 영역. 적신호.</li>
-                    <li>· <strong>🎯 broken</strong> — 25% 깨짐 = catalyst 부정, 매도 시그널.</li>
-                  </ul>
-                </div>
-                <div>
-                  <div className="font-semibold text-foreground mb-1">🔥 catalyst chip</div>
-                  <ul className="space-y-0.5 pl-2">
-                    <li>· <strong>🔥 catalyst-Nw</strong> — 장대양봉 N주 전 발생. N 작을수록 신선한 진입 자리. 8주 초과는 stale 로 표시 안 함.</li>
-                  </ul>
-                </div>
-                <div>
-                  <div className="font-semibold text-foreground mb-1">🔍 필터 (universe-wide)</div>
-                  <ul className="space-y-0.5 pl-2">
-                    <li>· <strong>거래량 폭증</strong> — 위 📊 바닥/급등 폭증 case 만 추림.</li>
-                    <li>· <strong>safe75 / warn50</strong> — 해당 4등분선 zone 종목만.</li>
-                    <li>· <strong>catalyst 4주 이내</strong> — 신선한 장대양봉 직후만.</li>
-                  </ul>
-                </div>
-                <div>
-                  <div className="font-semibold text-foreground mb-1">🔃 2차 정렬 (같은 book_score 안에서)</div>
-                  <ul className="space-y-0.5 pl-2">
-                    <li>· <strong>거래량</strong> — 폭증 종목을 동률 그룹 안에서 위로.</li>
-                    <li>· <strong>catalyst 직후</strong> — 가장 최근 catalyst 종목 위로.</li>
-                    <li>· <strong>4등분선</strong> — safe75 종목 위로.</li>
-                  </ul>
-                </div>
-                <p className="text-[10px] pt-1 border-t border-border/50">
-                  💡 이 모든 chip 은 같은 1.00 만점 종목 안에서도 &ldquo;세력 진입 + 안전지대 + 신선한 자리&rdquo; 같은
-                  세부 차이를 보여주려는 용도. 책 정신: 진짜 매수 자리는 다축 모두 OK 인 곳.
+              <div className="mt-2 space-y-2 text-muted-foreground">
+                <SubScoreControlsClient preset={preset.slug} />
+                <p className="pt-1 border-t border-border/50">
+                  필터는 universe 좁히기용 — 거래량 폭증 / 4등분선 zone /
+                  catalyst 4주 이내. 정렬은 책 부합도 단일이라 1위는 변경
+                  안 됨. chip 의미: 📊 거래량 (세력 진입) · 🎯 zone (다음
+                  봉 상승 확률) · 🔥 catalyst (장대양봉 N주 전).
                 </p>
               </div>
             </details>
