@@ -96,7 +96,12 @@ def test_unknown_action_falls_back_to_watch():
 def test_ambush_downgrades_buy_to_conditional():
     """The reported TSLA case: action=BUY, but ≥2 of {수렴 매복 pattern,
     drying volume, indecision candle, tight box} → page says CONDITIONAL
-    — 자리 X. Eligibility must agree."""
+    — 자리 X. Eligibility must agree.
+
+    2026-05-26 F12 added — indecision tags (도지/양팔봉) now trigger an
+    earlier indecision_candle gate. To exercise ambush specifically,
+    fixture uses body_pct<0.2 (which is_ambush_setup's own indecision
+    check accepts) instead of an indecision tag F12 would catch first."""
     blob = _result(
         action="BUY",
         patterns=[{
@@ -104,7 +109,7 @@ def test_ambush_downgrades_buy_to_conditional():
             "direction": "neutral",
         }],
         volume_case={"case": 12},   # drying volume
-        last_candle={"tags": ["도지"], "body_pct": 0.1},  # indecision
+        last_candle={"tags": [], "body_pct": 0.1},  # indecision via body_pct
         consolidation_ratio=0.04,   # tight box (≤6%)
         last_close=100.0,
         # ma_240 filled so the new is_monthly_240ma_missing / is_240ma_stretched
@@ -125,7 +130,7 @@ def test_ambush_disqualified_when_price_already_5pct_above_ma10w():
         action="BUY",
         patterns=[{"kind": "MA 수렴 매복", "completed": False, "direction": "neutral"}],
         volume_case={"case": 12},
-        last_candle={"tags": ["도지"], "body_pct": 0.1},
+        last_candle={"tags": [], "body_pct": 0.1},  # body-only indecision (F12 skips)
         consolidation_ratio=0.04,
         last_close=110.0,                                                 # +14.6% over weekly ma_10
         trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
@@ -326,9 +331,13 @@ def test_candle_reversal_at_top_downgrades_buy():
     assert v["reason_code"] == "candle_top"
 
 
-def test_candle_reversal_alone_without_top_stays_ok():
-    """Reversal candle without 52w/rally trigger is too weak to
-    downgrade on its own (could be noise mid-trend)."""
+def test_candle_reversal_alone_now_downgrades_via_F12():
+    """2026-05-26 F12 reform — reversal candle alone (mid-trend, not at
+    52w/rally top) now downgrades to CONDITIONAL. Previously this stayed
+    OK on the theory that mid-trend reversal could be noise, but the
+    audit_200 sample showed 22% of system-buys had indecision/reversal
+    last candles that violated the book's "next-bar wait" rule (p247).
+    F9's at-top precondition was too restrictive."""
     blob = _result(
         action="BUY",
         last_candle={"tags": ["교수형"], "upper_wick_pct": 0.1, "body_pct": 0.3},
@@ -336,7 +345,8 @@ def test_candle_reversal_alone_without_top_stays_ok():
         rally_8w_pct=0.05,
     )
     v = compute_eligibility(blob)
-    assert v["grade"] == "OK"
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "indecision_candle"
 
 
 def test_audit_gates_priority_order():
@@ -421,6 +431,63 @@ def test_weekly_240ma_present_with_monthly_missing_stays_ok():
             "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": None},  # missing
             "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 80.0},   # present
         },
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "OK"
+
+
+def test_indecision_candle_alone_downgrades_buy():
+    """F12 (2026-05-26 audit_200): 도지/양팔봉/위꼬리>40% 자체로
+    CONDITIONAL. F9 (at-top reversal) trigger 조건 미달인 mid-trend
+    case 까지 책 정신 적용 — 책 p247 "양팔봉: 방향 미정, 다음 봉 관찰"."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_candle={"tags": ["양팔봉"], "upper_wick_pct": 0.1,
+                     "body_pct": 0.3},
+        position_in_52w=0.40,    # 명백히 not at-top
+        rally_8w_pct=0.05,       # 약한 rally
+        last_close=120.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0}},
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "indecision_candle"
+    assert "방향 미정" in v["body"]
+
+
+def test_at_top_reversal_keeps_F9_reason_not_F12():
+    """When BOTH F9 (at-top + reversal) and F12 (indecision alone) would
+    fire, the stricter F9 reason ("매도세 출현 + 랠리 끝") wins so the
+    user sees the more critical message."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_candle={"tags": ["교수형"], "upper_wick_pct": 0.5,
+                     "body_pct": 0.3},
+        position_in_52w=0.85,
+        rally_8w_pct=0.20,
+        last_close=120.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0}},
+    )
+    v = compute_eligibility(blob)
+    # post_rally outranks candle_top here (52w>=85% AND rally>=10% triggers
+    # post_rally) — both are valid stop-selling signals; just pin the
+    # priority and reason so future routing tweaks don't silently invert.
+    assert v["reason_code"] in ("post_rally", "candle_top")
+    assert v["reason_code"] != "indecision_candle"
+
+
+def test_clean_candle_at_normal_position_still_OK():
+    """Sanity — body 양봉, tags 비어있음, upper_wick 정상 → F12 안 fire."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_candle={"tags": [], "upper_wick_pct": 0.1, "body_pct": 0.6},
+        position_in_52w=0.40,
+        rally_8w_pct=0.05,
+        last_close=120.0,
+        trend={"monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": 80.0},
+               "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 100.0}},
     )
     v = compute_eligibility(blob)
     assert v["grade"] == "OK"

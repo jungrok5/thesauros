@@ -150,6 +150,16 @@ def is_monthly_240ma_missing(result: Dict[str, Any]) -> bool:
     return monthly.get("ma_240") is None
 
 
+# Hard reversal tags — 명백한 매도/반전 캔들.
+# F9 (at-top) + F12 (alone) 둘 다 이 set 사용.
+_HARD_REVERSAL_TAGS = {
+    "교수형", "그레이브스톤도지", "유성형", "역망치형", "눈썹캔들",
+}
+# Indecision tags — 책 p247 양팔봉 "방향 미정, 다음 봉 관찰". 도지 자체도
+# indecision. F12 만 사용 (F9 의 strict-reversal set 에선 제외).
+_INDECISION_TAGS = {"도지", "양팔봉"}
+
+
 def is_candle_reversal_at_top(result: Dict[str, Any]) -> bool:
     """마지막 캔들이 반전 신호 (교수형 / 그레이브스톤도지 / 유성형 /
     역망치형 / 눈썹캔들 OR upper_wick > 40%) AND price is at-or-near
@@ -162,11 +172,8 @@ def is_candle_reversal_at_top(result: Dict[str, Any]) -> bool:
     lc = result.get("last_candle") or {}
     tags = lc.get("tags") or []
     upper_wick = lc.get("upper_wick_pct")
-    REVERSAL_TAGS = {
-        "교수형", "그레이브스톤도지", "유성형", "역망치형", "눈썹캔들",
-    }
     has_reversal = (
-        any(t in REVERSAL_TAGS for t in tags)
+        any(t in _HARD_REVERSAL_TAGS for t in tags)
         or (isinstance(upper_wick, (int, float)) and upper_wick > 0.4)
     )
     if not has_reversal:
@@ -176,6 +183,30 @@ def is_candle_reversal_at_top(result: Dict[str, Any]) -> bool:
     near_top = isinstance(pos, (int, float)) and pos >= 0.7
     fast_rally = isinstance(rally, (int, float)) and rally >= 0.15
     return near_top or fast_rally
+
+
+def is_indecision_candle(result: Dict[str, Any]) -> bool:
+    """F12 (2026-05-26 fifth audit). Last candle is indecision-grade —
+    book p247 "양팔봉: 방향 미정, 다음 봉 관찰" + 도지 자체 indecision.
+    Mid-trend doesn't matter: book says wait for the next bar.
+
+    Distinct from F9 (at-top reversal): F9 names a strong sell signal
+    (위꼬리 음봉 at rally top = 매도세 출현). F12 names a wait signal
+    (방향 미정 = entry timing 아님). Both downgrade BookVerdict to
+    CONDITIONAL but for different reasons.
+
+    Found by 2026-05-26 audit_200 sample: 22% of system-buy tickers
+    had 도지 / 양팔봉 / upper_wick>40% as last candle but eligibility
+    stayed OK because F9's at-top precondition didn't fire.
+    """
+    lc = result.get("last_candle") or {}
+    tags = lc.get("tags") or []
+    upper_wick = lc.get("upper_wick_pct")
+    return (
+        any(t in _INDECISION_TAGS for t in tags)
+        or any(t in _HARD_REVERSAL_TAGS for t in tags)
+        or (isinstance(upper_wick, (int, float)) and upper_wick > 0.4)
+    )
 
 
 def is_post_rally_caution(result: Dict[str, Any]) -> bool:
@@ -296,16 +327,18 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         weekly_240_missing = is_weekly_240ma_missing(result)
         stretched_240 = is_240ma_stretched(result)
         candle_top = is_candle_reversal_at_top(result)
+        indecision = is_indecision_candle(result) and not candle_top
         ambush = (not stale_pattern and not post_rally
                   and not below_240
                   and not weekly_240_missing
                   and not stretched_240
                   and not candle_top
+                  and not indecision
                   and is_ambush_setup(result))
         downgrade = (
             ambush or stale_pattern or post_rally
             or below_240 or weekly_240_missing
-            or stretched_240 or candle_top
+            or stretched_240 or candle_top or indecision
         )
         if downgrade:
             if below_240:
@@ -326,6 +359,12 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
             elif candle_top:
                 reason = "마지막 캔들 반전 신호 + 랠리 끝 (위꼬리 음봉 / 교수형 / 도지)"
                 reason_code = "candle_top"
+            elif indecision:
+                reason = (
+                    "마지막 캔들 방향 미정 (양팔봉 / 도지 / 위꼬리>40%) — "
+                    "책 p247: 다음 봉 관찰 후 진입"
+                )
+                reason_code = "indecision_candle"
             elif stale_pattern:
                 reason = "이미 매수 자리 한참 지남"
                 reason_code = "stale"
