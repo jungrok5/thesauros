@@ -407,6 +407,45 @@ test.describe("BookChart pattern markers", () => {
 // BookSummaryTable label clarification (M25 — 2026-05-26)
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// Verdict consistency between NoviceVerdict and BookVerdict
+// (F1 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("verdict cards never contradict each other", () => {
+  // The 339950.KQ case that triggered this guard: screener rank 1
+  // (book_score 1.00, action=STRONG_BUY) but the analyzer's eligibility
+  // field downgraded to CONDITIONAL because the runup-from-pattern
+  // gate fired. Pre-F1 the page showed:
+  //   NoviceVerdict: "오늘 매수 자격: 조건부 — 매수 X"
+  //   BookVerdict:   "🟢 강한 매수 진입 2,755원 ..."
+  // Now BookVerdict must defer to the eligibility downgrade — no
+  // entry_plan card, tone matched to the eligibility grade.
+  test("CONDITIONAL eligibility hides BookVerdict's entry plan", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/339950.KQ?from=screener&preset=book-buy`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    const html = await page.content();
+    // If eligibility data isn't present for this ticker, skip — the
+    // invariant only applies when the analyzer has shipped eligibility.
+    if (!html.includes("오늘 매수 자격: 조건부")) {
+      test.skip(true, "eligibility wasn't CONDITIONAL for this ticker today");
+      return;
+    }
+    // When the novice card says 조건부, the BookVerdict card must not
+    // simultaneously promise "🟢 강한 매수" or an entry plan with a
+    // 진입 / 손절 / 목표 trio. (Strings checked because the card
+    // content is server-rendered HTML.)
+    expect(html, "BookVerdict must downgrade tone when eligibility != OK")
+      .not.toContain("한 줄 평 · 강한 매수");
+    expect(html, "no bullish entry plan when eligibility downgrades")
+      .not.toMatch(/진입 \\d/);
+  });
+});
+
 test.describe("/stocks/[ticker] BookSummaryTable label & guide", () => {
   // Pre-M25 the table heading read "책 정신 정리표 — 매매 결정 차원"
   // which sounded like the conclusion itself — a beginner could miss

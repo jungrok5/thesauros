@@ -139,4 +139,17 @@ export type AnalysisResult = {
     target: number | null;
     based_on: string;
   } | null;
+  /** Analyzer-computed eligibility (app/book/eligibility.py). The
+   *  canonical verdict for the entire page — telegram, novice card,
+   *  and main BookVerdict all should agree with this field. When
+   *  `grade !== "OK"` the bullish entry_plan in the verdict must be
+   *  suppressed / re-toned so the user doesn't see "🟢 강한 매수 진입
+   *  2,755원" alongside "오늘 매수 자격: 조건부 — 매수 X". */
+  eligibility?: {
+    grade: "OK" | "CONDITIONAL" | "WATCH" | "AVOID";
+    icon: string;
+    headline: string;
+    body: string;
+    reason_code: string | null;
+  };
 };

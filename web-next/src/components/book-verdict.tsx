@@ -262,6 +262,43 @@ export function BookVerdict({
     return verdictCard("rose", "🔴", r.action === "SELL_OR_SHORT" ? "청산/인버스" : "매도", lines, warnings, analyzedAtChip);
   }
 
+  // ── Eligibility downgrade guard (2026-05-26 site review) ────────
+  // The analyzer's eligibility field is the canonical verdict (same
+  // source the NoviceVerdict and the telegram alert use). When it
+  // downgrades a bullish action to CONDITIONAL / WATCH / AVOID, the
+  // BookVerdict must NOT then render a 🟢 "강한 매수 진입 2,755원"
+  // card alongside — that's how the 339950.KQ contradiction surfaced
+  // (1위 종목 yet "조건부 — 매수 X" in the novice card). Defer to
+  // the eligibility verdict.
+  if (
+    r.eligibility
+    && (r.action === "BUY" || r.action === "STRONG_BUY")
+    && r.eligibility.grade !== "OK"
+  ) {
+    const tone =
+      r.eligibility.grade === "AVOID" ? "rose" :
+      r.eligibility.grade === "CONDITIONAL" ? "amber" : "zinc";
+    const icon =
+      r.eligibility.grade === "AVOID" ? "🔴" :
+      r.eligibility.grade === "CONDITIONAL" ? "⚠️" : "🟡";
+    const ma10w = weekly?.ma_10 ?? null;
+    const lines: string[] = [
+      r.eligibility.body,
+      ma10w
+        ? `보유 중이면 주봉 10MA(${formatPrice(ma10w, ticker)}) 이탈 시 청산.`
+        : "보유 중이면 추세 이탈 시 청산.",
+      nextDecisionLine(ma10w, ticker),
+    ];
+    return verdictCard(
+      tone as "amber" | "rose" | "zinc",
+      icon,
+      r.eligibility.headline,
+      lines,
+      warnings,
+      analyzedAtChip,
+    );
+  }
+
   // ── BULLISH branches ────────────────────────────────────────────
   if (r.action === "BUY" || r.action === "STRONG_BUY") {
     const pat = pickFreshBullishPattern(r);

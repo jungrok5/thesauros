@@ -358,11 +358,10 @@ export function AnalysisView({
  */
 function NoviceVerdict({ result }: { result: AnalysisResult }) {
   // Prefer the analyzer-computed eligibility when present — that's
-  // the canonical verdict shared with the telegram alert path.
-  const elig = (result as unknown as { eligibility?: {
-    grade: string; icon: string; headline: string; body: string;
-    reason_code: string | null;
-  }; }).eligibility;
+  // the canonical verdict shared with the telegram alert path AND the
+  // BookVerdict downgrade guard (2026-05-26: both surfaces now defer
+  // to this same field so the page never shows contradictory verdicts).
+  const elig = result.eligibility;
   if (elig && elig.headline) {
     const gradeColor = (
       elig.grade === "OK" ? "border-emerald-500/40 bg-emerald-500/5"
