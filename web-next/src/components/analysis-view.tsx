@@ -198,7 +198,7 @@ export function AnalysisView({
         analyzedAt={analyzedAt}
       />
 
-      {/* 📒 가상 매수 entry point was here — moved to the page header
+      {/* 📒 모의 투자 entry point was here — moved to the page header
           (stocks/[ticker]/page.tsx) next to 관심·보유 buttons so the
           ticker-level actions stay grouped together. The button still
           reads result.entry_plan to pre-fill the modal. */}

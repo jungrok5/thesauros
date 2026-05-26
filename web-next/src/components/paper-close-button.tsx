@@ -14,7 +14,7 @@ export function PaperCloseButton({ id, ticker }: { id: string; ticker: string })
   const [err, setErr] = useState<string | null>(null);
 
   const close = async () => {
-    if (!confirm(`${ticker} 가상 매수 청산할까요? (현재 시세 기준)`)) return;
+    if (!confirm(`${ticker} 모의 투자 청산할까요? (현재 시세 기준)`)) return;
     setBusy(true);
     setErr(null);
     try {

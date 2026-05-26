@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   const existing = await fetchOpenForUserTicker(userId, ticker);
   if (existing.length > 0) {
     return NextResponse.json(
-      { error: "이 종목은 이미 가상 매수 중입니다 — /paper 에서 청산 후 재진입" },
+      { error: "이 종목은 이미 모의 투자 중입니다 — /paper 에서 청산 후 재진입" },
       { status: 409 },
     );
   }
@@ -121,6 +121,31 @@ export async function POST(req: NextRequest) {
     console.error("paper_trades insert:", error?.message);
     return NextResponse.json(
       { error: "insert failed" }, { status: 500 });
+  }
+
+  // 모의 투자 = 시스템 신호 측면에서 "보유 종목" 과 동등하게 다룸.
+  // watchlist 에 'holding' 카테고리로 UPSERT 해서 telegram_worker 의
+  // enter/exit/warn/pyramid alert 가 자동으로 발사되게 함. paper-specific
+  // 손절/목표 도달 알림은 notify_paper_alerts 가 별도로 처리 (watchlist
+  // target/stop column 은 채우지 않음 — paper_trades.stop_loss/target 이
+  // single source of truth).
+  const { error: watchErr } = await sb
+    .from("watchlist")
+    .upsert(
+      {
+        user_id: userId,
+        ticker,
+        category: "holding",
+        alerts_enabled: true,
+        last_accessed_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,ticker" },
+    );
+  if (watchErr) {
+    // Non-fatal — paper trade is already saved. Telegram integration
+    // can self-heal later (e.g. user adds the ticker to watchlist
+    // manually) but log it so we notice if this is a systemic failure.
+    console.error("watchlist upsert from paper buy:", watchErr.message);
   }
   return NextResponse.json({ row: data });
 }

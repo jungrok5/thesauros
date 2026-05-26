@@ -307,7 +307,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
               initialCategory={watch.category}
               action={result?.action ?? null}
             />
-            {/* 가상 매수 entry point next to 관심·보유 — only when the
+            {/* 모의 투자 entry point next to 관심·보유 — only when the
                 verdict is actually a buy candidate (entry_plan set +
                 eligibility lets us through). Reads the same entry/
                 stop/target the BookVerdict surfaces below. */}
