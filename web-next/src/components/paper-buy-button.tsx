@@ -23,6 +23,14 @@ interface Props {
   target?: number | null;
   /** Compact icon mode for tight rows (스크리너). */
   compact?: boolean;
+  /**
+   * Open 모의 투자 lots the user already holds on this ticker.
+   * When > 0, the modal surfaces a "추매 (N건째)" header so a
+   * fat-finger duplicate is easy to spot before confirming.
+   * Phase 4 (2026-05-27) — pyramiding allowed; this hint is the
+   * lightweight guardrail.
+   */
+  openLots?: number;
 }
 
 const PRESETS = [
@@ -33,7 +41,7 @@ const PRESETS = [
 ];
 
 export function PaperBuyButton({
-  ticker, entryPrice, stopLoss, target, compact,
+  ticker, entryPrice, stopLoss, target, compact, openLots,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -92,6 +100,7 @@ export function PaperBuyButton({
             notes={notes} setNotes={setNotes}
             err={err} submitting={submitting}
             onSubmit={submit} onClose={() => setOpen(false)}
+            openLots={openLots ?? 0}
           />
         )}
       </>
@@ -117,6 +126,7 @@ export function PaperBuyButton({
           notes={notes} setNotes={setNotes}
           err={err} submitting={submitting}
           onSubmit={submit} onClose={() => setOpen(false)}
+          openLots={openLots ?? 0}
         />
       )}
     </>
@@ -137,12 +147,13 @@ interface ModalProps {
   submitting: boolean;
   onSubmit: () => void;
   onClose: () => void;
+  openLots: number;
 }
 
 function Modal({
   ticker, entryPrice, stopLoss, target,
   amount, setAmount, notes, setNotes,
-  err, submitting, onSubmit, onClose,
+  err, submitting, onSubmit, onClose, openLots,
 }: ModalProps) {
   const shares = entryPrice > 0 ? amount / entryPrice : 0;
   const stopPct = stopLoss && stopLoss > 0
@@ -168,10 +179,16 @@ function Modal({
         <header>
           <h2 className="text-lg font-semibold">
             📒 모의 투자 — <span className="font-mono">{ticker}</span>
+            {openLots > 0 && (
+              <span className="ml-2 text-xs font-normal rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5">
+                추매 {openLots + 1}건째
+              </span>
+            )}
           </h2>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            실제 매수가 아닌 forward-test 입니다. 손절선/목표는 분석 시점
-            BookVerdict 의 값을 자동 사용합니다.
+            {openLots > 0
+              ? `이미 ${openLots}건 보유 중. 새 매수는 별도 lot 으로 추가됩니다 (각각 자체 진입가/손절/목표 유지).`
+              : "실제 매수가 아닌 forward-test 입니다. 손절선/목표는 분석 시점 BookVerdict 의 값을 자동 사용합니다."}
           </p>
         </header>
 

@@ -89,16 +89,14 @@ export async function POST(req: NextRequest) {
       { error: "target must be > entry_price" }, { status: 400 });
   }
 
-  // Block double-buy on the same open ticker so the user doesn't
-  // accidentally stack positions. They can close the existing one
-  // first if they want to re-enter.
-  const existing = await fetchOpenForUserTicker(userId, ticker);
-  if (existing.length > 0) {
-    return NextResponse.json(
-      { error: "이 종목은 이미 모의 투자 중입니다 — /paper 에서 청산 후 재진입" },
-      { status: 409 },
-    );
-  }
+  // Pyramiding (추매) is allowed — every new buy on the same ticker
+  // becomes a separate lot with its own entry_price / stop / target.
+  // Phase 4 reform (2026-05-27): the old double-buy guard prevented
+  // 책 정신's "물타기 X, 불타기 O" — adding to a winning position is
+  // a deliberate move, not an accident. To prevent fat-finger
+  // duplicates, the modal surfaces the existing open lots before
+  // confirm (client-side responsibility, see PaperBuyButton).
+  void fetchOpenForUserTicker;  // kept import for future per-ticker UI
 
   const shares = amount_krw / entry_price;
 

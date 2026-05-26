@@ -143,6 +143,30 @@ async function resolveTicker(raw: string): Promise<TickerInfo | null> {
   return null;
 }
 
+async function getOpenPaperLots(ticker: string): Promise<number> {
+  // How many active 모의 투자 lots does the current user already
+  // have on this ticker? Used by PaperBuyButton to surface a "추매"
+  // hint inside the buy modal before the user clicks.
+  const session = await auth();
+  if (!session?.user?.email) return 0;
+  try {
+    const userId = await ensureUserId(
+      session.user.email.toLowerCase(),
+      session.user.name ?? null,
+    );
+    const sb = getServerClient();
+    const { count } = await sb
+      .from("paper_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("ticker", ticker)
+      .eq("status", "open");
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function getWatchlistState(
   ticker: string,
 ): Promise<{ added: boolean; category: "observing" | "holding" }> {
@@ -252,7 +276,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [analysis, watch, flow, ctx] = await Promise.all([
+  const [analysis, watch, flow, ctx, openPaperLots] = await Promise.all([
     isCanonical
       ? getAnalysis(ticker)
       : Promise.resolve<{ result: AnalysisResult | null; updatedAt: string | null }>({ result: null, updatedAt: null }),
@@ -273,6 +297,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           latestBar: null,
           volumeSurge: null,
         }),
+    isCanonical ? getOpenPaperLots(ticker) : Promise.resolve(0),
   ]);
   const result = analysis.result;
   const analyzedAt = analysis.updatedAt;
@@ -322,6 +347,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
                   ? Number(result.entry_plan.stop) : null}
                 target={result.entry_plan.target != null
                   ? Number(result.entry_plan.target) : null}
+                openLots={openPaperLots}
               />
             )}
           </div>
