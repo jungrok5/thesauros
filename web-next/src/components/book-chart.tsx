@@ -35,8 +35,28 @@ interface PatternBlock {
   stop: number | null;
   target: number | null;
   detected_at: string | null;
+  completed?: boolean;
+  timeframe?: string;
   extra?: Record<string, unknown>;
 }
+
+// Short Korean label per pattern kind. Keep ≤ 6 chars so the chart
+// marker text fits next to the bar without overlapping neighbors.
+const PATTERN_MARKER_LABEL: Record<string, string> = {
+  pattern_double_bottom:           "쌍바닥",
+  pattern_triple_bottom:           "삼중바닥",
+  pattern_inverse_head_and_shoulders: "역H&S",
+  pattern_cup_and_handle:          "컵핸들",
+  pattern_doulbanji:               "돌반지",
+  pattern_ma240_breakout:          "240돌파",
+  pattern_forking:                 "포킹",
+  pattern_catalyst_candle:         "장대양봉",
+  pattern_double_top:              "쌍천장",
+  pattern_triple_top:              "삼중천장",
+  pattern_head_and_shoulders:      "H&S",
+  pattern_death_messenger:         "사망신호",
+  pattern_ma240_break_down:        "240이탈",
+};
 
 interface QuarterLines {
   price_low: number;
@@ -329,6 +349,45 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
         }
         if (latest.target != null) {
           candleSeries.createPriceLine({ price: latest.target, color: "#0ea5e9", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "목표" });
+        }
+      }
+
+      // Pattern detection markers — ●/▲/▼ on the actual bar where the
+      // pattern was detected. Up to now the chart only drew horizontal
+      // price lines from the latest pattern; users couldn't see "어디서"
+      // (which bar) the pattern fired. Cap at the most recent ~6 markers
+      // to keep the chart readable. (2026-05-26 site review.)
+      if (candleSeries && data.patterns.length > 0) {
+        // Match each pattern's detected_at (ISO date) to the nearest bar.
+        // detected_at is a single date, bars[].t is a unix second; we look
+        // for the bar whose t >= parsed date, or fall back to the last bar.
+        const barTimes = data.bars.map((b) => b.t);
+        const markers = data.patterns
+          .filter((p) => p.detected_at)
+          .slice(0, 6)   // most recent N — chart legibility
+          .map((p) => {
+            const sec = Math.floor(Date.parse(p.detected_at!) / 1000);
+            // bars are sorted ascending → find first bar at or after this date.
+            let matchIdx = barTimes.findIndex((t) => t >= sec);
+            if (matchIdx === -1) matchIdx = barTimes.length - 1;
+            const time = barTimes[matchIdx] as Time;
+            const isBull = p.direction === "bullish";
+            const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind.replace(/^pattern_/, "");
+            return {
+              time,
+              position: (isBull ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
+              color: isBull ? "#22c55e" : "#ef4444",
+              shape: (isBull ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown",
+              text: `${label} ${(p.confidence * 100).toFixed(0)}%`,
+            };
+          });
+        if (markers.length > 0) {
+          // v5 API — separate function; ignored gracefully if older bundle.
+          try {
+            lwc.createSeriesMarkers(candleSeries, markers);
+          } catch (e) {
+            console.warn("createSeriesMarkers unavailable:", e);
+          }
         }
       }
 

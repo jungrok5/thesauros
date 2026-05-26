@@ -217,21 +217,32 @@ export default async function DashboardPage() {
       <BookEntrySpots />
 
 
-      {/* 핵심 거시 지표 — 매매 결정에 직접 닿는 8~10개만 above-the-fold */}
+      {/* 핵심 거시 지표 — 매매 결정에 직접 닿는 8~10개만 above-the-fold.
+          2026-05-26 site review: 초보가 dashboard 들어와서 CPI/PPI/M2/
+          Yield curve 등 raw 거시 카드 8개를 봐도 "그래서 사? 말아?" 결론
+          못 냄. 결론은 위쪽 MarketActionCard 의 한 줄 평이 함. 거시 카드
+          자체는 펼침 토글로 demote — 자세히 알고 싶은 사용자만 펼침. */}
       {core.length > 0 && (
-        <section className="space-y-3">
-          <header>
-            <h2 className="text-sm font-semibold tracking-tight">핵심 거시 지표</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              책 정신상 매수/회피 자격에 직접 영향을 주는 지표만. 나머지는 아래 접힘.
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="px-4 py-3 cursor-pointer hover:bg-muted/40 flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold tracking-tight">
+              핵심 거시 지표 ({core.length}개)
+            </span>
+            <span className="text-[11px] text-muted-foreground font-normal">
+              자세히 보고 싶을 때만 펼침 — 결론은 위쪽 카드
+            </span>
+          </summary>
+          <div className="px-4 pb-4 pt-2">
+            <p className="text-xs text-muted-foreground mb-3">
+              책 정신상 매수/회피 자격에 직접 영향을 주는 지표만.
             </p>
-          </header>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {core.map((it) => (
-              <IndicatorCard key={it.key} it={it} />
-            ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {core.map((it) => (
+                <IndicatorCard key={it.key} it={it} />
+              ))}
+            </div>
           </div>
-        </section>
+        </details>
       )}
 
       <GlobalNews limit={6} />

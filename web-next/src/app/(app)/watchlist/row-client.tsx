@@ -87,6 +87,16 @@ export function WatchlistRowClient({
 
   async function save() {
     if (busy) return;
+    // 책 정신 강제: 보유(holding) 종목은 손절가 / 손절 % 둘 중 하나
+    // 필수. 손절 없이 사는 게 가장 큰 사고. (2026-05-26 site review.)
+    if (row.category === "holding" && stop === "" && stopPct === "") {
+      alert(
+        "보유 종목은 손절가 또는 손절 % 입력이 필수입니다.\n\n" +
+        "책 정신: 매수 전 손절가를 먼저 정한다. 손절 없이 사면 추세 깨졌을 때 빠져나오지 못함.\n\n" +
+        "추천: 진입가 대비 -5% ~ -10% 사이.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
@@ -238,6 +248,19 @@ export function WatchlistRowClient({
 
       {open && (
         <div className="border-t border-border p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+          {row.category === "holding" && (
+            <div className="col-span-2 sm:col-span-5 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed">
+              <div className="font-medium text-amber-700 dark:text-amber-300">
+                📌 책 정신 강제: 보유 종목은 손절가 필수
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                매수 전 손절가 먼저 정함 (-5%~-10% 권장). 추가로 한 번에
+                전부 매수 X — 책 정신: <strong>3~5분할 매수</strong> 권장.
+                남은 분할분은 4등분선 75% 안전지대 또는 catalyst 직후
+                재진입.
+              </div>
+            </div>
+          )}
           <label className="text-xs space-y-1">
             <span className="text-muted-foreground">진입가</span>
             <input
@@ -276,7 +299,11 @@ export function WatchlistRowClient({
             />
           </label>
           <label className="text-xs space-y-1">
-            <span className="text-rose-700 dark:text-rose-400">손절가</span>
+            <span className="text-rose-700 dark:text-rose-400">
+              손절가{row.category === "holding" && (
+                <span className="ml-0.5 text-rose-600" title="보유 종목 필수">*</span>
+              )}
+            </span>
             <input
               type="number"
               step="0.01"
@@ -284,11 +311,14 @@ export function WatchlistRowClient({
               onChange={(e) => setStop(e.target.value)}
               placeholder="손절가"
               className="w-full px-2 py-1 rounded border border-input bg-background text-sm font-mono"
+              required={row.category === "holding" && stopPct === ""}
             />
           </label>
           <label className="text-xs space-y-1">
             <span className="text-rose-700 dark:text-rose-400">
-              손절 % (-0.05=-5%)
+              손절 % (-0.05=-5%){row.category === "holding" && (
+                <span className="ml-0.5 text-rose-600" title="보유 종목 필수 (또는 손절가)">*</span>
+              )}
             </span>
             <input
               type="number"
@@ -297,6 +327,7 @@ export function WatchlistRowClient({
               onChange={(e) => setStopPct(e.target.value)}
               placeholder="-0.05"
               className="w-full px-2 py-1 rounded border border-input bg-background text-sm font-mono"
+              required={row.category === "holding" && stop === ""}
             />
           </label>
           <div className="col-span-2 sm:col-span-5 flex justify-end">

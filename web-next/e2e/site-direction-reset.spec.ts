@@ -329,3 +329,87 @@ test.describe("/settings/alerts has 3 preset shortcuts", () => {
     await expect(page.locator("[data-testid='pref-enable_disclosure']")).toBeChecked();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Dashboard 거시 핵심 카드 default fold (M20 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("Dashboard 거시 fold", () => {
+  // Even with MarketActionCard's one-liner at the top, the original
+  // layout dumped 8 raw macro cards (CPI/PPI/M2/etc.) right below it.
+  // A beginner couldn't tell which one to act on — the actionable
+  // verdict was already up top. Demoted to a collapsed <details>.
+  test("'핵심 거시 지표' is inside a <details> (default collapsed)", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
+    const html = await page.content();
+    if (!html.includes("핵심 거시 지표")) {
+      test.skip(true, "no core macro indicators in current state");
+      return;
+    }
+    expect(html).toMatch(
+      /<summary[^>]*>[\s\S]{0,300}핵심 거시 지표[\s\S]{0,200}<\/summary>/,
+    );
+    const detailsOpen = html.match(
+      /<details\s+open[^>]*>[\s\S]{0,500}핵심 거시 지표/,
+    );
+    expect(detailsOpen, "핵심 거시 지표 details must not be open by default")
+      .toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Chart marker invariants (M19 — 2026-05-26)
+// Real visual rendering uses canvas, but we can lock the static label
+// map + the createSeriesMarkers call path so the feature can't be
+// silently deleted on a refactor.
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("BookChart pattern markers", () => {
+  test("chart component wires up createSeriesMarkers with PATTERN_MARKER_LABEL", async ({ page }) => {
+    // No need to hit the page — read the source file directly. This
+    // catches "someone removed the marker call" regressions without
+    // depending on a particular ticker's pattern data being populated.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/book-chart.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/PATTERN_MARKER_LABEL/);
+    expect(src).toMatch(/createSeriesMarkers/);
+    // The marker call must pass a non-empty markers array constructed
+    // from data.patterns (not a hardcoded sample). Wide window because
+    // the data-flow + filter + map can be 20+ lines.
+    expect(src).toMatch(/data\.patterns[\s\S]+?createSeriesMarkers/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Watchlist holding 종목 stop-price guard (M21 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("Watchlist holding requires a stop loss", () => {
+  // Direct UI test would need a holding row in the user's watchlist —
+  // out of scope for an empty-DB E2E. Read the source guard instead:
+  // the save() function must short-circuit when category=='holding'
+  // and both stop fields are blank, AND the form must add the required
+  // attribute when applicable. This catches "someone removed the guard"
+  // refactors without seeding test data.
+  test("row-client.tsx contains the holding/stop guard", async ({ }) => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "src/app/(app)/watchlist/row-client.tsx"),
+      "utf8",
+    );
+    // The guard checks category === "holding" with both stop blank
+    expect(src).toMatch(
+      /row\.category === "holding"[\s\S]{0,200}stop === ""[\s\S]{0,200}stopPct === ""/,
+    );
+    // The 책 정신 강제 amber notice renders only for holding.
+    expect(src).toMatch(/책 정신 강제: 보유 종목은 손절가 필수/);
+    // The stop inputs flip required={...} for holding category.
+    expect(src).toMatch(/required=\{row\.category === "holding"/);
+  });
+});
