@@ -283,10 +283,17 @@ export function BookSummaryTable({ result, flow }: Props) {
 
   return (
     <section className="rounded-lg border border-border bg-card overflow-hidden">
-      <header className="px-4 py-2.5 border-b border-border bg-muted/30">
+      <header className="px-4 py-2.5 border-b border-border bg-muted/30 space-y-0.5">
         <h2 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-          📊 책 정신 정리표 — 매매 결정 차원
+          📊 결정 근거 — 6 차원 상세 (참고)
         </h2>
+        {/* 2026-05-26 site review: 이전 이름 "책 정신 정리표 — 매매 결정
+            차원" 이 결론처럼 들려 초보가 위쪽 한 줄 평을 건너뛰고 이 표를
+            결론으로 오해. 표는 결론의 근거 raw data — 결론은 위의 한 줄
+            평이 함. 라벨 + 안내문으로 명확화. */}
+        <p className="text-[11px] text-muted-foreground/80">
+          ↑ 위 <strong>한 줄 평</strong>이 결론 · 아래는 차원별 raw 데이터
+        </p>
       </header>
       <table className="w-full text-sm">
         <tbody>

@@ -403,6 +403,36 @@ test.describe("BookChart pattern markers", () => {
 // /stocks/[ticker] section ordering + fold (M23 — 2026-05-26)
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// BookSummaryTable label clarification (M25 — 2026-05-26)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("/stocks/[ticker] BookSummaryTable label & guide", () => {
+  // Pre-M25 the table heading read "책 정신 정리표 — 매매 결정 차원"
+  // which sounded like the conclusion itself — a beginner could miss
+  // the actual verdict (한 줄 평) sitting above it. Relabeled to
+  // "결정 근거 — 6 차원 상세 (참고)" + added a hint line pointing
+  // up to the verdict.
+  test("BookSummaryTable carries the new label + '한 줄 평이 결론' hint", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+    const html = await page.content();
+    if (!html.includes("결정 근거")) {
+      test.skip(true, "page didn't render BookSummaryTable");
+      return;
+    }
+    // New heading wording
+    expect(html).toContain("결정 근거 — 6 차원 상세 (참고)");
+    // Old heading must be GONE (otherwise both render side by side)
+    expect(html).not.toContain("책 정신 정리표 — 매매 결정 차원");
+    // Pointer-up hint to the actual verdict
+    expect(html).toMatch(/↑.*한 줄 평.*결론/);
+  });
+});
+
 test.describe("/stocks/[ticker] section ordering after M23 regroup", () => {
   // The book's mental model: 결론 → 차트 → "이 신호 historically 어땠나"
   // → 펀더 (보조). Previously 책 전략 was after 펀더, so a reader who

@@ -55,7 +55,7 @@ function nextActionFor(tone: ReturnType<typeof toneFor>) {
     return {
       primary: { href: "/stocks", label: "종목 검색 — 매수 자리" },
       secondary: { href: "/watchlist", label: "관심 종목 확인" },
-      hint: "양호 업종 + 강한 신호 종목 우선. 신규 종목 검색해서 책 정신 정리표 확인.",
+      hint: "양호 업종 + 강한 신호 종목 우선. 신규 종목 검색 → 한 줄 평 결론 확인.",
     };
   }
   if (tone === "bear") {
