@@ -508,11 +508,18 @@ def detect_triple_bottom(df: pd.DataFrame, lookback: int = 180,
 
     # 책 권장 (p276): 거래량 우상향 (저점마다 거래량 증가), 저점도 점차 상승
     rising_bottoms = a.price <= b.price <= c.price
+    # Book p276 "우상향" = overall upward trend, NOT strict bar-by-bar
+    # monotonic. The previous `a < b < c` rule flagged 99% of detected
+    # triple-bottoms as fake on KR data (audit_200, 2026-05-26): U-shapes
+    # where volume dipped mid-pattern but the last bottom showed
+    # vol_max all got false-flagged. Real fakes look like a steady
+    # decline (e.g. 161000.KS [3.5M, 1.1M, 0.85M], 069730.KS [418K,
+    # 430K, 130K]) — caught by the simpler "last > first" rule which
+    # captures the book's actual statement.
     rising_volume = (
-        a.volume < b.volume < c.volume
-        if all([a.volume, b.volume, c.volume]) else False
+        all([a.volume, b.volume, c.volume])
+        and c.volume > a.volume
     )
-    # Book treats missing volume-monotonic as page p254-pattern "페이크".
     fake_volume = (
         all([a.volume, b.volume, c.volume]) and not rising_volume
     )
