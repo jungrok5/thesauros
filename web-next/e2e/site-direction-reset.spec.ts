@@ -460,6 +460,44 @@ test.describe("screener exposes the eligibility safety chip", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// F3 — single verdict card (NoviceVerdict removed, merged into BookVerdict)
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("verdict card is rendered exactly once", () => {
+  // Before F3 the page rendered NoviceVerdict (above) + BookVerdict
+  // (below) — both keying off `eligibility` after F1, so headline+body
+  // appeared twice. F3 deleted NoviceVerdict and let BookVerdict be
+  // the single source. We assert that the eligibility headline string
+  // shows up at most once in the visible DOM (RSC stream may carry it
+  // twice via SSR-HTML + hydration payload, both of which render as
+  // the SAME on-screen card — count distinct visible elements).
+  test("BookVerdict is the only headline source on /stocks/[ticker]", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/339950.KQ?from=screener&preset=book-buy`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    // Locator: the BookVerdict heading <h2> that always says "한 줄 평 · ...".
+    const verdictHeading = page.locator("h2", { hasText: "한 줄 평 ·" });
+    const count = await verdictHeading.count();
+    expect(count, "exactly one verdict card should render").toBe(1);
+
+    // And NoviceVerdict's old tombstone phrasings must not appear in
+    // their old standalone position (without the "한 줄 평 ·" prefix
+    // BookVerdict adds).
+    const html = await page.content();
+    // NoviceVerdict's headline used `<div class="text-sm font-semibold">`
+    // wrapping bare "오늘 매수 자격: ..." without the BookVerdict prefix.
+    // After F3 that pattern must be absent.
+    const orphanHeadline = html.match(
+      /<div[^>]*text-sm[^>]*font-semibold[^>]*>오늘 매수 자격:/,
+    );
+    expect(orphanHeadline, "no NoviceVerdict-style standalone headline").toBeNull();
+  });
+});
+
 test.describe("verdict cards never contradict each other", () => {
   // The 339950.KQ case that triggered this guard: screener rank 1
   // (book_score 1.00, action=STRONG_BUY) but the analyzer's eligibility
