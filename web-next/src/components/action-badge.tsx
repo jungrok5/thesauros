@@ -33,18 +33,53 @@ const ACTION_STYLE: Record<string, { label: string; klass: string }> = {
   },
 };
 
+// Amber/zinc "downgrade" styles used when eligibility ≠ "OK" overrides
+// a bullish raw `action`. Keeps the badge on the page but stops it from
+// shouting 🟢 STRONG_BUY next to a "조건부 — 매수 X" verdict.
+const DOWNGRADE_STYLE = {
+  CONDITIONAL: {
+    label: "조건부",
+    klass:
+      "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40",
+  },
+  WATCH: {
+    label: "관망",
+    klass:
+      "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 border-zinc-500/40",
+  },
+  AVOID: {
+    label: "회피",
+    klass:
+      "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/40",
+  },
+} as const;
+
+type EligibilityGrade = "OK" | "CONDITIONAL" | "WATCH" | "AVOID";
+
 export function ActionBadge({
   action,
   size = "md",
   score,
+  eligibilityGrade,
   className,
 }: {
   action: string;
   size?: "sm" | "md" | "lg";
   score?: number | null;
+  /** When the analyzer's eligibility downgraded a bullish action (the
+   *  339950.KQ case 2026-05-26: STRONG_BUY ⇒ CONDITIONAL), the badge
+   *  must match the verdict card below instead of staying 🟢. */
+  eligibilityGrade?: EligibilityGrade | null;
   className?: string;
 }) {
-  const cfg = ACTION_STYLE[action] ?? ACTION_STYLE.HOLD;
+  // If a bullish raw action got downgraded by eligibility, render the
+  // downgraded chip — otherwise fall back to the raw-action style.
+  const isBullish = action === "BUY" || action === "STRONG_BUY";
+  const downgraded =
+    isBullish && eligibilityGrade && eligibilityGrade !== "OK"
+      ? DOWNGRADE_STYLE[eligibilityGrade]
+      : null;
+  const cfg = downgraded ?? (ACTION_STYLE[action] ?? ACTION_STYLE.HOLD);
   const sizeKlass =
     size === "lg"
       ? "px-3 py-1.5 text-sm"
@@ -53,12 +88,20 @@ export function ActionBadge({
         : "px-2.5 py-1 text-xs";
   return (
     <span
+      data-action={action}
+      data-eligibility={eligibilityGrade ?? "OK"}
       className={cn(
         "inline-flex items-center gap-2 rounded-md border font-medium tracking-wide",
         cfg.klass,
         sizeKlass,
         className,
       )}
+      title={
+        downgraded
+          ? `시스템 분석: ${action} · book_score ${score?.toFixed(2) ?? "—"} ` +
+            `· 책 정신 적합도 ${cfg.label} → 한 줄 평 결론 따름`
+          : undefined
+      }
     >
       <span>{cfg.label}</span>
       {score !== undefined && score !== null && (

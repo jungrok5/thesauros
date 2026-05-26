@@ -33,6 +33,12 @@ type Spot = {
   roe: number | null;
   volume_case_num: number | null;
   catalyst_bars_since: number | null;
+  // F6 (2026-05-26): eligibility chip parity with /screener. Without this
+  // a dashboard user sees "🟢 강한 매수 1.00" on a row that the analyzer
+  // had already downgraded to CONDITIONAL — clicks through to find
+  // "조건부 — 매수 X" on the stock detail page, which feels like a bait.
+  eligibility_grade?: "OK" | "CONDITIONAL" | "WATCH" | "AVOID" | null;
+  eligibility_icon?: string | null;
 };
 
 async function fetchTopSpots(limit: number): Promise<Spot[]> {
@@ -73,7 +79,8 @@ async function fetchTopSpots(limit: number): Promise<Spot[]> {
     volume_case_num: number | null;
     catalyst_bars_since: number | null;
   };
-  return (data as unknown as RpcRow[]).slice(0, limit).map((r) => ({
+  const rows = (data as unknown as RpcRow[]).slice(0, limit);
+  const spots: Spot[] = rows.map((r) => ({
     ticker: r.ticker,
     name: r.name,
     action: r.action,
@@ -82,6 +89,63 @@ async function fetchTopSpots(limit: number): Promise<Spot[]> {
     volume_case_num: r.volume_case_num,
     catalyst_bars_since: r.catalyst_bars_since,
   }));
+  // Batch-attach eligibility — same pattern as /screener's
+  // fetchEligibilityMap. PostgREST JSON-path so only the eligibility
+  // subtree is pulled. spots.length ≤ DEFAULT_LIMIT (3) → tiny query.
+  if (spots.length > 0) {
+    const tickers = spots.map((s) => s.ticker);
+    const { data: er } = await sb
+      .from("analyze_results")
+      .select("ticker, eligibility:result->eligibility")
+      .in("ticker", tickers)
+      .limit(tickers.length);
+    if (er) {
+      const eMap = new Map<string, { grade?: string; icon?: string }>();
+      for (const row of er as Array<{
+        ticker: string;
+        eligibility: { grade?: string; icon?: string } | null;
+      }>) {
+        if (row.eligibility) eMap.set(row.ticker, row.eligibility);
+      }
+      for (const s of spots) {
+        const e = eMap.get(s.ticker);
+        if (e?.grade) {
+          s.eligibility_grade = e.grade as Spot["eligibility_grade"];
+          s.eligibility_icon = e.icon ?? null;
+        }
+      }
+    }
+  }
+  return spots;
+}
+
+function EligibilityChip({
+  grade,
+  icon,
+}: {
+  grade?: Spot["eligibility_grade"];
+  icon?: string | null;
+}) {
+  if (!grade || grade === "OK") return null;
+  const tone =
+    grade === "AVOID"
+      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+      : grade === "CONDITIONAL"
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        : "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300";
+  const label =
+    grade === "AVOID" ? "회피"
+      : grade === "CONDITIONAL" ? "조건부"
+        : "관망";
+  return (
+    <span
+      data-eligibility={grade}
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
+      title={`책 정신 적합도: ${label} — 클릭 후 한 줄 평 확인`}
+    >
+      {icon || "⚠"} {label}
+    </span>
+  );
 }
 
 function actionLabel(action: string | null): string {
@@ -157,7 +221,15 @@ export async function BookEntrySpots({ limit = DEFAULT_LIMIT }: { limit?: number
                       )}
                     </Link>
                   </td>
-                  <td className="px-2">{actionLabel(s.action)}</td>
+                  <td className="px-2">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span>{actionLabel(s.action)}</span>
+                      <EligibilityChip
+                        grade={s.eligibility_grade}
+                        icon={s.eligibility_icon}
+                      />
+                    </div>
+                  </td>
                   <td className="text-right px-2 font-semibold">
                     {s.book_score == null ? "—" : s.book_score.toFixed(2)}
                   </td>

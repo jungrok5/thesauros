@@ -1,11 +1,7 @@
 import type { AnalysisResult } from "@/lib/types/analysis";
 import { ActionBadge } from "@/components/action-badge";
 import { HelpTip } from "@/components/help-tip";
-import { MultiTFMatrix } from "@/components/multi-tf-matrix";
-import {
-  InvestorFlowChip,
-  type FlowSummary,
-} from "@/components/investor-flow-chip";
+import { type FlowSummary } from "@/components/investor-flow-chip";
 import { BookVerdict } from "@/components/book-verdict";
 import { BookSummaryTable } from "@/components/book-summary-table";
 import { formatNumber, cn } from "@/lib/utils";
@@ -163,29 +159,29 @@ export function AnalysisView({
 
   return (
     <div className="space-y-6">
+      {/* 2026-05-26 F5: header 최소화. 이전엔 ticker 아래에 MultiTFMatrix
+          + InvestorFlowChip 가 결론 위에 노출 → 초보가 결론 도달 전 어려운
+          raw data 거침 + 같은 정보가 결정 근거 표 (BookSummaryTable) 첫
+          줄에 다시 나옴 = 중복. header 는 ticker + 분석 시점 + ActionBadge
+          만 남기고, 추세/수급 매트릭스는 정리표가 단일 source. */}
       <header className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight font-mono">
             {r.ticker}
           </h1>
-          {/* Authoritative date + close live in <LastClose/> above this
-              card (fetched fresh from Naver/Yahoo). r.as_of (next-Friday
-              bar close) was hidden previously; analysis-cache timestamp
-              is also hidden (it confused users who read it as "현재 시각"
-              vs the actual analyze_results.updated_at). */}
           <p className="mt-1 text-sm text-muted-foreground">
             최근 {barLabel} 기준 분석
           </p>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <MultiTFMatrix
-              monthly={r.trend.monthly}
-              weekly={r.trend.weekly}
-              daily={r.trend.daily}
-            />
-            {flow && <InvestorFlowChip flow={flow} />}
-          </div>
         </div>
-        <ActionBadge action={r.action} score={r.book_score} size="lg" />
+        {/* F4: ActionBadge 가 eligibility 받아서 downgrade 모순 차단.
+            🟢 STRONG_BUY 옆에 "조건부 — 매수 X" 한 줄 평이 충돌하던 사고
+            (339950.KQ 2026-05-26) 해결. */}
+        <ActionBadge
+          action={r.action}
+          score={r.book_score}
+          size="lg"
+          eligibilityGrade={r.eligibility?.grade ?? null}
+        />
       </header>
 
       {/* 2026-05-26 F3: NoviceVerdict 제거. F1 commit 으로 BookVerdict

@@ -19,15 +19,31 @@ import path from "node:path";
 
 const mockRpc = vi.fn();
 
+// F6 (2026-05-26): BookEntrySpots now also queries analyze_results
+// for eligibility chips. Tests mock the `.from(...).select(...).in(...)
+// .limit(...)` chain so the component renders end-to-end. Tests that
+// don't care about chips just leave the eligibility query empty.
+const mockEligibilityFrom = vi.fn();
+
 vi.mock("@/lib/supabase", () => ({
   getServerClient: () => ({
     rpc: mockRpc,
+    from: (_: string) => ({
+      select: (_s: string) => ({
+        in: (_col: string, _vals: string[]) => ({
+          limit: (_n: number) => mockEligibilityFrom(),
+        }),
+      }),
+    }),
   }),
 }));
 
 beforeEach(() => {
   vi.resetModules();
   mockRpc.mockReset();
+  // Default: no eligibility data, no chips. Tests that exercise chip
+  // rendering can mockResolvedValueOnce a different payload.
+  mockEligibilityFrom.mockResolvedValue({ data: [], error: null });
 });
 afterEach(() => cleanup());
 

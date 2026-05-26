@@ -464,6 +464,81 @@ test.describe("screener exposes the eligibility safety chip", () => {
 // F3 — single verdict card (NoviceVerdict removed, merged into BookVerdict)
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// F4 — ActionBadge eligibility-aware
+// F5 — header MultiTFMatrix + InvestorFlowChip removed (dup with summary table)
+// F6 — BookEntrySpots EligibilityChip parity with screener
+// ─────────────────────────────────────────────────────────────────────
+
+test.describe("F4 — ActionBadge defers to eligibility on bullish downgrade", () => {
+  test("STRONG_BUY + CONDITIONAL eligibility renders the 조건부 chip, not STRONG BUY", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/339950.KQ?from=screener`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    const html = await page.content();
+    if (!html.includes("오늘 매수 자격: 조건부")) {
+      test.skip(true, "eligibility wasn't CONDITIONAL for this ticker today");
+      return;
+    }
+    // The badge carries data-action (raw) + data-eligibility (effective).
+    // Locator targets the one in the page header (the only ActionBadge).
+    const badges = page.locator("[data-action][data-eligibility]");
+    const count = await badges.count();
+    expect(count, "at least one action badge").toBeGreaterThan(0);
+    // For the 339950.KQ case both ATTRIBUTES must reflect the dissonance.
+    const dataAction = await badges.first().getAttribute("data-action");
+    const dataElig = await badges.first().getAttribute("data-eligibility");
+    expect(dataAction).toBe("STRONG_BUY");
+    expect(dataElig).toBe("CONDITIONAL");
+    // The visible label must NOT read "STRONG BUY" — it must read the
+    // downgrade label "조건부" (book-spirit verdict, not raw action).
+    const badgeText = await badges.first().innerText();
+    expect(badgeText).not.toContain("STRONG BUY");
+    expect(badgeText).toContain("조건부");
+  });
+});
+
+test.describe("F5 — stock detail header is minimal (no raw chip above the verdict)", () => {
+  test("MultiTFMatrix and InvestorFlowChip do not appear before the verdict card", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${BASE}/stocks/005930.KS`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+
+    const html = await page.content();
+    const tickerIdx = html.indexOf("005930.KS");
+    const verdictIdx = html.indexOf("한 줄 평");
+    expect(tickerIdx).toBeGreaterThanOrEqual(0);
+    expect(verdictIdx).toBeGreaterThan(tickerIdx);
+
+    const headerBlock = html.slice(tickerIdx, verdictIdx);
+    // These strings used to live INSIDE the header. Their presence
+    // there was the F5 regression.
+    expect(headerBlock).not.toContain("월/주/일 추세 정렬");
+    // (InvestorFlowChip's hover text starts with this exact phrase.)
+    expect(headerBlock).not.toContain("일 합계");
+  });
+});
+
+test.describe("F6 — BookEntrySpots wires EligibilityChip", () => {
+  test("BookEntrySpots component source includes the chip plus eligibility fetch", async ({}) => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "src/components/book-entry-spots.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/EligibilityChip/);
+    // PostgREST JSON-path fetch identical to screener page
+    expect(src).toMatch(/result->eligibility/);
+    expect(src).toMatch(/data-eligibility=\{grade\}/);
+  });
+});
+
 test.describe("verdict card is rendered exactly once", () => {
   // Before F3 the page rendered NoviceVerdict (above) + BookVerdict
   // (below) — both keying off `eligibility` after F1, so headline+body
