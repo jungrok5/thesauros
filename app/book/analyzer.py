@@ -24,6 +24,28 @@ from app.book.volume import classify_volume_case, detect_reverse_accumulation
 from app.book.indicators import compute_indicators
 
 
+def pattern_sort_key(p: Dict) -> tuple:
+    """Sort key for entry_plan candidate selection. 2026-05-26 audit
+    reform:
+
+    1. **weekly-first** — book ch.4: 매매 = 주봉 종가. Monthly is for
+       confirming the bigger trend (240MA), not entry timing.
+       Previous (monthly:3, weekly:2) sat the strong weekly 삼중바닥
+       conf=0.87 behind a weak monthly conf=0.56 in the 383800.KS case.
+    2. **fake_volume penalty** — detector flags `extra.fake_volume`
+       when volume isn't monotonically rising during pattern formation
+       (책 p254/p276 페이크 캔들 의심). -0.3 to confidence in sort,
+       enough to put a clean 0.6 above a fake 0.85 while keeping
+       very-strong clean signals (≥0.9) in the lead.
+    """
+    tf_rank = {"weekly": 0, "monthly": 1, "daily": 2}.get(
+        p.get("timeframe"), 3
+    )
+    fake = (p.get("extra") or {}).get("fake_volume", False)
+    eff_conf = float(p.get("confidence") or 0) - (0.3 if fake else 0)
+    return (tf_rank, -eff_conf)
+
+
 def _signal_score(trend_signal: str, patterns: List[Dict], reversals: List[Dict],
                   volume_case: Optional[Dict]) -> float:
     """Combine all signals into a [-1, +1] book conviction score.
@@ -42,7 +64,15 @@ def _signal_score(trend_signal: str, patterns: List[Dict], reversals: List[Dict]
             continue
         if p.get("invalidated"):
             continue
-        delta = p["confidence"] * 0.30
+        # fake_volume penalty (2026-05-26): detector marks the pattern's
+        # extra dict when volume isn't monotonically rising. Book p254/
+        # p276 calls this a 페이크 캔들 의심 — confidence should reflect
+        # it. score cap is still 1.0 so the effect is mostly visible
+        # when a fake pattern is the lone bullish signal.
+        conf = float(p.get("confidence") or 0)
+        if (p.get("extra") or {}).get("fake_volume"):
+            conf *= 0.5
+        delta = conf * 0.30
         base += delta if p["direction"] == "bullish" else -delta
 
     for r in reversals:
@@ -249,10 +279,9 @@ def analyze_ticker(ticker: str, df: pd.DataFrame,
     for p in patterns_monthly:
         all_patterns.append({**p, "timeframe": "monthly"})
 
-    # Sort by (timeframe weight, confidence)
-    tf_weight = {"monthly": 3, "weekly": 2, "daily": 1}
-    all_patterns.sort(key=lambda p: (-tf_weight.get(p.get("timeframe"), 0),
-                                     -p["confidence"]))
+    # Sort: weekly-first + fake_volume penalty. See pattern_sort_key
+    # docstring for the 2026-05-26 audit context.
+    all_patterns.sort(key=pattern_sort_key)
 
     vc_dict = volume_case.to_dict() if volume_case else None
 
