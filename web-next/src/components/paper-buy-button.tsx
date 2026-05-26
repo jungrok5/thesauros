@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 📒 가짜 매수 버튼 + 모달.
+ * 📒 가상 매수 버튼 + 모달.
  *
  * Stock detail page renders this next to the BookVerdict so users can
  * "forward-test" — paper-buy at the price the page is showing, with
@@ -78,7 +78,7 @@ export function PaperBuyButton({
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
-          title="가짜 매수 (paper trade)"
+          title="가상 매수 (paper trade)"
           className="inline-flex items-center text-xs px-1.5 py-0.5 rounded
                      border border-border bg-card hover:bg-muted transition-colors"
         >
@@ -107,7 +107,7 @@ export function PaperBuyButton({
                    rounded-md border border-border bg-card hover:bg-muted
                    transition-colors"
       >
-        📒 가짜 매수
+        📒 가상 매수
       </button>
       {open && (
         <Modal
@@ -163,11 +163,11 @@ function Modal({
                    bg-card p-5 shadow-lg space-y-4"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="가짜 매수 모달"
+        aria-label="가상 매수 모달"
       >
         <header>
           <h2 className="text-lg font-semibold">
-            📒 가짜 매수 — <span className="font-mono">{ticker}</span>
+            📒 가상 매수 — <span className="font-mono">{ticker}</span>
           </h2>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
             실제 매수가 아닌 forward-test 입니다. 손절선/목표는 분석 시점
@@ -264,7 +264,7 @@ function Modal({
             className="text-sm px-3 py-1.5 rounded-md bg-foreground
                        text-background hover:opacity-90 transition-opacity
                        disabled:opacity-50">
-            {submitting ? "매수 중..." : "가짜 매수"}
+            {submitting ? "매수 중..." : "가상 매수"}
           </button>
         </footer>
       </div>

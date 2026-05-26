@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   const existing = await fetchOpenForUserTicker(userId, ticker);
   if (existing.length > 0) {
     return NextResponse.json(
-      { error: "이 종목은 이미 가짜 매수 중입니다 — /paper 에서 청산 후 재진입" },
+      { error: "이 종목은 이미 가상 매수 중입니다 — /paper 에서 청산 후 재진입" },
       { status: 409 },
     );
   }

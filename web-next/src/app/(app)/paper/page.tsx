@@ -1,5 +1,5 @@
 /**
- * /paper — 가짜 매수 (forward-test) 페이지.
+ * /paper — 가상 매수 (forward-test) 페이지.
  *
  * Server component. Fetches the user's paper trades, decorates with
  * live prices, computes aggregate stats, and renders the list.
@@ -41,11 +41,11 @@ export default async function PaperPage() {
     <div className="space-y-6 max-w-5xl">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          📒 가짜 매수 (Forward Test)
+          📒 가상 매수 (Forward Test)
         </h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
           실제 매수 아닌 시뮬레이션. 종목 상세 또는 스크리너에서{" "}
-          <span className="font-mono">📒 가짜 매수</span> 클릭해서 추가합니다.
+          <span className="font-mono">📒 가상 매수</span> 클릭해서 추가합니다.
           진입가 / 손절 / 목표는 매수 시점 BookVerdict 의 값을 그대로
           snapshot — 같은 의사결정 프레임 그대로 추적.
         </p>
@@ -101,9 +101,9 @@ export default async function PaperPage() {
         <h2 className="text-lg font-semibold tracking-tight">진행 중</h2>
         {open.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-sm text-muted-foreground">
-            아직 가짜 매수 종목이 없습니다. <Link href="/screener"
+            아직 가상 매수 종목이 없습니다. <Link href="/screener"
               className="text-foreground hover:underline">스크리너</Link>{" "}
-            에서 종목 발견 → 📒 가짜 매수 클릭.
+            에서 종목 발견 → 📒 가상 매수 클릭.
           </div>
         ) : (
           <TradesTable rows={open} closable />

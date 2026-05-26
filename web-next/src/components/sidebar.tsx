@@ -66,7 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "⭐ 내 종목",
     items: [
       { href: "/watchlist", label: "관심·보유 종목", icon: Star },
-      { href: "/paper", label: "가짜 매수 (Forward Test)", icon: FlaskConical },
+      { href: "/paper", label: "가상 매수 (Forward Test)", icon: FlaskConical },
     ],
   },
   {

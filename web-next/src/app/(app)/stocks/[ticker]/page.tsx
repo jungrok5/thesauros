@@ -20,6 +20,7 @@ import { headers } from "next/headers";
 import { decideBackLink } from "@/lib/back-link";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
+import { PaperBuyButton } from "@/components/paper-buy-button";
 import { StockContextTabs } from "@/components/stock-context-tabs";
 import { FundamentalVerdicts } from "@/components/fundamental-verdicts";
 import {
@@ -299,12 +300,31 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           )}
         </div>
         {isCanonical && (
-          <WatchlistButton
-            ticker={ticker}
-            initiallyAdded={watch.added}
-            initialCategory={watch.category}
-            action={result?.action ?? null}
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <WatchlistButton
+              ticker={ticker}
+              initiallyAdded={watch.added}
+              initialCategory={watch.category}
+              action={result?.action ?? null}
+            />
+            {/* 가상 매수 entry point next to 관심·보유 — only when the
+                verdict is actually a buy candidate (entry_plan set +
+                eligibility lets us through). Reads the same entry/
+                stop/target the BookVerdict surfaces below. */}
+            {result?.entry_plan?.entry != null &&
+             (result.action === "STRONG_BUY" || result.action === "BUY") &&
+             (result.eligibility?.grade === "OK" ||
+              result.eligibility?.grade === "CONDITIONAL") && (
+              <PaperBuyButton
+                ticker={ticker}
+                entryPrice={Number(result.entry_plan.entry)}
+                stopLoss={result.entry_plan.stop != null
+                  ? Number(result.entry_plan.stop) : null}
+                target={result.entry_plan.target != null
+                  ? Number(result.entry_plan.target) : null}
+              />
+            )}
+          </div>
         )}
       </div>
 
