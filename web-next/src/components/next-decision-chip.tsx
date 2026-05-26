@@ -15,6 +15,55 @@ import { cn } from "@/lib/utils";
 
 const KST_OFFSET_HOURS = 9;
 
+type Phase = "wait" | "decide" | "review";
+
+interface PhaseStyle {
+  emoji: string;
+  prefix: string;
+  toneClass: string;
+}
+
+/** Map a KST weekday + hour into one of three book-spirit phases:
+ *
+ *    "decide"  — 금요일 (Fri) 15:30 KST 이전.   결정 시점이 임박/도래.
+ *    "review"  — 금 15:30 ~ 일 23:59 KST.       지난 주 결과 검토 + 다음 주 후보.
+ *    "wait"    — 월~목 KST.                    매매 시점 아님 — 관망 권장.
+ *
+ *  Mapping is consumed by the chip below to switch tone (color) + text
+ *  so the user sees "today's stance" at a glance, not just a D-x clock.
+ *  (2026-05-26 site review M24.) */
+function phaseFor(nowUtc: Date): Phase {
+  const kst = new Date(nowUtc.getTime() + KST_OFFSET_HOURS * 3600 * 1000);
+  const dow = kst.getUTCDay();
+  const hours = kst.getUTCHours();
+  const mins = kst.getUTCMinutes();
+  if (dow === 5) {
+    // Friday — pre-close = decide window, post-close = review window.
+    if (hours < 15 || (hours === 15 && mins < 30)) return "decide";
+    return "review";
+  }
+  if (dow === 6 || dow === 0) return "review";   // Sat / Sun
+  return "wait";                                  // Mon-Thu
+}
+
+const PHASE_STYLE: Record<Phase, PhaseStyle> = {
+  wait: {
+    emoji: "🟡",
+    prefix: "오늘은 관망 — 매매 시점 아님",
+    toneClass: "border-amber-500/30 bg-amber-500/5",
+  },
+  decide: {
+    emoji: "🟢",
+    prefix: "결정 시간 — 주봉 종가 매매",
+    toneClass: "border-emerald-500/40 bg-emerald-500/5",
+  },
+  review: {
+    emoji: "⚪",
+    prefix: "지난 주 결과 검토 + 후보 발굴",
+    toneClass: "border-zinc-500/30 bg-zinc-500/5",
+  },
+};
+
 /** Compute next Friday 15:30 KST as the canonical "다음 결정" anchor.
  *
  *  Why Friday: 책 = 주봉 종가 후 결정. KRX closing auction = 15:20-15:30.
@@ -52,6 +101,11 @@ function nextFridayDecisionKst(nowUtc: Date): Date {
   return target;
 }
 
+// Exported for unit tests + future re-use; keep alongside the phase
+// function so the contract is in one place.
+export { phaseFor };
+export type { Phase };
+
 interface Props {
   /** Compact variant — 칩 1 줄. Default fuller card with explainer. */
   compact?: boolean;
@@ -60,6 +114,8 @@ interface Props {
 
 export function NextDecisionChip({ compact = false, className }: Props) {
   const nowUtc = new Date();
+  const phase = phaseFor(nowUtc);
+  const style = PHASE_STYLE[phase];
   const nextDecisionKst = nextFridayDecisionKst(nowUtc);
   const kstNow = new Date(nowUtc.getTime() + KST_OFFSET_HOURS * 3600 * 1000);
   const diffMs = nextDecisionKst.getTime() - kstNow.getTime();
@@ -79,33 +135,46 @@ export function NextDecisionChip({ compact = false, className }: Props) {
   }).format(nextDecisionKst);
 
   if (compact) {
+    // Compact chip → phase color + emoji + 다음 결정 D-x. Title hover
+    // carries the full phrase for users who want context.
+    const compactTone =
+      phase === "decide"
+        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+        : phase === "review"
+          ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300"
+          : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
     return (
       <span
+        data-phase={phase}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 " +
-          "bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300 " +
-          "font-medium",
+          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 " +
+          "text-[11px] font-medium",
+          compactTone,
           className,
         )}
-        title={`다음 매매 결정: ${dateStr} 15:30 KST. 책 정신상 주봉 종가가 매매 결정 기준.`}
+        title={`${style.prefix} · 다음 매매 결정 ${dateStr} 15:30 KST`}
       >
-        🕒 다음 결정 {dayLabel}
+        {style.emoji} 다음 결정 {dayLabel}
       </span>
     );
   }
 
   return (
     <section
+      data-phase={phase}
       className={cn(
-        "rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2",
+        "rounded-lg border px-3 py-2",
+        style.toneClass,
         className,
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-base">🕒</span>
+          <span className="text-base">{style.emoji}</span>
           <div>
-            <div className="text-xs font-medium">다음 매매 결정: {dayLabel}</div>
+            <div className="text-xs font-medium">
+              {style.prefix} · 다음 결정 {dayLabel}
+            </div>
             <div className="text-[10px] text-muted-foreground">
               {dateStr} 15:30 KST (주봉 종가 기준)
             </div>

@@ -290,12 +290,22 @@ test.describe("Dashboard surfaces the 'when' anchor (NextDecisionChip)", () => {
   // indication of WHEN to act — book spirit is "Friday close decisions,
   // nothing on the other days." The chip now lives inside MarketActionCard
   // so the time anchor is right next to the macro verdict.
-  test("dashboard renders the 다음 매매 결정 chip", async ({ page }) => {
+  test("dashboard renders the 다음 결정 chip with valid phase", async ({ page }) => {
     await signIn(page);
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
     const body = page.locator("body");
-    await expect(body).toContainText("다음 매매 결정");
+    await expect(body).toContainText("다음 결정");
     await expect(body).toContainText("15:30 KST");
+
+    // M24 — the chip exposes the phase via data-phase on the wrapping
+    // <section>. Must be one of the 3 known values; phase mapping has
+    // its own unit tests (next-decision-chip-phase.test.ts), this just
+    // pins that the attribute reaches the DOM.
+    const phased = page.locator("[data-phase]");
+    const count = await phased.count();
+    expect(count, "at least one phased chip on dashboard").toBeGreaterThan(0);
+    const phase = await phased.first().getAttribute("data-phase");
+    expect(["wait", "decide", "review"]).toContain(phase);
   });
 });
 
