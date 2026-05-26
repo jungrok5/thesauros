@@ -3,6 +3,7 @@ import { ActionBadge } from "@/components/action-badge";
 import { HelpTip } from "@/components/help-tip";
 import { type FlowSummary } from "@/components/investor-flow-chip";
 import { BookVerdict } from "@/components/book-verdict";
+import { PaperBuyButton } from "@/components/paper-buy-button";
 import { BookSummaryTable } from "@/components/book-summary-table";
 import { formatNumber, cn } from "@/lib/utils";
 
@@ -197,6 +198,29 @@ export function AnalysisView({
         currentBarDate={currentBarDate}
         analyzedAt={analyzedAt}
       />
+
+      {/* 📒 가짜 매수 entry point — only show when action is bullish AND
+          eligibility lets the user buy. The button reads entry_plan
+          straight from the analyzer so the buy modal pre-fills with
+          the SAME stop/target the verdict above just surfaced. Forward
+          test parity: "사면 보이는 그 가격에 그 손절선". */}
+      {r.entry_plan && r.entry_plan.entry != null &&
+       (r.action === "STRONG_BUY" || r.action === "BUY") &&
+       (r.eligibility?.grade === "OK" ||
+        r.eligibility?.grade === "CONDITIONAL") && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">📒 가짜 매수 (forward test)</strong>
+            {" "}— 실거래 없이 같은 손절/목표로 추적합니다. /paper 에서 수익률 확인.
+          </div>
+          <PaperBuyButton
+            ticker={r.ticker}
+            entryPrice={Number(r.entry_plan.entry)}
+            stopLoss={r.entry_plan.stop != null ? Number(r.entry_plan.stop) : null}
+            target={r.entry_plan.target != null ? Number(r.entry_plan.target) : null}
+          />
+        </div>
+      )}
 
       {/* 책 정신 정리표 — 시간프레임/캔들/거래량/패턴/4등분선/외인을 한
           표에 집약. 이전엔 6개 카드로 흩어져 있던 정보를 사용자 매뉴얼
