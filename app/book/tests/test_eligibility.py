@@ -392,6 +392,40 @@ def test_below_weekly_240ma_outranks_stretched_in_priority():
     assert v["reason_code"] == "below_weekly_240"
 
 
+def test_weekly_240ma_missing_downgrades_buy():
+    """F11 (2026-05-26 third audit) — surfaced via 420570.KQ
+    제이투케이바이오: weekly.ma_240 + monthly.ma_240 둘 다 None
+    (신규 상장 4.6년 미만) 인데 eligibility=OK 라 스크리너 1위. Book ch.4
+    240MA = 1년 매수 심리 평가 불가 → 매수 자리 판단 불가능."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=100.0,
+        trend={
+            "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": None},
+            "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": None},
+        },
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "CONDITIONAL"
+    assert v["reason_code"] == "weekly_240_missing"
+    assert "주봉 240MA" in v["body"]
+
+
+def test_weekly_240ma_present_with_monthly_missing_stays_ok():
+    """Regression — F8 walk-back (monthly missing alone) must still let
+    these through. F11 only fires when WEEKLY 240MA is also missing."""
+    blob = _result(
+        action="STRONG_BUY",
+        last_close=100.0,
+        trend={
+            "monthly": {"above_ma_10": True, "ma_10": 95.0, "ma_240": None},  # missing
+            "weekly":  {"above_ma_10": True, "ma_10": 96.0, "ma_240": 80.0},   # present
+        },
+    )
+    v = compute_eligibility(blob)
+    assert v["grade"] == "OK"
+
+
 def test_exactly_at_weekly_240ma_stays_ok():
     """last_close == weekly ma_240 is the boundary — should NOT trigger
     the dead-chart downgrade (only strictly below)."""

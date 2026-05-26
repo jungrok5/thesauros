@@ -94,6 +94,22 @@ def is_240ma_stretched(result: Dict[str, Any]) -> bool:
     return last > ma240 * 1.5
 
 
+def is_weekly_240ma_missing(result: Dict[str, Any]) -> bool:
+    """주봉 240MA 자체 부재 = 신규 상장 / 데이터 부족 (4.6년 미만).
+    F11 (2026-05-26 third audit) — surfaced via 420570.KQ 제이투케이바이오:
+    weekly.ma_240=None AND monthly.ma_240=None, but eligibility=OK 라
+    스크리너 1위. BookVerdict 페이지가 명시:
+        "⏳ 240MA 분석 미가능 — 240주 (약 4.6년) 데이터 부족 — 신규 상장"
+        "⚠ 월봉 240MA 미계산 — 책의 핵심 안전 게이트 누락"
+
+    F8 walk-back (2026-05-26) 은 "weekly 240MA 가 있으면 monthly 없어도
+    OK" 라는 가정. 그러나 weekly 까지 없는 case 는 **240MA 안전 게이트
+    자체 부재** = 책 ch.4 "1년 매수 심리" 평가 불가 = 매수 자리 판단
+    불가능. 책 정신상 결정 보류."""
+    weekly = (result.get("trend") or {}).get("weekly") or {}
+    return weekly.get("ma_240") is None
+
+
 def is_below_weekly_240ma(result: Dict[str, Any]) -> bool:
     """주봉 240MA 아래 = 책의 가장 본질적인 매수 룰 위반.
     F10 (2026-05-26 second audit) — surfaced via 041930.KQ (SY동아):
@@ -277,21 +293,30 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         # BookVerdict still surfaces a warning when monthly_240 is
         # missing; eligibility no longer downgrades on it alone.
         below_240 = is_below_weekly_240ma(result)
+        weekly_240_missing = is_weekly_240ma_missing(result)
         stretched_240 = is_240ma_stretched(result)
         candle_top = is_candle_reversal_at_top(result)
         ambush = (not stale_pattern and not post_rally
                   and not below_240
+                  and not weekly_240_missing
                   and not stretched_240
                   and not candle_top
                   and is_ambush_setup(result))
         downgrade = (
             ambush or stale_pattern or post_rally
-            or below_240 or stretched_240 or candle_top
+            or below_240 or weekly_240_missing
+            or stretched_240 or candle_top
         )
         if downgrade:
             if below_240:
                 reason = "주봉 240MA 아래 — 책 기준 죽은 차트 영역"
                 reason_code = "below_weekly_240"
+            elif weekly_240_missing:
+                reason = (
+                    "주봉 240MA 미계산 (신규 상장 / 4.6년 데이터 부족) — "
+                    "책의 핵심 안전 게이트 부재"
+                )
+                reason_code = "weekly_240_missing"
             elif stretched_240:
                 reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
                 reason_code = "stretched_240"
