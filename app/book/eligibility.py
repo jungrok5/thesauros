@@ -77,6 +77,61 @@ def _pick_fresh_bullish_pattern(result: Dict[str, Any]) -> Optional[Dict[str, An
     return best
 
 
+def is_240ma_stretched(result: Dict[str, Any]) -> bool:
+    """주봉 240MA 대비 last_close 가 +50% 초과면 책의 '신규 진입 영역
+    (+50% 이내)' 명백 위반. F7 (2026-05-26 audit) — TOP-10 manual
+    review surfaced 024800.KQ 유성티엔에스: 240MA +82%인데 eligibility=OK.
+    Post-rally caution gate already had a 52w >= 85% trigger but doesn't
+    fire when price ran far from 240MA without quite reaching 52w high
+    (mid-cap small-float plays). This gate catches the stretch directly."""
+    weekly = (result.get("trend") or {}).get("weekly") or {}
+    ma240 = weekly.get("ma_240")
+    last = result.get("last_close")
+    if not (isinstance(ma240, (int, float)) and ma240 > 0):
+        return False
+    if not isinstance(last, (int, float)) or last <= 0:
+        return False
+    return last > ma240 * 1.5
+
+
+def is_monthly_240ma_missing(result: Dict[str, Any]) -> bool:
+    """월봉 240MA 미계산 = 책의 핵심 안전 게이트 누락 (신규 상장 종목 —
+    240개월 ≈ 20년 데이터 부재). F8 (2026-05-26 audit) — 책 정신상 장기
+    추세 확인 불가 종목에 bullish 라벨 줘선 안 됨. Was previously surfaced
+    in BookVerdict warnings but did NOT downgrade eligibility, so the
+    page card stayed 🟢 STRONG_BUY on tickers without the gate."""
+    monthly = (result.get("trend") or {}).get("monthly") or {}
+    return monthly.get("ma_240") is None
+
+
+def is_candle_reversal_at_top(result: Dict[str, Any]) -> bool:
+    """마지막 캔들이 반전 신호 (교수형 / 그레이브스톤도지 / 유성형 /
+    역망치형 / 눈썹캔들 OR upper_wick > 40%) AND price is at-or-near
+    rally top (52w_pos ≥ 70% OR 8w rally ≥ 15%). F9 (2026-05-26 audit) —
+    upper-wick reversal alone is too weak to downgrade (could be noise),
+    but combined with a stretched price = book's 매도세 출현 신호.
+    Distinct from is_post_rally_caution which needs the harder 52w ≥ 85%
+    threshold — this catches borderline post-rally where caution is due
+    but stricter gate doesn't fire."""
+    lc = result.get("last_candle") or {}
+    tags = lc.get("tags") or []
+    upper_wick = lc.get("upper_wick_pct")
+    REVERSAL_TAGS = {
+        "교수형", "그레이브스톤도지", "유성형", "역망치형", "눈썹캔들",
+    }
+    has_reversal = (
+        any(t in REVERSAL_TAGS for t in tags)
+        or (isinstance(upper_wick, (int, float)) and upper_wick > 0.4)
+    )
+    if not has_reversal:
+        return False
+    pos = result.get("position_in_52w")
+    rally = result.get("rally_8w_pct")
+    near_top = isinstance(pos, (int, float)) and pos >= 0.7
+    fast_rally = isinstance(rally, (int, float)) and rally >= 0.15
+    return near_top or fast_rally
+
+
 def is_post_rally_caution(result: Dict[str, Any]) -> bool:
     """Mirror of `isPostRallyCaution()`. True when at 52w high AND last
     8 weeks +10%+ AND last candle is upper-wick rejection OR price is
@@ -180,19 +235,42 @@ def compute_eligibility(result: Dict[str, Any]) -> Dict[str, Any]:
         fresh = _pick_fresh_bullish_pattern(result)
         stale_pattern = fresh is not None and fresh["runup_pct"] > 30
         post_rally = is_post_rally_caution(result)
+        # New gates from 2026-05-26 TOP-10 manual audit (book-rule
+        # parity). Order matters — strictest book-rule violations first
+        # so the downgrade reason names the most fundamental issue.
+        stretched_240 = is_240ma_stretched(result)
+        missing_monthly = is_monthly_240ma_missing(result)
+        candle_top = is_candle_reversal_at_top(result)
         ambush = (not stale_pattern and not post_rally
+                  and not stretched_240 and not missing_monthly
+                  and not candle_top
                   and is_ambush_setup(result))
-        if ambush or stale_pattern or post_rally:
-            reason = (
-                "박스권 횡보 중 (포킹 발사 대기)" if ambush
-                else "이미 매수 자리 한참 지남" if stale_pattern
-                else "랠리 후 조정 (반전 위험)"
-            )
-            reason_code = (
-                "ambush" if ambush
-                else "stale" if stale_pattern
-                else "post_rally"
-            )
+        downgrade = (
+            ambush or stale_pattern or post_rally
+            or stretched_240 or missing_monthly or candle_top
+        )
+        if downgrade:
+            if stretched_240:
+                reason = "240MA 대비 +50% 위 — 책의 신규 진입 영역 벗어남"
+                reason_code = "stretched_240"
+            elif missing_monthly:
+                reason = (
+                    "월봉 240MA 미계산 — 책의 핵심 안전 게이트 누락 "
+                    "(신규 상장 / 장기 차트 부족)"
+                )
+                reason_code = "missing_monthly_240"
+            elif post_rally:
+                reason = "랠리 후 조정 (반전 위험)"
+                reason_code = "post_rally"
+            elif candle_top:
+                reason = "마지막 캔들 반전 신호 + 랠리 끝 (위꼬리 음봉 / 교수형 / 도지)"
+                reason_code = "candle_top"
+            elif stale_pattern:
+                reason = "이미 매수 자리 한참 지남"
+                reason_code = "stale"
+            else:
+                reason = "박스권 횡보 중 (포킹 발사 대기)"
+                reason_code = "ambush"
             return {
                 "grade": "CONDITIONAL",
                 "icon": "⚠️",

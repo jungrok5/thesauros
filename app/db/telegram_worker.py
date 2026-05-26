@@ -300,6 +300,7 @@ _SIGNAL_LABELS: Dict[str, Dict[str, str]] = {
     "pattern_inverse_head_and_shoulders": {"name": "역H&S",       "dir": "bull", "phrase": "역헤드앤숄더 매수 반전 패턴"},
     "pattern_forking":                    {"name": "포킹",         "dir": "bull", "phrase": "포킹 — 상승 분기 매수"},
     "pattern_cup_with_handle":            {"name": "컵핸들",       "dir": "bull", "phrase": "컵 위드 핸들 매수 추세 지속"},
+    "pattern_ma240_breakout":             {"name": "240MA 돌파",   "dir": "bull", "phrase": "240MA 돌반지 — 책의 돌파매매 옥석"},
     # bearish patterns
     "pattern_double_top":                 {"name": "쌍천장",       "dir": "bear", "phrase": "쌍천장 매도 반전 패턴"},
     "pattern_triple_top":                 {"name": "삼중천장",     "dir": "bear", "phrase": "삼중천장 매도 반전 패턴"},
