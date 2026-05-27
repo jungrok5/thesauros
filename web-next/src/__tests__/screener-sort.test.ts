@@ -110,4 +110,45 @@ describe("sortByBookSpirit", () => {
     ]);
     expect(out[0].ticker).toBe("OK_MICRO.KS");
   });
+
+  it("L2 — sort+slice(50) picks true top by L2 even when input > 50 (RPC limit-50 bug, 2026-05-27)", () => {
+    // Regression: page.tsx originally called RPC with p_limit=50. When
+    // ~177 rows saturate at book_score=1.0, the RPC's secondary sort
+    // (ROE tiebreak) silently picks 50 candidates *before* the JS L2
+    // sort ever sees the true winner. Dev-server dump (2026-05-27)
+    // showed LX홀딩스 (L2=0.984) missing from the page, with
+    // 인터로조 (L2=0.933) at rank 1. Fix: raise RPC limit + slice
+    // top-50 in JS *after* L2 sort.
+    //
+    // This test pins the JS-side guarantee: given a pool > 50 with the
+    // true L2 winner at position 60, sort+slice(50) must include it
+    // and rank it first.
+    const peak = 5.48e11; // tent peak
+    const pool: SortableHit[] = [];
+    // 55 OK-tier filler rows: same book=1.0, microcap (cap_q=0)
+    for (let i = 0; i < 55; i++) {
+      pool.push(hit(`F${i.toString().padStart(2, "0")}.KS`, {
+        book_score: 1.0,
+        market_cap: 1e10, // 100억 → cap_q=0 → L2=0.8
+        roe: 0.1,
+      }));
+    }
+    // The true L2 winner — placed at position 60 in input order.
+    pool.push(hit("WINNER.KS", {
+      book_score: 1.0,
+      market_cap: peak,    // cap_q=1.0 → L2=1.0
+      roe: 0.05,
+    }));
+    // 5 more filler rows.
+    for (let i = 55; i < 60; i++) {
+      pool.push(hit(`F${i.toString().padStart(2, "0")}.KS`, {
+        book_score: 1.0,
+        market_cap: 1e10,
+        roe: 0.1,
+      }));
+    }
+    const sortedTop50 = sortByBookSpirit(pool).slice(0, 50);
+    expect(sortedTop50[0].ticker).toBe("WINNER.KS");
+    expect(sortedTop50).toHaveLength(50);
+  });
 });

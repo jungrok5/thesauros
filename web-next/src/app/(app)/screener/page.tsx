@@ -156,7 +156,13 @@ async function runPreset(
     p_action: null,
     p_action_in: f.actionIn ?? null,
     p_book_score_min: f.bookScoreMin ?? null,
-    p_limit: 50,
+    // p_limit=300 (not 50): RPC pre-sorts by book_score only, and ~177
+    // tickers saturate at book_score=1.0 (2026-05-27). If we cap at 50
+    // server-side, the true L2 winner can be dropped via the RPC's ROE
+    // tiebreak before the JS L2 re-sort sees it. 300 covers the full
+    // STRONG_BUY+BUY universe (~283 with book_score >= 0.7) so the JS
+    // sort below picks correctly.
+    p_limit: 300,
     p_quarter_zone: sub.zone,
     p_volume_surge: sub.volSurge ? true : null,
     p_catalyst_max_weeks: sub.catalystMax,
@@ -302,9 +308,11 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
     distribution.avoid + distribution.none;
   // preset 이 actionIn=[STRONG_BUY,BUY] 강제 → 결과 항상 매수 신호.
   // 별도 buy_only toggle 불필요 (2026-05-25 site-direction reset).
-  // 책정신 단일 정렬 (eligibility > book_score > catalyst > ROE) —
-  // 2026-05-26 정렬 옵션 제거 reform.
-  const hits = sortByBookSpirit(allHits);
+  // 책정신 단일 정렬 (eligibility > L2 score > catalyst > ROE) —
+  // 2026-05-26 정렬 옵션 제거 reform + 2026-05-27 L2 mid-cap sweet.
+  // RPC returns up to 300 (book_score=1.0 saturates for ~177 rows);
+  // JS L2 sort selects true top-50 across the full candidate set.
+  const hits = sortByBookSpirit(allHits).slice(0, 50);
 
   return (
     <div className="space-y-6 max-w-5xl">
