@@ -491,7 +491,15 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
                 25% 깨지면 책 정신상 손절.
               </li>
             </ul>
-            <BookChart ticker={ticker} timeframe="weekly" years={5} />
+            <BookChart
+              ticker={ticker}
+              timeframe="weekly"
+              years={5}
+              eligibilityGrade={
+                (result?.eligibility?.grade as
+                  | "OK" | "CONDITIONAL" | "WATCH" | "AVOID" | undefined) ?? null
+              }
+            />
           </section>
 
           {/* ─────────────────────────────────────────────────────────

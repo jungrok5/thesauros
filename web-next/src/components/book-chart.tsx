@@ -113,9 +113,25 @@ interface Props {
   timeframe?: Timeframe;
   years?: number;
   height?: number;
+  /** Eligibility grade from analyze_results — when "OK" the chart marks
+   *  the latest bar with a ✅ "매수 자리" 마커. Other grades render no
+   *  extra marker (the existing pattern markers still appear). */
+  eligibilityGrade?: "OK" | "CONDITIONAL" | "WATCH" | "AVOID" | null;
 }
 
-export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, height }: Props) {
+// 2026-05-28 Quick Win: 차트가 처음 뜰 때 MA 20/60/120 은 숨김.
+// 책 정신상 핵심은 단기 (10MA) + 장기 (240MA) 두 선. 5개 다 켜져있으면
+// 시각 noise → 사용자가 어느 게 어느 건지 매번 헷갈림. 사용자는 legend
+// 클릭으로 언제든 다른 MA 도 켤 수 있음.
+const DEFAULT_HIDDEN_MAS = new Set(["ma_20", "ma_60", "ma_120"]);
+
+export function BookChart({
+  ticker,
+  timeframe: initialTf = "weekly",
+  years = 5,
+  height,
+  eligibilityGrade = null,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [tf, setTf] = useState<Timeframe>(initialTf);
@@ -133,7 +149,9 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
     volume?: number;
   } | null>(null);
   // Hidden MAs — let users declutter the chart.
-  const [hiddenMAs, setHiddenMAs] = useState<Set<string>>(new Set());
+  const [hiddenMAs, setHiddenMAs] = useState<Set<string>>(
+    () => new Set(DEFAULT_HIDDEN_MAS),
+  );
 
   // Sizing: bigger default than before (was 320/480 → now 480/640),
   // fullscreen uses ~80vh.
@@ -338,17 +356,83 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
         candleSeries.createPriceLine({ price: ql.price_low,  color: QUARTER_COLORS.low,  lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "0%" });
       }
 
-      // Pattern entry/stop/target lines (most recent completed only).
+      // Pattern entry/stop/target — 2026-05-28 Quick Win: replace 3 thin
+      // price lines with shaded BANDS so the user sees "수익 zone (entry
+      // → target)" 초록 + "손실 zone (entry → stop)" 빨강 at a glance.
+      // The entry line itself stays as a bold horizontal line; the band
+      // fill comes from AreaSeries whose data line is at constant
+      // target/stop level and baseValue is fixed at entry.
       const latest = data.patterns[0];
-      if (latest && candleSeries) {
+      if (latest && candleSeries && data.bars.length > 0) {
         if (latest.entry != null) {
-          candleSeries.createPriceLine({ price: latest.entry, color: "#22c55e", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: `진입 ${latest.kind}` });
+          candleSeries.createPriceLine({
+            price: latest.entry, color: "#22c55e",
+            lineWidth: 2, lineStyle: 0,    // solid bold
+            axisLabelVisible: true, title: `진입 ${latest.kind}`,
+          });
         }
-        if (latest.stop != null) {
-          candleSeries.createPriceLine({ price: latest.stop, color: "#ef4444", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "손절" });
+        // Time range for band fill — from the bar where the pattern fired
+        // (or first bar if detected_at missing) through the latest bar.
+        // AreaSeries needs a time-series of data; for a flat horizontal
+        // band we send the same constant value at every bar in range.
+        let bandStartIdx = 0;
+        if (latest.detected_at) {
+          const sec = Math.floor(Date.parse(latest.detected_at) / 1000);
+          const idx = data.bars.findIndex((b) => b.t >= sec);
+          if (idx >= 0) bandStartIdx = idx;
         }
-        if (latest.target != null) {
-          candleSeries.createPriceLine({ price: latest.target, color: "#0ea5e9", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "목표" });
+        const bandTimes = data.bars.slice(bandStartIdx).map((b) => b.t as Time);
+        // 수익 zone band (entry → target): light green fill above entry.
+        // BaselineSeries fills the area between its data line and the
+        // baseValue price level. We plot a constant horizontal line at
+        // `target` and set baseValue = entry → above-baseline fill
+        // covers entry→target as a green band.
+        if (latest.target != null && latest.entry != null) {
+          const targetBand = chart!.addSeries(lwc.BaselineSeries, {
+            baseValue: { type: "price", price: latest.entry },
+            topLineColor: "rgba(34, 197, 94, 0.6)",
+            topFillColor1: "rgba(34, 197, 94, 0.25)",
+            topFillColor2: "rgba(34, 197, 94, 0.04)",
+            bottomLineColor: "rgba(34, 197, 94, 0)",
+            bottomFillColor1: "rgba(34, 197, 94, 0)",
+            bottomFillColor2: "rgba(34, 197, 94, 0)",
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          targetBand.setData(
+            bandTimes.map((t) => ({ time: t, value: latest.target! })),
+          );
+          candleSeries.createPriceLine({
+            price: latest.target, color: "#0ea5e9",
+            lineWidth: 1, lineStyle: 1,    // dashed thin
+            axisLabelVisible: true, title: "목표",
+          });
+        }
+        // 손실 zone band (entry → stop): light red fill below entry.
+        if (latest.stop != null && latest.entry != null) {
+          const stopBand = chart!.addSeries(lwc.BaselineSeries, {
+            baseValue: { type: "price", price: latest.entry },
+            topLineColor: "rgba(239, 68, 68, 0)",
+            topFillColor1: "rgba(239, 68, 68, 0)",
+            topFillColor2: "rgba(239, 68, 68, 0)",
+            bottomLineColor: "rgba(239, 68, 68, 0.6)",
+            bottomFillColor1: "rgba(239, 68, 68, 0.04)",
+            bottomFillColor2: "rgba(239, 68, 68, 0.25)",
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          stopBand.setData(
+            bandTimes.map((t) => ({ time: t, value: latest.stop! })),
+          );
+          candleSeries.createPriceLine({
+            price: latest.stop, color: "#ef4444",
+            lineWidth: 1, lineStyle: 1,    // dashed thin
+            axisLabelVisible: true, title: "손절",
+          });
         }
       }
 
@@ -357,12 +441,25 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
       // price lines from the latest pattern; users couldn't see "어디서"
       // (which bar) the pattern fired. Cap at the most recent ~6 markers
       // to keep the chart readable. (2026-05-26 site review.)
-      if (candleSeries && data.patterns.length > 0) {
+      //
+      // 2026-05-28 Quick Win: when eligibility="OK", add an extra big
+      // ✅ marker on the latest bar — "여기가 그 자리" 표시. Sits ABOVE
+      // the bar so it doesn't collide with the existing belowBar arrows
+      // from bullish pattern markers.
+      if (candleSeries && (data.patterns.length > 0 || eligibilityGrade === "OK")) {
         // Match each pattern's detected_at (ISO date) to the nearest bar.
         // detected_at is a single date, bars[].t is a unix second; we look
         // for the bar whose t >= parsed date, or fall back to the last bar.
         const barTimes = data.bars.map((b) => b.t);
-        const markers = data.patterns
+        type MarkerShape = "arrowUp" | "arrowDown" | "circle" | "square";
+        interface ChartMarker {
+          time: Time;
+          position: "belowBar" | "aboveBar";
+          color: string;
+          shape: MarkerShape;
+          text: string;
+        }
+        const markers: ChartMarker[] = data.patterns
           .filter((p) => p.detected_at)
           .slice(0, 6)   // most recent N — chart legibility
           .map((p) => {
@@ -375,12 +472,25 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
             const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind.replace(/^pattern_/, "");
             return {
               time,
-              position: (isBull ? "belowBar" : "aboveBar") as "belowBar" | "aboveBar",
+              position: isBull ? "belowBar" : "aboveBar",
               color: isBull ? "#22c55e" : "#ef4444",
-              shape: (isBull ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown",
+              shape: isBull ? "arrowUp" : "arrowDown",
               text: `${label} ${(p.confidence * 100).toFixed(0)}%`,
             };
           });
+        // "매수 자리" 마커: 차트가 결정 보조 surface 가 되도록 — 차트만
+        // 봐도 "지금 이 봉이 책 정신상 매수 자리" 표시. eligibility "OK"
+        // 일 때만, 최신 봉에 큰 ✅ 부착.
+        if (eligibilityGrade === "OK" && data.bars.length > 0) {
+          const lastBar = data.bars[data.bars.length - 1];
+          markers.push({
+            time: lastBar.t as Time,
+            position: "aboveBar",
+            color: "#10b981",   // emerald — 매수 자리
+            shape: "circle",
+            text: "✅ 매수 자리",
+          });
+        }
         if (markers.length > 0) {
           // v5 API — separate function; ignored gracefully if older bundle.
           try {
@@ -465,6 +575,35 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
 
   const latestPattern = useMemo(() => data?.patterns?.[0], [data]);
 
+  // 정배열 (trend alignment) badge — 2026-05-28 Quick Win.
+  // 책 정신상 핵심: 가격이 MA10 위 + MA10 이 MA240 위 = 정배열 (상승 추세).
+  // 차트 우측 상단에 ✅/⚠️/❌ chip 으로 한 글자 결론. 사용자가 차트
+  // 자세히 안 봐도 추세 상태 즉시 인지.
+  const alignment = useMemo(() => {
+    if (!data?.bars?.length || !data.mas) return null;
+    const lastBar = data.bars[data.bars.length - 1];
+    const close = lastBar.close;
+    const ma10arr = (data.mas.ma_10 ?? []) as MAPoint[];
+    const ma240arr = (data.mas.ma_240 ?? []) as MAPoint[];
+    const ma10 = ma10arr.length ? ma10arr[ma10arr.length - 1].value : null;
+    const ma240 = ma240arr.length ? ma240arr[ma240arr.length - 1].value : null;
+    if (ma10 == null || ma240 == null) return null;
+    const priceAbove10 = close > ma10;
+    const ma10AboveMa240 = ma10 > ma240;
+    if (priceAbove10 && ma10AboveMa240) {
+      return { label: "정배열 ✅", tone: "bull" as const,
+               hint: "가격 > 10MA > 240MA · 상승 추세" };
+    }
+    if (!priceAbove10 && !ma10AboveMa240) {
+      return { label: "역배열 ❌", tone: "bear" as const,
+               hint: "가격 < 10MA < 240MA · 하락 추세" };
+    }
+    return { label: "혼조 ⚠️", tone: "mix" as const,
+             hint: priceAbove10
+               ? "가격은 10MA 위지만 10MA < 240MA · 단기 반등"
+               : "10MA > 240MA 지만 가격 < 10MA · 단기 조정" };
+  }, [data]);
+
   const content = (
     <div className="space-y-3" data-testid="book-chart">
       {/* Top bar: timeframe + range presets + fullscreen + pattern badge */}
@@ -516,15 +655,32 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
             <span className="hidden sm:inline">{fullscreen ? "원래 크기" : "크게 보기"}</span>
           </button>
         </div>
-        {latestPattern && (
-          <div className="text-xs text-muted-foreground">
-            <span className="font-medium">{latestPattern.kind}</span>
-            {" · "}
-            <span>신뢰도 {(latestPattern.confidence * 100).toFixed(0)}%</span>
-            {" · "}
-            <span>{latestPattern.direction === "bullish" ? "🟢 상승" : "🔴 하락"}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          {alignment && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium ${
+                alignment.tone === "bull"
+                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40"
+                  : alignment.tone === "bear"
+                  ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/40"
+                  : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/40"
+              }`}
+              title={alignment.hint}
+              data-testid="trend-alignment"
+            >
+              {alignment.label}
+            </span>
+          )}
+          {latestPattern && (
+            <span className="text-muted-foreground">
+              <span className="font-medium">
+                {PATTERN_MARKER_LABEL[latestPattern.kind] ?? latestPattern.kind}
+              </span>
+              {" · "}
+              <span>신뢰도 {(latestPattern.confidence * 100).toFixed(0)}%</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Chart container with OHLC tooltip overlay */}
@@ -603,9 +759,10 @@ export function BookChart({ ticker, timeframe: initialTf = "weekly", years = 5, 
           20MA Vol (책: 평균 대비 3배+ = 폭증)
         </span>
         <span className="ml-auto text-[10px] text-muted-foreground/70 leading-tight">
-          💡 마우스 휠 = 확대·축소 · 드래그 = 좌우 이동 · 더블클릭 = 자동 맞춤
+          💡 휠 확대·축소 / 드래그 이동 / 더블클릭 자동맞춤 — 다른 MA 는 위 버튼 클릭
           <br />
-          📌 분석 결론은 위쪽 정리표를 참고 — 이 차트는 정리표의 결론을 시각적으로 검증하는 용도
+          🟢 초록 영역 = 목표가까지 수익 zone / 🔴 빨강 영역 = 손절가까지 손실 zone
+          {" · "}✅ 매수 자리 마커 = 책 정신상 진입 가능 자리
         </span>
       </div>
     </div>
