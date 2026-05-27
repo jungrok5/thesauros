@@ -152,6 +152,11 @@ export function BookChart({
   const [hiddenMAs, setHiddenMAs] = useState<Set<string>>(
     () => new Set(DEFAULT_HIDDEN_MAS),
   );
+  // 2026-05-28 — which pattern's entry/stop/target bands are active.
+  // Default = 0 (top-sorted by backend). User can click another chip in
+  // the pattern picker to switch overlays. Reset on data change.
+  const [activePatternIdx, setActivePatternIdx] = useState<number>(0);
+  useEffect(() => { setActivePatternIdx(0); }, [data]);
 
   // Sizing: bigger default than before (was 320/480 → now 480/640),
   // fullscreen uses ~80vh.
@@ -356,32 +361,29 @@ export function BookChart({
         candleSeries.createPriceLine({ price: ql.price_low,  color: QUARTER_COLORS.low,  lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "0%" });
       }
 
-      // Pattern entry/stop/target — 2026-05-28 Quick Win: replace 3 thin
-      // price lines with shaded BANDS so the user sees "수익 zone (entry
-      // → target)" 초록 + "손실 zone (entry → stop)" 빨강 at a glance.
-      // The entry line itself stays as a bold horizontal line; the band
-      // fill comes from AreaSeries whose data line is at constant
-      // target/stop level and baseValue is fixed at entry.
-      const latest = data.patterns[0];
+      // Pattern entry/stop/target — 2026-05-28 v2: bands span the FULL
+      // chart width (not just from detected_at to end — that was clustering
+      // the entire fill at the right edge per user feedback). The entry/
+      // target/stop levels are TIME-INVARIANT trade levels; the only
+      // time-specific concept is "when was the pattern detected", which
+      // remains the pattern marker (▲ arrow) on its bar.
+      //
+      // Which pattern's bands are shown = activePatternIdx (user picks
+      // via pattern chips in the header). Defaults to 0 (top-sorted).
+      const latest = data.patterns[activePatternIdx] ?? data.patterns[0];
       if (latest && candleSeries && data.bars.length > 0) {
         if (latest.entry != null) {
+          const labelKr = PATTERN_MARKER_LABEL[latest.kind] ?? latest.kind;
           candleSeries.createPriceLine({
             price: latest.entry, color: "#22c55e",
             lineWidth: 2, lineStyle: 0,    // solid bold
-            axisLabelVisible: true, title: `진입 ${latest.kind}`,
+            axisLabelVisible: true, title: `진입 ${labelKr}`,
           });
         }
-        // Time range for band fill — from the bar where the pattern fired
-        // (or first bar if detected_at missing) through the latest bar.
-        // AreaSeries needs a time-series of data; for a flat horizontal
-        // band we send the same constant value at every bar in range.
-        let bandStartIdx = 0;
-        if (latest.detected_at) {
-          const sec = Math.floor(Date.parse(latest.detected_at) / 1000);
-          const idx = data.bars.findIndex((b) => b.t >= sec);
-          if (idx >= 0) bandStartIdx = idx;
-        }
-        const bandTimes = data.bars.slice(bandStartIdx).map((b) => b.t as Time);
+        // Bands cover EVERY bar in the chart so the green/red fill is
+        // a horizontal stripe across the whole visible range, not a
+        // narrow triangle at the right edge.
+        const bandTimes = data.bars.map((b) => b.t as Time);
         // 수익 zone band (entry → target): light green fill above entry.
         // BaselineSeries fills the area between its data line and the
         // baseValue price level. We plot a constant horizontal line at
@@ -561,8 +563,9 @@ export function BookChart({
       chartRef.current = null;
     };
     // hiddenMAs intentionally a dep so toggle re-renders.
+    // activePatternIdx in deps so pattern picker switches bands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, chartHeight, hiddenMAs]);
+  }, [data, chartHeight, hiddenMAs, activePatternIdx, eligibilityGrade]);
 
   const toggleMA = (key: string) => {
     setHiddenMAs((prev) => {
@@ -572,8 +575,6 @@ export function BookChart({
       return next;
     });
   };
-
-  const latestPattern = useMemo(() => data?.patterns?.[0], [data]);
 
   // 정배열 (trend alignment) badge — 2026-05-28 Quick Win.
   // 책 정신상 핵심: 가격이 MA10 위 + MA10 이 MA240 위 = 정배열 (상승 추세).
@@ -655,33 +656,58 @@ export function BookChart({
             <span className="hidden sm:inline">{fullscreen ? "원래 크기" : "크게 보기"}</span>
           </button>
         </div>
-        <div className="flex items-center gap-2 flex-wrap text-xs">
-          {alignment && (
-            <span
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium ${
-                alignment.tone === "bull"
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40"
-                  : alignment.tone === "bear"
-                  ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/40"
-                  : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/40"
-              }`}
-              title={alignment.hint}
-              data-testid="trend-alignment"
-            >
-              {alignment.label}
-            </span>
-          )}
-          {latestPattern && (
-            <span className="text-muted-foreground">
-              <span className="font-medium">
-                {PATTERN_MARKER_LABEL[latestPattern.kind] ?? latestPattern.kind}
-              </span>
-              {" · "}
-              <span>신뢰도 {(latestPattern.confidence * 100).toFixed(0)}%</span>
-            </span>
-          )}
-        </div>
+        {alignment && (
+          <span
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
+              alignment.tone === "bull"
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40"
+                : alignment.tone === "bear"
+                ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/40"
+                : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/40"
+            }`}
+            title={alignment.hint}
+            data-testid="trend-alignment"
+          >
+            {alignment.label}
+          </span>
+        )}
       </div>
+
+      {/* Pattern picker — chips for every detected pattern. Clicking a
+          chip switches which pattern's entry/stop/target bands draw on
+          the chart. Default = top-sorted (data.patterns[0]). 2026-05-28
+          per user feedback: "라벨 선택하면 패턴이 오버레이돼서 그려져야". */}
+      {data?.patterns && data.patterns.length > 0 && (
+        <div className="flex items-start gap-2 flex-wrap text-xs">
+          <span className="text-muted-foreground mt-1 shrink-0">📍 패턴 선택:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {data.patterns.slice(0, 8).map((p, i) => {
+              const active = i === activePatternIdx;
+              const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind;
+              const isBull = p.direction === "bullish";
+              return (
+                <button
+                  key={`${p.kind}-${p.detected_at}-${i}`}
+                  type="button"
+                  onClick={() => setActivePatternIdx(i)}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium transition-all ${
+                    active
+                      ? isBull
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/60 shadow-sm"
+                        : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/60 shadow-sm"
+                      : "bg-muted/40 text-muted-foreground border-input hover:bg-muted"
+                  }`}
+                  title={`${label} (${isBull ? "상승" : "하락"}) · 신뢰도 ${(p.confidence * 100).toFixed(0)}%`}
+                >
+                  <span>{isBull ? "🟢" : "🔴"}</span>
+                  <span>{label}</span>
+                  <span className="opacity-70">{(p.confidence * 100).toFixed(0)}%</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Chart container with OHLC tooltip overlay */}
       <div className="rounded-lg border border-border overflow-hidden bg-card relative">
