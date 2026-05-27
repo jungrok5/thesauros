@@ -154,9 +154,14 @@ export function BookChart({
   );
   // 2026-05-28 — which pattern's entry/stop/target bands are active.
   // Default = 0 (top-sorted by backend). User can click another chip in
-  // the pattern picker to switch overlays. Reset on data change.
+  // the pattern picker to switch overlays. We clamp to the available
+  // pattern count in render rather than reset via useEffect (the latter
+  // trips react-hooks/set-state-in-effect for cascading-renders risk).
   const [activePatternIdx, setActivePatternIdx] = useState<number>(0);
-  useEffect(() => { setActivePatternIdx(0); }, [data]);
+  const patternCount = data?.patterns?.length ?? 0;
+  const clampedActiveIdx = patternCount > 0
+    ? Math.min(Math.max(activePatternIdx, 0), patternCount - 1)
+    : 0;
 
   // Sizing: bigger default than before (was 320/480 → now 480/640),
   // fullscreen uses ~80vh.
@@ -370,7 +375,7 @@ export function BookChart({
       //
       // Which pattern's bands are shown = activePatternIdx (user picks
       // via pattern chips in the header). Defaults to 0 (top-sorted).
-      const latest = data.patterns[activePatternIdx] ?? data.patterns[0];
+      const latest = data.patterns[clampedActiveIdx] ?? data.patterns[0];
       if (latest && candleSeries && data.bars.length > 0) {
         if (latest.entry != null) {
           const labelKr = PATTERN_MARKER_LABEL[latest.kind] ?? latest.kind;
@@ -563,9 +568,9 @@ export function BookChart({
       chartRef.current = null;
     };
     // hiddenMAs intentionally a dep so toggle re-renders.
-    // activePatternIdx in deps so pattern picker switches bands.
+    // clampedActiveIdx in deps so pattern picker switches bands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, chartHeight, hiddenMAs, activePatternIdx, eligibilityGrade]);
+  }, [data, chartHeight, hiddenMAs, clampedActiveIdx, eligibilityGrade]);
 
   const toggleMA = (key: string) => {
     setHiddenMAs((prev) => {
@@ -682,7 +687,7 @@ export function BookChart({
           <span className="text-muted-foreground mt-1 shrink-0">📍 패턴 선택:</span>
           <div className="flex flex-wrap gap-1.5">
             {data.patterns.slice(0, 8).map((p, i) => {
-              const active = i === activePatternIdx;
+              const active = i === clampedActiveIdx;
               const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind;
               const isBull = p.direction === "bullish";
               return (
