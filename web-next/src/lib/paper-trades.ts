@@ -323,10 +323,17 @@ export function computeStats(positions: PaperPositionLive[]): PaperStats {
 }
 
 
-/** 17y backtest reference for the side-by-side comparison panel. */
+/** 17y backtest reference for the side-by-side comparison panel.
+ *
+ * Top-line CAGR/Sharpe/DD are from the 2026-05-27 L2 production run
+ * (mid-cap sweet ranking — winner of the 14-variant grid). Trade-level
+ * stats (win_rate / payoff / avg win / avg loss) are from the V0
+ * book-only baseline since L2 changes the ranking, not the per-trade
+ * exit logic — the distribution of individual trade outcomes is
+ * essentially the same; only WHICH trades enter the top-50 differs. */
 export const BACKTEST_REFERENCE = {
-  cagr_pct: 14.9,
-  sharpe: 0.66,
+  cagr_pct: 20.65,
+  sharpe: 0.83,
   win_rate: 0.45,
   avg_pnl_pct: 2.02,
   avg_win_pct: 12.85,

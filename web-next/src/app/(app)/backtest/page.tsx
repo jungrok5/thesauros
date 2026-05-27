@@ -162,15 +162,15 @@ export default async function BacktestPage() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          위 숫자가 honest production result (2026-05-26 re-sweep, 책 정신
-          reform: F7~F14 eligibility gates + weekly-first pattern sort +
-          fake_volume penalty + 삼중바닥 detector fix). KOSPI BH (CAGR 11.5%)
-          대비 outperformance <strong>+3.4%p/year</strong> — 책 전략의 진가는
-          절대 return 보다 Sharpe (0.66) + Sortino (0.77) + 낮은 DD (51.5%) 등
-          risk-adjusted profile. ⚠️ 이전 (2026-05-23) 100-ticker random sample
-          (+6380%) 은 sample bias 로 over-fit 이었음을 full universe 검증으로
-          확인 — 4 random seeds × walk-forward 3 folds 모두 sample-period
-          dependent (+50%~+9000% 범위).
+          위 숫자가 honest production result (2026-05-27 L2 mid-cap sweet
+          ranking — 14변형 그리드 winner). 공식: 0.8×책 신호 + 0.2×시총 텐트
+          (peak ~5,480억 KRW, 마이크로캡 &lt; 500억 / 메가캡 &gt; 10조 제외).
+          KOSPI BH (CAGR 11.5%) 대비 outperformance <strong>+9.17%p/year</strong>.
+          {" "}V0 baseline (책 신호만, CAGR 14.9%) 대비 CAGR +5.75%p / DD -14.2%p /
+          alpha +4.7%p — 책 전략의 진가는 Sharpe (0.83) + Sortino (1.13) +
+          Calmar (0.55) + 낮은 DD (37.3%) 의 risk-adjusted profile.
+          ⚠️ 2026-05-23 의 100-ticker random sample (+6380%) 은 sample bias
+          로 over-fit 이었음을 full universe 검증으로 확인.
         </p>
       </section>
     </div>

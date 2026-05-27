@@ -278,9 +278,9 @@ export default async function DashboardPage() {
           "이 시스템 신뢰해도 돼?" so we surface it as a one-liner here
           with the link for users who want to dig in. */}
       <div className="pt-2 mt-2 border-t border-border/60 text-xs text-muted-foreground leading-relaxed">
-        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 2701 종목 universe) —{" "}
-        <span className="text-foreground">CAGR 14.9% · Sharpe 0.66 · DD 51.5%</span>
-        {" "}(KOSPI BH 대비 +3.4%p/y).
+        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 2701 종목 universe, L2 ranking) —{" "}
+        <span className="text-foreground">CAGR 20.65% · Sharpe 0.83 · DD 37.3%</span>
+        {" "}(KOSPI BH 대비 +9.17%p/y).
         {" "}
         <Link
           href="/backtest"

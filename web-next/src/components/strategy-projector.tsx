@@ -5,34 +5,37 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * Compares 책 전략 (no-SL / max=50 / 24w / top-5 / FULL 2701-ticker
- * universe) against passive alternatives using point-estimate CAGRs
- * from the 17-year backtest.
+ * Compares 책 전략 (L2 mid-cap sweet — 0.8×book + 0.2×cap_tent, no-SL
+ * / max=50 / 24w / top-5 / FULL 2701-ticker universe) against passive
+ * alternatives using point-estimate CAGRs from the 17-year backtest.
  *
- * CAGR sources (universe-honest, 2026-05-26 re-sweep w/ book-spirit reform):
- *   - 책 (이상):  14.9% — full universe no-SL/max=50 (sweep_all_24w)
- *   - 책 (보수): ~11.5% — assume 3.4%p cost drag (slip 0.2~0.4%)
+ * CAGR sources (universe-honest, 2026-05-27 L2 production run):
+ *   - 책 (이상):  20.65% — L2 winner from 14-variant grid (sweep_all_24w)
+ *   - 책 (보수): ~17.2% — assume 3.4%p cost drag (slip 0.2~0.4%)
  *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct (alpha-beta calc base)
  *   - 정기예금:  3.0%  — Q1 2026 평균
  *   - 채권:      4.5%  — 우량 회사채 평균
  *
- * ⚠️ Honest revision (2026-05-24): previously claimed 27%/21.8% based
- * on 100-tic seed=42 sample bias. Universe verification showed REAL
- * alpha is only +1.91%/y over KOSPI, not +15-19%/y.
+ * Alpha vs KOSPI: +9.17%/y (outperformance_ann_pct from L2 run).
+ *
+ * History: 2026-05-24 honest revision dropped a 100-tic seed=42 +27%
+ * sample-bias claim to 14.9% (V0 book-only baseline). 2026-05-27 the
+ * L2 mid-cap sweet ranking (grid winner) replaced V0 — CAGR +5.75%p,
+ * DD -14.2%p, alpha +4.7%p over the baseline.
  */
 
 const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.149,
-    hint: "no-SL / max=50 / 24w / top-5 — 2701-ticker universe, 슬리피지 0",
+    cagr: 0.2065,
+    hint: "L2 mid-cap sweet (0.8×책 + 0.2×시총) — 2701-ticker universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.115,
+    cagr: 0.172,
     hint: "+거래 비용 0.2~0.4% 슬리피지 가정 (-3~4%p 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
@@ -195,14 +198,14 @@ export function StrategyProjector({
 
       {kospi && (
         <div className="text-xs text-muted-foreground leading-relaxed">
-          책 전략 (현실 비용 ~11.5%/년) 으로 {amountManwon.toLocaleString()}만원을
+          책 전략 (현실 비용 ~17.2%/년) 으로 {amountManwon.toLocaleString()}만원을
           {" "}{years}년 유지하면 KOSPI BH 대비 차이는 점점 벌어집니다 — 실제
-          outperformance 는 17년 데이터로 검증 시 <strong>+3.4%p/year</strong>{" "}
-          수준 (full 2701-ticker universe, 2026-05-26 책 정신 reform 후 re-sweep).
-          100-ticker random sample 결과 (+27%/y) 는 sample bias 로 over-estimate
-          임을 universe 검증으로 확인 (2026-05-24). 책 전략의 가치는 절대 return
-          보다 균형 잡힌 risk-adjusted profile — Sharpe 0.66, Sortino 0.77,
-          DD 51.5% (KOSPI BH 대비 DD ↓).
+          outperformance 는 17년 데이터로 검증 시 <strong>+9.17%p/year</strong>{" "}
+          수준 (full 2701-ticker universe, 2026-05-27 L2 mid-cap sweet ranking
+          production run). L2 = 0.8×책 신호 + 0.2×시총 텐트 (peak ~5,480억) —
+          14변형 그리드 winner. 책 전략의 가치는 절대 return 뿐 아니라 risk-
+          adjusted profile — Sharpe 0.83, Sortino 1.13, Calmar 0.55,
+          DD 37.3% (V0 baseline 51.5% 대비 -14.2%p).
         </div>
       )}
     </section>

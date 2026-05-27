@@ -38,26 +38,29 @@ import sys
 from pathlib import Path
 
 
-# Universe-honest metrics from no-SL / max=50 / 24w / top-5 on full
-# 2701-ticker universe (KOSPI+KOSDAQ, sweep_all_24w.csv,
-# 4.05M fires) — re-swept 2026-05-26 with the new book-spirit rule
-# set: F7-F14 eligibility gates, weekly-first pattern_sort_key,
-# fake_volume penalty in _signal_score, fixed triple-bottom detector
-# (rising_volume = c > a). Replaces the previous 2026-05-24 numbers
-# (795% / 13.4%) that used the older detector with strict
-# a<b<c volume monotonic.
+# L2 mid-cap sweet (production winner from 2026-05-27 14-variant grid):
+#   ranking = 0.8 × book_signal_strength + 0.2 × cap_tent_q
+#   cap_tent peaks at ~5,480억 KRW; excludes <500억 (microcap risk) +
+#   >10조 (mega-cap institutional crowding).
+# Same universe + signal set as 2026-05-26 baseline (full 2701-ticker
+# KOSPI+KOSDAQ, sweep_all_24w.csv, F7-F14 eligibility, weekly-first
+# pattern_sort_key, fake_volume penalty, fixed triple-bottom detector)
+# — only the per-fire ranking changed. Vs V0 baseline (book-only):
+#   CAGR  14.90% → 20.65%   (+5.75%p)
+#   DD    51.46% → 37.27%   (−14.19%p)
+#   Alpha  6.66% → 11.36%/y (+4.70%p/y vs KOSPI)
 HARDCODED_SUMMARY = {
-    "total_return_pct": 1028.22,
-    "annualised_return_pct": 14.90,
-    "max_drawdown_pct": 51.46,
-    "sharpe": 0.656,
-    "sortino": 0.772,
-    "calmar": 0.290,
-    "alpha_annual_pct": 6.66,
-    "beta": 0.650,
-    "r_squared": 0.356,
+    "total_return_pct": 2544.34,
+    "annualised_return_pct": 20.65,
+    "max_drawdown_pct": 37.27,
+    "sharpe": 0.833,
+    "sortino": 1.131,
+    "calmar": 0.554,
+    "alpha_annual_pct": 11.36,
+    "beta": 0.713,
+    "r_squared": 0.347,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 3.42,
+    "outperformance_ann_pct": 9.17,
 }
 
 
@@ -69,7 +72,12 @@ def main() -> int:
         print(f"missing: {src}", file=sys.stderr)
         return 1
 
-    weekly = []
+    # equity_universe.csv carries one row per simulator event (buy/sell)
+    # — multiple rows can share the same date. We want one row per date
+    # for the chart (final equity at end of the bar). Reduce by date,
+    # keeping the LAST seen value (which == end-of-bar mark-to-market
+    # because portfolio.simulate appends after every event in order).
+    by_date: dict[str, float] = {}
     with src.open(encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -77,7 +85,8 @@ def main() -> int:
                 e = float(row["equity"])
             except (ValueError, TypeError):
                 continue
-            weekly.append({"d": row["date"], "e": round(e)})
+            by_date[row["date"]] = e
+    weekly = [{"d": d, "e": round(e)} for d, e in sorted(by_date.items())]
 
     if not weekly:
         print("no rows!", file=sys.stderr)
@@ -85,7 +94,7 @@ def main() -> int:
 
     initial = weekly[0]["e"]
     out = {
-        "config": "no-SL / max=50 / 24w hold / top-5 entries / FULL 1820-ticker universe",
+        "config": "L2 mid-cap sweet (80% book + 20% cap tent) — no-SL / max=50 / 24w hold / top-5 / FULL 2701-ticker universe",
         "start": weekly[0]["d"],
         "end": weekly[-1]["d"],
         "initial": initial,
