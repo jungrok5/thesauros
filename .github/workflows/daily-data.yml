@@ -90,11 +90,16 @@ jobs:
         # 책 5장: 거래량은 선행성. 외인+기관 5일 동행 매수 신호는 매일
         # 갱신해야 가치 있음 — 책 정신상 매매 결정은 주봉이지만, 이건
         # 선행 데이터 적재 (decision-grade 가 아닌 information).
+        #
+        # 2026-05-27 — pages 3→2, workers 8→12. 이전 default 가 30일치
+        # (3 pages × 10 entries) 를 가져오는데 retention 이 14일이라
+        # 절반은 적재 즉시 폐기. 17분 → ~7분 예상. job 30분 타임아웃
+        # 거의 다 먹어서 disclosure_alerts 가 cancel 되던 문제 해결.
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: python -m app.db.ingest_investor_flow
+        run: python -m app.db.ingest_investor_flow --pages 2 --workers 12
 
       - name: Disclosure alerts (DART 새 공시 → Telegram)
         # 이벤트성 알림 — 새 공시는 발생 시점이 곧 의미. 책 정신상 매매
