@@ -640,6 +640,7 @@ def publish(ticker: str, result: Dict[str, Any]) -> None:
                     passes_kang_value, passes_graham,
                     passes_magic_formula, passes_buffett,
                     value_score, growth_score, safety_score, quality_score,
+                    market_cap,
                     summary_text, updated_at
                 ) VALUES (
                     %s, %s, %s, %s, %s,
@@ -648,6 +649,7 @@ def publish(ticker: str, result: Dict[str, Any]) -> None:
                     %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
+                    %s,
                     %s, now()
                 )
                 ON CONFLICT (ticker) DO UPDATE SET
@@ -666,6 +668,7 @@ def publish(ticker: str, result: Dict[str, Any]) -> None:
                     growth_score = EXCLUDED.growth_score,
                     safety_score = EXCLUDED.safety_score,
                     quality_score = EXCLUDED.quality_score,
+                    market_cap = EXCLUDED.market_cap,
                     summary_text = EXCLUDED.summary_text,
                     updated_at = now()
                 """,
@@ -682,6 +685,7 @@ def publish(ticker: str, result: Dict[str, Any]) -> None:
                     gates["passes_magic_formula"], gates["passes_buffett"],
                     axis["value_score"], axis["growth_score"],
                     axis["safety_score"], axis["quality_score"],
+                    metrics.get("market_cap"),
                     result["summary"],
                 ),
             )

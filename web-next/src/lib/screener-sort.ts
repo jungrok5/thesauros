@@ -1,27 +1,28 @@
 /**
- * Book-spirit single sort for screener rows. Replaces the
- * applySort2 (2026-05-21 "5 sort options") UX after user feedback
- * (2026-05-26): "정렬 옵션 많고 뭐가 뭔지 모름 — 가장 책에 부합하는
- * 주식이 누군지 알 수 있게 정렬해줘."
+ * Book-spirit sort for screener rows.
  *
- * Priority (eligibility-first is the critical change vs old sort):
- *   1. eligibility grade  OK > CONDITIONAL > WATCH > AVOID > unknown
- *   2. book_score         DESC (signal strength)
- *   3. catalyst freshness ASC  (catalyst_bars_since, null = oldest)
- *   4. ROE                DESC (final tie-break)
- *   5. ticker             ASC  (stable)
+ * 2026-05-27 — replaced the secondary "book_score only" tier with the
+ * L2 mid-cap sweet score (winner of the 14-variant Phase 1-4 grid:
+ * CAGR +20.65%, DD 37.3%, Calmar 0.55, alpha +11.36%/y vs KOSPI).
+ * Formula lives in [[book-spirit-ranking]].
  *
- * Why eligibility outranks book_score:
- *   339950.KQ (책 점수 1.0, eligibility CONDITIONAL "박스권 횡보, 진입
- *   자리 X") was outranking 003650.KS (책 점수 1.0, eligibility OK
- *   "강한 매수 가능") because the old sort tie-broke on ROE. Book says
- *   신호 강도 만점이라도 진입 자리 아니면 매수 X — so the safety gate
- *   has to outrank signal score.
+ * Priority:
+ *   1. eligibility grade   OK > CONDITIONAL > WATCH > AVOID > unknown
+ *   2. bookSpiritScore     DESC (= 0.8×book_score + 0.2×cap_tent_q)
+ *   3. catalyst freshness  ASC  (catalyst_bars_since, null = oldest)
+ *   4. ROE                 DESC (final tie-break)
+ *   5. ticker              ASC  (stable)
  *
- * Unknown grade (legacy analyze_results rows pre-eligibility-pipeline)
- * ranks AS OK so they aren't punished for being old; the chip simply
- * won't render. Once everything is re-scanned this is moot.
+ * Why eligibility still outranks the L2 score: signal strength + mid-cap
+ * tilt say "good buy candidate"; eligibility (F7-F14 gates) say "we are
+ * actually at a buy spot". A 1.0 score at the wrong moment is still not
+ * a buy. Order = safety gate first, then ranking.
+ *
+ * Unknown grade ranks AS OK so legacy rows aren't punished; once
+ * everything is re-scanned this is moot.
  */
+
+import { bookSpiritScore } from "@/lib/book-spirit-ranking";
 
 export type EligibilityGrade = "OK" | "CONDITIONAL" | "WATCH" | "AVOID";
 
@@ -31,6 +32,7 @@ export interface SortableHit {
   roe: number | null;
   catalyst_bars_since: number | null;
   eligibility_grade?: EligibilityGrade | null;
+  market_cap?: number | null;
 }
 
 const GRADE_RANK: Record<EligibilityGrade, number> = {
@@ -45,8 +47,8 @@ export function sortByBookSpirit<T extends SortableHit>(hits: T[]): T[] {
     const ga = a.eligibility_grade ? GRADE_RANK[a.eligibility_grade] ?? 0 : 0;
     const gb = b.eligibility_grade ? GRADE_RANK[b.eligibility_grade] ?? 0 : 0;
     if (ga !== gb) return ga - gb;
-    const sa = a.book_score ?? 0;
-    const sb = b.book_score ?? 0;
+    const sa = bookSpiritScore(a.book_score, a.market_cap);
+    const sb = bookSpiritScore(b.book_score, b.market_cap);
     if (sa !== sb) return sb - sa;
     const ca = a.catalyst_bars_since ?? 999;
     const cb = b.catalyst_bars_since ?? 999;

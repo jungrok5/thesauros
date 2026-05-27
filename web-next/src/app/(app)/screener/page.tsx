@@ -82,6 +82,10 @@ type Hit = {
   // up front so the user doesn't click through expecting a clean buy.
   eligibility_grade?: "OK" | "CONDITIONAL" | "WATCH" | "AVOID" | null;
   eligibility_icon?: string | null;
+  // L2 mid-cap sweet (migration 053, 2026-05-27)
+  market_cap: number | null;
+  quality_score: number | null;
+  safety_score: number | null;
 };
 
 async function fetchEligibilityMap(
@@ -177,6 +181,9 @@ async function runPreset(
     volume_dir: string | null;
     quarter_zone: string | null;
     catalyst_bars_since: number | null;
+    market_cap: string | number | null;
+    quality_score: number | null;
+    safety_score: number | null;
   };
   const rpcRows = data as unknown as RpcRow[];
   return rpcRows.map((r) => ({
@@ -194,6 +201,9 @@ async function runPreset(
     volume_dir: r.volume_dir,
     quarter_zone: r.quarter_zone,
     catalyst_bars_since: r.catalyst_bars_since,
+    market_cap: numOrNull(r.market_cap),
+    quality_score: r.quality_score,
+    safety_score: r.safety_score,
   }));
 }
 
@@ -335,18 +345,23 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
               </span>
             </div>
 
-            {/* 한 줄 평 — 1위가 책에 가장 부합한다는 점 명시. 사용자 혼동
-                방지 (2026-05-26: book_score 1.0 / eligibility CONDITIONAL
-                인 종목이 OK 종목을 누르고 1위로 가던 문제). */}
+            {/* 한 줄 평 — 2026-05-27 L2 mid-cap sweet 채택 (17년 백테스트
+                14변형 grid winner: CAGR +20.65%, DD 37.3%, alpha +11.4%/y
+                vs KOSPI). 정렬 순서를 평문으로 설명 — 옵션 토글 없음. */}
             <div
               data-testid="screener-verdict"
               className="rounded-md bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm leading-relaxed"
             >
-              🥇 <strong>1위 = 책에 가장 부합</strong> — 매수 자리 안전
-              (🟢 OK) → 신호 강함 (1.00) → 신선도 → ROE 순.
+              🥇 <strong>1위 = 책에 가장 부합</strong> — 책에서 가르치는
+              매수 자리에 든 종목 중에서, <strong>시가총액 5,000억 안팎의
+              중형주</strong>를 우선 매수. 작전주 위험이 큰 동전주
+              (시총 &lt; 500억) 와 이미 기관이 다 들어가 있는 대형주
+              (시총 &gt; 10조) 는 제외.
               <span className="block text-xs text-muted-foreground mt-1">
-                조건부 / 관망 / 회피 chip 붙은 종목은 시스템 만점이라도
-                진입 자리 아님 — OK 종목 먼저 위에 옴.
+                17년 백테스트 기준 가장 좋은 결과를 낸 공식. 매수 자리
+                안전 등급 (🟢 OK) → 책 신호 × 80% + 중형주 점수 × 20%
+                → 신선도 → ROE 순. 조건부 / 관망 / 회피 chip 종목은
+                시스템 만점이라도 진입 자리 아님.
               </span>
             </div>
 

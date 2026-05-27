@@ -82,4 +82,32 @@ describe("sortByBookSpirit", () => {
     sortByBookSpirit(input);
     expect(input.map((h) => h.ticker)).toEqual(snapshot);
   });
+
+  it("L2 mid-cap sweet — same book_score, mid-cap beats microcap (2026-05-27)", () => {
+    // Two OK rows, identical book_score, but A is microcap-floor (cap_q=0)
+    // and B is at the tent peak (cap_q≈1). New ranking gives B a 0.2 bonus.
+    const out = sortByBookSpirit([
+      hit("MICRO.KQ", { book_score: 1.0, market_cap: 1e10 }),    // 100억 — below floor
+      hit("MIDCAP.KS", { book_score: 1.0, market_cap: 5.48e11 }), // ~peak
+    ]);
+    expect(out.map((h) => h.ticker)).toEqual(["MIDCAP.KS", "MICRO.KQ"]);
+  });
+
+  it("L2 — lower book_score with mid-cap can still beat higher book with microcap", () => {
+    // book 0.85 + cap 1.0 = 0.88 vs book 1.0 + cap 0 = 0.80 → mid-cap wins.
+    const out = sortByBookSpirit([
+      hit("HIGH_BOOK_MICRO.KQ", { book_score: 1.0, market_cap: 1e10 }),
+      hit("MID_BOOK_MIDCAP.KS", { book_score: 0.85, market_cap: 5.48e11 }),
+    ]);
+    expect(out[0].ticker).toBe("MID_BOOK_MIDCAP.KS");
+  });
+
+  it("L2 — eligibility still trumps the L2 score (OK micro beats CONDITIONAL mid-cap)", () => {
+    // Even if MICRO has worse L2 score, its OK grade ranks first.
+    const out = sortByBookSpirit([
+      hit("MID_COND.KQ", { book_score: 1.0, market_cap: 5.48e11, eligibility_grade: "CONDITIONAL" }),
+      hit("OK_MICRO.KS", { book_score: 0.6, market_cap: 1e10, eligibility_grade: "OK" }),
+    ]);
+    expect(out[0].ticker).toBe("OK_MICRO.KS");
+  });
 });
