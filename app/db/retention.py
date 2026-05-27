@@ -107,14 +107,16 @@ POLICIES: list[Policy] = [
         "scan_results",
         "DELETE FROM scan_results "
         "WHERE is_active = false "
-        "AND detected_at < CURRENT_DATE - INTERVAL '14 days'",
-        # Tightened 30→14d on 2026-05-22 — DB hit 89.5% of the 500MB
-        # Supabase free cap and scan_results is the fastest-growing
-        # table (~5,000 inactive rows/cron). 14d still covers the
-        # default "지난 2주" buckets the screener exposes; older
-        # is_active=false rows are dead weight (kept only for the
-        # detected_at preservation logic which always reads active=true).
-        "inactive ≥ 14 days",
+        "AND detected_at < CURRENT_DATE - INTERVAL '5 days'",
+        # Tightened 14→5d on 2026-05-27 — Daily Data Refresh failed
+        # with DB at 94% of 500MB cap. 14d cutoff only caught ~2k
+        # inactive rows/cron while ~70k inactive rows in the 5-14d
+        # window sat as dead weight (signals that fired but turned
+        # off within a week). 5d still covers "지난 한 주 신호" UX
+        # and shrank the table from 56MB → ~22MB.
+        # 14d→5d change: emergency cleanup deleted 71k rows + freed
+        # 35MB via VACUUM FULL scan_results.
+        "inactive ≥ 5 days",
     ),
     # theme_daily retention removed 2026-05-19 — tables dropped along
     # with /themes page in the search-only pivot.
