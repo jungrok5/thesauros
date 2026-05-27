@@ -14,9 +14,15 @@
  *   · If the user has an open position on this ticker → adds a BUY
  *     fill (추매) and updates the position's aggregates.
  *   · Otherwise → creates a new position + first BUY fill.
- *   · Also UPSERTs watchlist (category=holding, alerts_enabled=true)
- *     so the system signal alerts (enter/exit/warn/pyramid) start
- *     firing on the ticker.
+ *
+ * 2026-05-27 — does NOT touch watchlist. Earlier the route auto-
+ * upserted a `category='holding'` row "so pattern alerts start
+ * firing", which conflated 모의투자 (simulation) with the watchlist
+ * 보유 list and made paper positions show up in the holdings UI.
+ * Paper has its own alerts (initial_stop_loss / target via
+ * notify_paper_alerts). If a user wants enter/warn/exit/pyramid
+ * pattern alerts on a paper-bought ticker, they explicitly add it
+ * to watchlist from the stock detail page.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
@@ -154,21 +160,6 @@ export async function POST(req: NextRequest) {
   if (fillErr) {
     console.error("paper_fills insert (buy):", fillErr.message);
     return NextResponse.json({ error: "fill insert failed" }, { status: 500 });
-  }
-
-  // Auto-subscribe to system alerts via watchlist (category=holding).
-  // No-op when the user already watches/holds the ticker.
-  const { error: watchErr } = await sb
-    .from("watchlist")
-    .upsert({
-      user_id: userId,
-      ticker,
-      category: "holding",
-      alerts_enabled: true,
-      last_accessed_at: new Date().toISOString(),
-    }, { onConflict: "user_id,ticker" });
-  if (watchErr) {
-    console.error("watchlist upsert from paper buy:", watchErr.message);
   }
 
   return NextResponse.json({ position_id: positionId, side: "buy" });

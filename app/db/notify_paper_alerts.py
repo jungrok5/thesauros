@@ -108,18 +108,29 @@ def _format_message(kind: str, p: Dict[str, Any]) -> str:
     cur    = float(p["current_price"])
     pnl_pct = (cur / entry - 1) * 100 if entry > 0 else 0
     amt    = int(p["total_invested_krw"])
+    # [모의투자] source tag — mirrors the [관심]/[보유] tag the watchlist
+    # alerts use (2026-05-27 redesign). Tells users which list this
+    # came from so it doesn't get confused with real-money signals.
     if kind == "stop":
-        head = f"⚠️ <b>{ticker}</b> 주봉 10MA 손절선 도달"
+        head = f"⚠️ <b>[모의투자] {ticker}</b> 주봉 10MA 손절선 도달"
         body = (
             f"진입 {entry:,.0f}원 → 현재 {cur:,.0f}원 ({pnl_pct:+.1f}%)\n"
-            f"투자액 {amt//10_000:,}만원 · 책: 추세 사망 = 즉시 청산.\n"
+            f"투자액 {amt//10_000:,}만원\n\n"
+            f"👉 다음 단계:\n"
+            f"   1) 책: 추세 사망 = 원칙적으로 즉시 청산\n"
+            f"   2) 망설임 없이 손절. 다음 자리에서 다시 시작.\n\n"
+            f"📅 매수/매도 결정은 금요일 15:30 종가 기준 · 일중 흔들림 무시.\n"
             f"<a href=\"https://thesauros2026.vercel.app/paper\">/paper 에서 청산</a>"
         )
     else:
-        head = f"🎯 <b>{ticker}</b> 목표가 도달"
+        head = f"🎯 <b>[모의투자] {ticker}</b> 목표가 도달"
         body = (
             f"진입 {entry:,.0f}원 → 현재 {cur:,.0f}원 ({pnl_pct:+.1f}%)\n"
-            f"투자액 {amt//10_000:,}만원 · 책: 일부 익절 검토, 추세 살아있으면 보유.\n"
+            f"투자액 {amt//10_000:,}만원\n\n"
+            f"👉 다음 단계:\n"
+            f"   1) 책: 일부 익절 검토 (50% 매도 권장)\n"
+            f"   2) 추세 살아있으면 나머지 보유, 손절선 끌어올리기\n\n"
+            f"📅 매수/매도 결정은 금요일 15:30 종가 기준 · 일중 흔들림 무시.\n"
             f"<a href=\"https://thesauros2026.vercel.app/paper\">/paper 에서 확인</a>"
         )
     return head + "\n" + body

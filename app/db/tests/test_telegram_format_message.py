@@ -342,3 +342,79 @@ def test_exit_class_alerts_ignore_eligibility():
     assert "청산 신호" in first_line
     assert "(조건부)" not in first_line
 
+
+# ---------------------------------------------------------------------
+# Contract — 2026-05-27 redesign: [source] tag + 다음 단계 guide
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("source,bracket", [
+    ("관심",     "[관심]"),
+    ("보유",     "[보유]"),
+    ("모의투자", "[모의투자]"),
+])
+def test_source_tag_appears_in_title(source, bracket):
+    """The header must tell the user which list this came from so the
+    same body wording works for 관심 / 보유 / 모의투자. Added 2026-05-27
+    when paper-buy was decoupled from watchlist holdings."""
+    msg = telegram_worker.format_message(
+        "005930.KS", "삼성전자", "enter", _enter_sig(), source=source,
+    )
+    first_line = msg.splitlines()[0]
+    assert bracket in first_line, (
+        f"source={source!r} title should contain {bracket!r}, "
+        f"got: {first_line!r}"
+    )
+
+
+def test_source_omitted_when_none_for_backwards_compat():
+    """Legacy callers pass source=None — must render without bracket
+    so older code paths keep their original title shape."""
+    msg = telegram_worker.format_message(
+        "005930.KS", "삼성전자", "enter", _enter_sig(),
+    )
+    first_line = msg.splitlines()[0]
+    assert "[" not in first_line.split("진입 신호")[0], (
+        "no source tag should appear when source=None; "
+        f"got: {first_line!r}"
+    )
+
+
+def test_enter_class_alerts_carry_next_steps_guide():
+    """Beginner users keep asking 'alert came, now what?'. Enter-class
+    alerts must spell out 1) 차트 확인 2) 분할 매수 3) 손절 — the
+    book's three-step entry."""
+    for atype in ("enter", "pyramid"):
+        msg = telegram_worker.format_message(
+            "005930.KS", "삼성전자", atype, _enter_sig(), source="관심",
+        )
+        assert "다음 단계:" in msg, f"{atype}: 다음 단계 block missing"
+        assert "차트" in msg and "분할 매수" in msg and "손절" in msg, (
+            f"{atype}: three-step entry guide incomplete"
+        )
+
+
+def test_exit_class_alerts_have_no_next_steps_guide():
+    """Exit/warn/target/stop already carry their own action wording —
+    don't double up with the entry-style guide that'd be confusing."""
+    for atype in ("exit", "warn", "target", "stop"):
+        msg = telegram_worker.format_message(
+            "005930.KS", "삼성전자", atype, _enter_sig(), source="보유",
+        )
+        assert "다음 단계:" not in msg, (
+            f"{atype}: 다음 단계 should be enter-class only, "
+            f"but appeared in: {msg}"
+        )
+
+
+def test_friday_close_reminder_on_every_alert():
+    """매 알림에 '매수 결정은 금요일 종가 기준' reminder 가 들어가야
+    한다. 사용자가 일중 흔들림에 panic-trade 하는 패턴을 매 알림에서
+    nudge — 한 줄이라 spam 아님."""
+    for atype in ("enter", "pyramid", "warn", "exit", "target", "stop"):
+        msg = telegram_worker.format_message(
+            "005930.KS", "삼성전자", atype, _enter_sig(), source="관심",
+        )
+        assert "금요일" in msg and "일중 흔들림" in msg, (
+            f"{atype}: Friday-close reminder missing in: {msg}"
+        )
+

@@ -544,27 +544,37 @@ def _clean_name(name: Optional[str]) -> str:
 
 
 def format_message(ticker: str, name: Optional[str], alert_type: str,
-                   sig: Dict[str, Any]) -> str:
+                   sig: Dict[str, Any],
+                   source: Optional[str] = None) -> str:
     """Telegram alert message — book-tone, action-first, deep-linkable.
 
     Layout:
 
-        {badge} {alert_type 한글} — <b>{ticker}</b> {name}
-        {signal phrase 한 줄} — {action ask}
-
+        {badge} [<b>{source}</b>] {alert_type 한글} — <b>{ticker}</b> {name}
+        📊 {eligibility headline — body, or fallback signal phrase + ask}
         📈 multi-TF stack (월/주/일)
         🎯 freshness — fresh/late/invalid
         💰 외인+기관 동행 (KR only)
         📊 강도/신뢰도/종합 점수
 
+        👉 다음 단계 (enter-class only):
+           1) 차트 직접 확인 (월/주/일 정배열 맞나)
+           2) 분할 매수 시작 (한 번에 다 X)
+           3) 손절가 미리 설정 (-7%)
+
+        📅 매수 결정은 금요일 15:30 종가 기준 · 일중 흔들림 무시.
         🔔 알림 설정 "{한글 label}" 에서 발송됨
         👉 <a href="...">상세 분석 보기 →</a>
 
-    Body is HTML (parse_mode=HTML). The first two lines answer "뭐 어쩌
-    라는 건지" (what kind of alert + what action is implied); the footer
-    answers "어떤 알림 설정이 보냈는지" + gives a one-click deep link
-    into the site's /stocks/{ticker} page so the user can verify the
-    underlying data without typing the ticker into a search box.
+    source — which list this came from: "관심" / "보유" / "모의투자".
+    When None (legacy callers), the bracket is omitted so older code
+    paths still render cleanly. Body is HTML (parse_mode=HTML).
+
+    Beginner-friendly redesign (2026-05-27): added the [source] tag so
+    the user knows which list triggered the alert, and the 다음 단계
+    block so they don't have to guess what action follows an enter-
+    class signal. The "매수 결정은 금요일 종가 기준" reminder is on
+    every alert because users keep acting on intraday wiggles.
     """
     signal_type = sig.get("signal_type", "")
     label = _signal_label(signal_type)
@@ -601,7 +611,10 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
         title_label = atype_label
 
     title_name = f" {name_clean}" if name_clean else ""
-    title = f"{title_badge} <b>{title_label}</b> — <b>{ticker}</b>{title_name}"
+    # [source] tag — "관심" / "보유" / "모의투자". Omitted for legacy
+    # callers that pass source=None so older tests still pass.
+    source_tag = f"[{source}] " if source else ""
+    title = f"{title_badge} <b>{source_tag}{title_label}</b> — <b>{ticker}</b>{title_name}"
 
     # Action line — prefer eligibility headline+body for enter-class
     # alerts since that's the exact wording the user sees on the
@@ -672,10 +685,30 @@ def format_message(ticker: str, name: Optional[str], alert_type: str,
     if bits:
         lines.append("📊 " + " · ".join(bits))
 
+    # "다음 단계" guide — enter / pyramid only (true entry signals).
+    # target 은 _ENTER_CLASS 에 포함되지만 익절 알림이라 "분할 매수"
+    # 가이드는 부적절. exit/warn/stop 은 자체 action_ask 가 있고,
+    # target 은 paper alerts 의 익절 메시지와 합칠 일이라 enter 가이드
+    # 와 분리. 사용자가 "알림 왔는데 뭘 해야 하지?" 묻는 가장 흔한
+    # 시나리오 = 진입 신호 처음 받았을 때.
+    if alert_type in {"enter", "pyramid"}:
+        lines.append("")
+        lines.append("👉 다음 단계:")
+        lines.append("   1) 차트 직접 확인 (월/주/일 정배열 맞나)")
+        lines.append("   2) 분할 매수 시작 (한 번에 다 X)")
+        lines.append("   3) 손절가 미리 설정 (-7% 권장)")
+
     # Footer — answers "어떤 알림 설정이 이걸 보냈는지" + deep-link to
     # the stock page. Blank line first so the footer reads as metadata,
     # not part of the signal narrative.
     lines.append("")
+    # 책 정신 reminder — 매수 결정은 주봉 종가 기준이라 일중 흔들림으로
+    # 액션하지 말라는 거. 매 알림에 박아두는 게 초보자 panic-trading
+    # 방지에 가장 효과적 (관심 종목 가격 흔들리면 텔레그램부터 보는
+    # 패턴이므로).
+    lines.append(
+        "📅 매수 결정은 금요일 15:30 종가 기준 · 일중 흔들림 무시."
+    )
     # 월말 주 강조 — 책 2부 3장의 "월봉 1회 확인" 정신. 매주 평소처럼
     # 같은 알림이 오더라도, 그 주가 월말 주이면 사용자가 "월봉도 함께
     # 점검" 하도록 헤더 한 줄로 nudge.
@@ -821,7 +854,11 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
                 stats["skipped_existing"] += 1
                 continue
             name = _ticker_name(ticker)
-            msg = format_message(ticker, name, atype, sig)
+            # source = "관심" / "보유" so the message header tells the
+            # user which list this came from (2026-05-27 redesign).
+            _cat = category_by_ticker.get(ticker)
+            _source = "보유" if _cat == "holding" else "관심"
+            msg = format_message(ticker, name, atype, sig, source=_source)
             sent = False
             if not dry_run:
                 if u.get("telegram_chat_id"):
