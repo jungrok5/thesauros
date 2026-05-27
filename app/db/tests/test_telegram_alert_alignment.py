@@ -1,25 +1,27 @@
-"""Telegram ALERT_RULES ↔ BookEntrySpots / /screener signal alignment.
+"""Telegram ALERT_RULES ↔ /screener signal alignment.
 
-Origin: 2026-05-26 site-review. Dashboard's BookEntrySpots showed
-candidates driven by universe-winning signals (volume_case_3,
-pattern_forking, volume_case_7, pattern_ma240_breakout, action_strong_buy)
-but the Telegram worker only mapped action_strong_buy + action_buy to
-'enter' alerts — so subscribed users never received notifications for
-4 of the 5 signal types they could see on the dashboard.
+Origin: 2026-05-26 site-review. The Telegram worker only mapped
+action_strong_buy + action_buy to 'enter' alerts, but the screener
+treats universe-winning signals (volume_case_3, pattern_forking,
+volume_case_7, pattern_ma240_breakout, action_strong_buy) as primary
+buy candidates — subscribed users were missing 4 of the 5 signals
+they could see on the site.
 
 These tests lock the alignment: every universe-winner book-spirit
 entry signal must classify as 'enter' (severity 'info'), so the user
-sees the same buy candidates on the dashboard, in the screener, and
-in their Telegram inbox.
+sees the same buy candidates in the screener and in their Telegram
+inbox.
+
+2026-05-27: BookEntrySpots dashboard card was removed; /screener is
+the only candidate surface, alignment goal unchanged.
 """
 from __future__ import annotations
 
 from app.db.telegram_worker import classify
 
 
-# The 5 signals BookEntrySpots / /screener treat as primary buy
-# candidates (production winner config from sweep_per_signal_sl +
-# book-spirit backtest top-5).
+# The 5 signals /screener treats as primary buy candidates (production
+# winner config from sweep_per_signal_sl + book-spirit backtest top-5).
 UNIVERSE_TOP5_ENTRY_SIGNALS = [
     "action_strong_buy",
     "action_buy",                # screener actionIn includes this
@@ -40,7 +42,7 @@ def test_all_universe_top5_signals_map_to_enter():
         alert_type, severity = result
         assert alert_type == "enter", (
             f"signal {sig!r} → alert_type={alert_type!r}, expected 'enter' "
-            f"(BookEntrySpots / /screener show this as a buy candidate)"
+            f"(/screener shows this as a buy candidate)"
         )
         assert severity == "info", (
             f"signal {sig!r} → severity={severity!r}, expected 'info'"

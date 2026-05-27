@@ -287,26 +287,11 @@ const STEPS: Step[] = [
   },
 ];
 
-// ─────────────────────────────────────────────────────────────────────
-// 5. 증권사 메뉴 위치
-// ─────────────────────────────────────────────────────────────────────
-// 자동매수 메뉴 경로는 증권사마다 자주 바뀌고 우리가 verify 안 됨 —
-// 사용자가 \"틀리기도 한다\"고 지적해서 컬럼 제외 (2026-05-20).
-// 사용자가 앱 검색창에 \"자동매수\" / \"적립식\" 검색해서 찾는 게 더
-// 안정적. 연금/ISA 메뉴 위치만 남김.
-interface BrokerRow {
-  name: string;
-  app: string;
-  pensionPath: string;
-  isaPath: string;
-}
-const BROKERS: BrokerRow[] = [
-  { name: "미래에셋증권",  app: "M-STOCK",          pensionPath: "메뉴 → 연금 → 연금저축펀드/IRP",       isaPath: "메뉴 → ISA → 중개형 ISA" },
-  { name: "NH투자증권",   app: "나무·QV",          pensionPath: "메뉴 → 연금 → 연금저축계좌/IRP",      isaPath: "메뉴 → ISA → 중개형" },
-  { name: "한국투자증권", app: "한국투자 (eFriend)", pensionPath: "전체 메뉴 → 연금 → 연금저축/IRP",     isaPath: "전체 메뉴 → ISA 계좌" },
-  { name: "삼성증권",     app: "mPOP",             pensionPath: "메뉴 → 자산관리 → 연금 → 연금저축/IRP", isaPath: "메뉴 → 자산관리 → ISA" },
-  { name: "키움증권",     app: "영웅문S/영웅문S#",   pensionPath: "좌측 메뉴 → 연금/ISA → 연금저축/IRP",  isaPath: "좌측 메뉴 → 연금/ISA → 중개형 ISA" },
-];
+// 5. 증권사별 메뉴 위치 표 (BROKERS) — 2026-05-27 제거.
+// 사유: 메뉴 라벨이 앱 버전마다 자주 바뀌어 verify 비용이 큰데 사용자에게
+// 큰 가치 추가 안 함. 앱 검색창에 "연금저축" / "IRP" / "ISA" 검색이
+// 훨씬 빠르고 안정적. 표가 stale 정보로 오해 유발 위험.
+
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -601,62 +586,9 @@ export default function GuidePage() {
         </ul>
       </section>
 
-      {/* 5개 증권사 메뉴 위치 */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
-        <header className="px-4 py-2.5 border-b border-border bg-muted/30">
-          <h2 className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-            📱 국내 대표 증권사 5개 — 메뉴 위치
-          </h2>
-        </header>
-        {/* Desktop: 3열 표 — md+ */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">증권사 · 앱</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">연금저축 / IRP</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">ISA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {BROKERS.map((b, i) => (
-                <tr key={b.name} className={`border-b border-border last:border-b-0 ${i % 2 === 1 ? "bg-muted/10" : ""}`}>
-                  <td className="px-3 py-2 align-top">
-                    <div className="font-medium">{b.name}</div>
-                    <div className="text-[10px] text-muted-foreground">{b.app}</div>
-                  </td>
-                  <td className="px-3 py-2 align-top">{b.pensionPath}</td>
-                  <td className="px-3 py-2 align-top">{b.isaPath}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile: 증권사별 카드 */}
-        <ul className="md:hidden divide-y divide-border">
-          {BROKERS.map((b) => (
-            <li key={b.name} className="px-3 py-3 space-y-2">
-              <div>
-                <div className="text-xs font-semibold">{b.name}</div>
-                <div className="text-[10px] text-muted-foreground">{b.app}</div>
-              </div>
-              <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-[11px]">
-                <dt className="text-muted-foreground">연금/IRP</dt>
-                <dd className="leading-relaxed">{b.pensionPath}</dd>
-                <dt className="text-muted-foreground">ISA</dt>
-                <dd className="leading-relaxed">{b.isaPath}</dd>
-              </dl>
-            </li>
-          ))}
-        </ul>
-
-        <footer className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground leading-relaxed">
-          💡 메뉴 라벨은 앱 버전에 따라 자주 바뀝니다 — 못 찾으면{" "}
-          <strong>앱 검색창에 &quot;연금저축&quot; / &quot;IRP&quot; / &quot;ISA&quot; / &quot;자동매수&quot;
-          검색</strong>이 가장 빠름. 수수료 (운용·자산관리·매매) 도 증권사별 차이 있으니 가입 전 비교 권장.
-        </footer>
-      </section>
+      {/* "📱 국내 대표 증권사 5개 — 메뉴 위치" 표 (BROKERS) 2026-05-27 제거.
+          앱 버전마다 라벨 자주 바뀌어 stale 위험 큼. 사용자 앱 검색창에
+          연금저축 / IRP / ISA 검색이 더 안정적. */}
 
       {/* Final CTA */}
       <section className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 p-5 space-y-2">

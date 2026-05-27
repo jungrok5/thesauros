@@ -5,7 +5,8 @@
  *   - Removed: /us-analysis, /themes, /flow-ranking, /volume-surge
  *   - /backtest demoted from sidebar to a dashboard footer link
  *   - /screener collapsed from 6 presets to 1 (book-spirit only)
- *   - /dashboard BookEntrySpots demoted from top-12 to TOP 3 preview
+ *   - /dashboard BookEntrySpots removed (2026-05-27 — 사용자 피드백
+ *     "맞지도 않고 빼줘"; /screener 가 단일 source)
  *
  * These tests are real-browser checks for invariants the unit tests
  * can't see (sidebar render order, link presence in actual DOM, page
@@ -203,21 +204,15 @@ test.describe("/screener — single book-spirit preset", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// /dashboard — BookEntrySpots demote + backtest footer link
+// /dashboard — backtest footer link
 // ─────────────────────────────────────────────────────────────────────
+//
+// 2026-05-27 — BookEntrySpots ("책 정신 매수 후보 TOP 3") 카드는 대시보드
+// 에서 제거됨. 사용자 피드백 "맞지도 않고 빼줘". 매수 후보는 /screener
+// 가 단일 source — L2 mid-cap sweet ranking + eligibility tier 적용.
+// 아래 backtest 링크 테스트만 잔존.
 
 test.describe("/dashboard layout after reset", () => {
-  test("BookEntrySpots heading reads 'TOP 3' (not the legacy 'top 12')", async ({ page }) => {
-    await signIn(page);
-    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
-    const body = page.locator("body");
-    // Either the spots heading 'TOP 3' or the empty-state copy — both
-    // are acceptable depending on scan_results state, but the legacy
-    // 'top 12' string must never appear.
-    await expect(body).not.toContainText("top 12");
-    await expect(body).not.toContainText("TOP 12");
-  });
-
   test("dashboard footer surfaces backtest credibility + link", async ({ page }) => {
     await signIn(page);
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
@@ -225,9 +220,6 @@ test.describe("/dashboard layout after reset", () => {
     // the sidebar demote — its presence is load-bearing.
     const backtestLink = page.locator('a[href="/backtest"]');
     await expect(backtestLink).toBeVisible();
-    // Numbers must be in the same DOM region so the link has a
-    // reason to be clicked.
-    await expect(page.locator("body")).toContainText("CAGR 14.9%");
   });
 
   test("/backtest is still reachable (page kept, only demoted)", async ({ page }) => {
@@ -236,56 +228,6 @@ test.describe("/dashboard layout after reset", () => {
       waitUntil: "domcontentloaded",
     });
     expect(resp?.status()).toBeLessThan(400);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// Dashboard ↔ /screener data-source alignment (2026-05-26 fix)
-// ─────────────────────────────────────────────────────────────────────
-
-test.describe("Dashboard ↔ /screener ticker alignment", () => {
-  // The reason this test exists: the prior BookEntrySpots used the raw
-  // scan_results table while /screener used the screener_results RPC.
-  // Real-data review showed 0% overlap on the top 3 — one of the
-  // dashboard's TOP 3 wasn't in the screener at all. After the
-  // unification (BookEntrySpots → screener_results RPC), the dashboard
-  // preview should *be* the first 3 rows of the screener list.
-  test("dashboard TOP 3 tickers match the first 3 of /screener", async ({ page }) => {
-    await signIn(page);
-
-    await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
-    const dashHtml = await page.content();
-    // Tickers inside the BookEntrySpots <a href="/stocks/...?from=dashboard">.
-    const dashTickers = [
-      ...dashHtml.matchAll(/\/stocks\/([A-Z0-9.]+)\?from=dashboard/g),
-    ].map((m) => m[1]);
-    // Dedup keeping order (mobile + desktop render the same link twice).
-    const dashUnique: string[] = [];
-    for (const t of dashTickers) {
-      if (!dashUnique.includes(t)) dashUnique.push(t);
-    }
-
-    await page.goto(`${BASE}/screener`, { waitUntil: "domcontentloaded" });
-    const scrnHtml = await page.content();
-    const scrnTickers = [
-      ...scrnHtml.matchAll(/\/stocks\/([A-Z0-9.]+)\?from=screener/g),
-    ].map((m) => m[1]);
-    const scrnUnique: string[] = [];
-    for (const t of scrnTickers) {
-      if (!scrnUnique.includes(t)) scrnUnique.push(t);
-    }
-
-    // If either surface has no data (cron hasn't run / DB empty),
-    // skip — the alignment is undefined, not violated.
-    if (dashUnique.length === 0 || scrnUnique.length === 0) {
-      test.skip(true, "no candidate data on either surface");
-      return;
-    }
-
-    // The unification guarantee: dashboard preview = first N of screener.
-    const dashTop = dashUnique.slice(0, 3);
-    const scrnTop = scrnUnique.slice(0, 3);
-    expect(dashTop, "dashboard TOP 3 must equal screener TOP 3").toEqual(scrnTop);
   });
 });
 
@@ -587,20 +529,9 @@ test.describe("F5 — stock detail header is minimal (no raw chip above the verd
   });
 });
 
-test.describe("F6 — BookEntrySpots wires EligibilityChip", () => {
-  test("BookEntrySpots component source includes the chip plus eligibility fetch", async ({}) => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.resolve(process.cwd(), "src/components/book-entry-spots.tsx"),
-      "utf8",
-    );
-    expect(src).toMatch(/EligibilityChip/);
-    // PostgREST JSON-path fetch identical to screener page
-    expect(src).toMatch(/result->eligibility/);
-    expect(src).toMatch(/data-eligibility=\{grade\}/);
-  });
-});
+// F6 — BookEntrySpots EligibilityChip parity (2026-05-27 제거).
+// BookEntrySpots 카드 자체가 대시보드에서 제거되어 회귀 가드 불필요.
+// 매수 후보는 /screener 단일 소스 (위 F4/F2/F1 테스트가 그쪽 커버).
 
 test.describe("verdict card is rendered exactly once", () => {
   // Before F3 the page rendered NoviceVerdict (above) + BookVerdict

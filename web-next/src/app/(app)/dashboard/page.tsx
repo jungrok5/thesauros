@@ -9,7 +9,6 @@
  */
 import Link from "next/link";
 import { Compass } from "lucide-react";
-import { BookEntrySpots } from "@/components/book-entry-spots";
 import { StatePill } from "@/components/state-pill";
 import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
@@ -211,10 +210,13 @@ export default async function DashboardPage() {
         updatedAt={updatedAt}
       />
 
-      {/* 책 전략 production winning config (SL=10% / max=8 / 24w / top-5)
-          의 이번 주 진입 후보. 거시 카드 직후에 배치해 macro → 실행으로
-          내려가는 흐름. */}
-      <BookEntrySpots />
+      {/* 2026-05-27 — BookEntrySpots ("책 정신 매수 후보 탑 3") 제거.
+          사용자 피드백: "맞지도 않고 빼줘". L2 ranking 도입 후 이 카드의
+          후보 선정 로직과 /screener 의 sortByBookSpirit 사이에 일관성
+          깨짐 + 카드의 좁은 컨텍스트 (책 신호 만점 + 정배열 정도) 만으로
+          진짜 매수 자리 판단 부족 — 사용자가 클릭해서 종목 detail 확인할
+          때 카드 정보와 결론이 안 맞는 경우 발생. 매수 후보는 /screener
+          에서 보면 됨 (L2 + eligibility tier 적용한 단일 source of truth). */}
 
 
       {/* 핵심 거시 지표 — 매매 결정에 직접 닿는 8~10개만 above-the-fold.

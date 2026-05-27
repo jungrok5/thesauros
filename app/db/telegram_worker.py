@@ -49,9 +49,11 @@ ALERT_RULES: List[Tuple[str, str, str]] = [
     ("action_strong_buy",       "enter",    "info"),
     ("action_buy",              "enter",    "info"),
     # Universe-winner book-spirit entries (sweep_per_signal_sl + production
-    # backtest top-5). Added 2026-05-26 so Telegram alerts ≡ BookEntrySpots
-    # ≡ /screener signal set. Previously these fired in scan_results and
-    # were visible on the dashboard, but never reached subscribed users.
+    # backtest top-5). Added 2026-05-26 so Telegram alerts ≡ /screener
+    # signal set. Previously these fired in scan_results and were visible
+    # on the dashboard, but never reached subscribed users.
+    # (2026-05-27: BookEntrySpots removed; /screener is the only candidate
+    # surface, alignment goal unchanged.)
     ("volume_case_3",           "enter",    "info"),
     ("volume_case_7",           "enter",    "info"),
     ("pattern_forking",         "enter",    "info"),
