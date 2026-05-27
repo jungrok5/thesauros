@@ -37,8 +37,6 @@ import { fetchStockContext } from "@/lib/stock-context";
 import { CompanyProfile } from "@/components/company-profile";
 import { BookChart } from "@/components/book-chart";
 import { LastClose } from "@/components/last-close";
-import { StrategyProjector } from "@/components/strategy-projector";
-import { TickerSignalHistory } from "@/components/ticker-signal-history";
 import { MarketHoursNotice } from "@/components/market-hours-notice";
 import { NextDecisionChip } from "@/components/next-decision-chip";
 import { InvestorFlow } from "@/components/investor-flow";
@@ -508,21 +506,12 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
             <VolumeSurgeCard surge={ctx.volumeSurge} asOf={ctx.latestBar?.bar_date ?? null} />
           </section>
 
-          {/* ─────────────────────────────────────────────────────────
-              그룹 3.5. 책 전략 N년 유지 시뮬레이션 + 종목별 신호 history.
-              17년 backtest (no-SL / max=50 / 24w / top-5, universe winner).
-
-              2026-05-26 site review M23: 책 전략은 책 정신의 핵심 검증
-              근거 — 펀더(그룹 4) 보다 먼저 와야 함. 사용자 mental model:
-              결론 → 차트 → "이 신호 historically 어땠나" → 펀더 (보조).
-              ───────────────────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <h2 className="text-lg font-semibold tracking-tight">
-              🧮 책 전략 적용 시
-            </h2>
-            <TickerSignalHistory ticker={ticker} />
-            <StrategyProjector />
-          </section>
+          {/* 2026-05-27 — "책 전략 적용 시" 섹션 (TickerSignalHistory +
+              StrategyProjector) 제거. 두 컴포넌트 모두 종목 매수 결정에
+              critical 한 정보가 아니었고, 사용자가 "복잡하고 무슨 인사이트
+              인지 모르겠다" 고 피드백 (책 정신 = 표면 정리). StrategyProjector
+              는 /backtest 페이지에서 계속 사용. TickerSignalHistory 는
+              종목별 통계가 발생 N=3~5 면 신뢰도 약해 generalize 어려움. */}
 
           {/* ─────────────────────────────────────────────────────────
               그룹 4. 펀더멘털 검증 — 재무 건전성 한 줄 평.
