@@ -82,18 +82,19 @@ describe("indicatorVerdict", () => {
     expect(panic.action).toContain("자본 보전");
   });
 
-  it("real rate 10Y: 2%+ flagged as growth-stock pressure", () => {
+  it("real rate 10Y: 2%+ flagged as heavy-debt pressure", () => {
     const heavy = indicatorVerdict("real_rate_10y", "CAUTION", 2.1, null);
     expect(heavy.tone).toBe("warn");
-    expect(heavy.action).toMatch(/성장주|가치주/);
+    // Plain-Korean phrasing — 빚 많은 회사 / 신생 기업.
+    expect(heavy.action).toMatch(/빚 많은|신생/);
   });
 
   it("DXY: KR/EM sensitivity flagged correctly", () => {
     const krFavorable = indicatorVerdict("dxy", "BULL", 99, null);
-    expect(krFavorable.action).toMatch(/이머징|코스피/);
+    expect(krFavorable.action).toMatch(/코스피|신흥국/);
 
     const strong = indicatorVerdict("dxy", "BEAR", 110, null);
-    expect(strong.action).toContain("risk-off");
+    expect(strong.action).toMatch(/위험 회피|폭등/);
   });
 
   it("unknown key falls through to a sane default verdict", () => {
@@ -101,5 +102,58 @@ describe("indicatorVerdict", () => {
     expect(r.action).toBeTruthy();
     expect(r.impact).toBeTruthy();
     expect(r.tone).toBe("neutral");
+  });
+
+  // 2026-05-29 — krEconomy (국내 경제 영향) line for the indicators
+  // users explicitly asked to understand: 미국 금리 / 한국 금리 / 환율 / 금.
+  // Pins that the verdict carries the plain-Korean KR economy note so
+  // the dashboard card can render the 🇰🇷 line.
+  describe("krEconomy (국내 경제 한 줄)", () => {
+    it("fed_funds_rate carries KR rate follow-on", () => {
+      const v = indicatorVerdict("fed_funds_rate", "CAUTION", 5.5, null);
+      expect(v.krEconomy).toBeTruthy();
+      // Should explain that KR base rate tracks US rate.
+      expect(v.krEconomy).toMatch(/한국은행|한국 금리|대출이자/);
+    });
+
+    it("real_rate_10y carries foreign-fund-flow + FX note", () => {
+      const v = indicatorVerdict("real_rate_10y", "CAUTION", 2.2, null);
+      expect(v.krEconomy).toBeTruthy();
+      expect(v.krEconomy).toMatch(/외국인|환율/);
+    });
+
+    it("dxy carries USD/KRW + import-price note", () => {
+      const v = indicatorVerdict("dxy", "CAUTION", 106, null);
+      expect(v.krEconomy).toBeTruthy();
+      expect(v.krEconomy).toMatch(/원\/달러|수입|환율/);
+    });
+
+    it("usdkrw key carries beginner-friendly export/import note", () => {
+      const v = indicatorVerdict("usdkrw", "CAUTION", 1410, null);
+      expect(v.krEconomy).toBeTruthy();
+      expect(v.krEconomy).toMatch(/수입|수출|물가/);
+    });
+
+    it("gold carries inflation-hedge / KR risk-off note", () => {
+      const v = indicatorVerdict("gold", "BULL", 2400, null);
+      expect(v.krEconomy).toBeTruthy();
+      expect(v.krEconomy).toMatch(/인플레|헷지|risk-off/i);
+    });
+
+    it("usdjpy carries KR vs JP export competitiveness note", () => {
+      const v = indicatorVerdict("usdjpy", "CAUTION", 155, null);
+      expect(v.krEconomy).toBeTruthy();
+      // KR-JP overlap industries (auto, shipbuilding) mentioned in action;
+      // krEconomy focuses on consumer-side ripple.
+      expect(v.krEconomy).toMatch(/일본|관광|소비/);
+    });
+
+    it("indicators outside the curated set have no krEconomy", () => {
+      // CPI / yield curve / VIX etc. don't get the KR economy line —
+      // their primary story is global, not KR-specific.
+      expect(indicatorVerdict("cpi", "BULL", 2, null).krEconomy).toBeUndefined();
+      expect(indicatorVerdict("vix", "BULL", 15, null).krEconomy).toBeUndefined();
+      expect(indicatorVerdict("yield_curve_10y_2y", "BULL", 0.5, null).krEconomy).toBeUndefined();
+    });
   });
 });

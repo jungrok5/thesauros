@@ -340,6 +340,13 @@ function IndicatorCard({ it, compact = false }: { it: IndicatorState; compact?: 
         💡 {verdict.impact}
       </p>
       <p className="text-xs leading-relaxed mt-1">{verdict.action}</p>
+      {/* 국내 경제 영향 — 미국 금리·실질금리·달러·환율·금에만 채워짐.
+          학습용 한 줄: "이 지표가 한국 가계·기업에 어떻게 다가오나". */}
+      {verdict.krEconomy && (
+        <p className="text-[11px] leading-relaxed mt-1.5 text-foreground/80 border-t border-border/40 pt-1.5">
+          🇰🇷 <span className="font-medium">국내 경제:</span> {verdict.krEconomy}
+        </p>
+      )}
       {/* cron-generated `it.verdict` was previously rendered here as
           a small italic backup. Removed 2026-05-20 (audit): duplicates
           the 💡 impact + action lines above and confuses users with
