@@ -138,6 +138,15 @@ POLICIES: list[Policy] = [
         "DELETE FROM user_action_audit WHERE created_at < CURRENT_DATE - INTERVAL '365 days'",
         "365 days",
     ),
+    # Market-wide investor trend (migration 058). 2 rows/day (KOSPI +
+    # KOSDAQ) — 180 days = ~360 rows total = trivial. Dashboard chart
+    # default window is 30 days; 180 day buffer lets us widen the chart
+    # via toggle without re-ingesting, and lets analyses span Q-over-Q.
+    (
+        "market_investor_trend",
+        "DELETE FROM market_investor_trend WHERE day < CURRENT_DATE - INTERVAL '180 days'",
+        "180 days",
+    ),
     # ──────────────────────────────────────────────────────────────────
     # Generated-data TTL via engagement. The `active set` is the union
     # of the default scan universe (KOSPI/KOSDAQ — always kept) and any
