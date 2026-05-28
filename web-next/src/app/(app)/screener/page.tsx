@@ -41,7 +41,11 @@ async function fetchLatestAnalysisRun(): Promise<string | null> {
   return (data?.updated_at as string | undefined) ?? null;
 }
 
-export const dynamic = "force-dynamic";
+// 2026-05-28 — analyze_results / scan_results refresh on Friday 17:30
+// weekly-scan only; rest of the week the screener result is identical
+// between requests. 5-minute ISR keeps the response cached and shaves
+// per-render cost (RPC + 2nd .in() fetch). force-dynamic was vestigial.
+export const revalidate = 300;
 
 interface SearchParams {
   preset?: string;

@@ -10,6 +10,8 @@
  * every minute, so each symbol hits Yahoo at most ~1×/min per region.
  */
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const revalidate = 60;
 
@@ -103,6 +105,15 @@ async function fetchOne(label: string, symbol: string): Promise<Quote> {
 }
 
 export async function GET() {
+  // 2026-05-28 — auth + rate limit. Was publicly callable, letting a
+  // session-less probe hammer Yahoo via our egress IPs.
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (rateLimit(`quotes:${session.user.email}`, { limit: 30, windowMs: 60_000 })) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
   const quotes = await Promise.all(
     SYMBOLS.map(({ symbol, label }) => fetchOne(label, symbol)),
   );

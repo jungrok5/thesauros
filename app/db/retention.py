@@ -490,6 +490,15 @@ def main(argv: list[str] | None = None) -> int:
         log.info("%-15s (retain %s)  %s %d rows", table, desc, verb, n)
     log.info("total: %s %d rows", verb, total)
 
+    # 2026-05-28 — also VACUUM ANALYZE the heavy-write tables that the
+    # retention loop didn't necessarily DELETE from this run. Without
+    # this, autovacuum on alerts (insert-mostly) + analyze_results
+    # (UPSERT of ~2700 large JSONB rows per scan_daily) waits for the
+    # 20% dead-tuple threshold, leaving statistics stale → query
+    # planner picks bad join orders for screener_results et al.
+    _ALWAYS_VACUUM = {"alerts", "analyze_results", "factors_eval"}
+    touched = touched | _ALWAYS_VACUUM
+
     # VACUUM (non-FULL) on tables that lost rows so dead tuples are
     # marked reusable. Doesn't shrink the table on disk (that needs
     # VACUUM FULL which locks the table — bad for a live site), but
@@ -501,8 +510,8 @@ def main(argv: list[str] | None = None) -> int:
             with conn.cursor() as cur:
                 for tbl in sorted(touched):
                     try:
-                        cur.execute(f"VACUUM {tbl}")
-                        log.info("VACUUM %s done", tbl)
+                        cur.execute(f"VACUUM ANALYZE {tbl}")
+                        log.info("VACUUM ANALYZE %s done", tbl)
                     except Exception as e:
                         log.warning("VACUUM %s failed: %s", tbl, e)
 

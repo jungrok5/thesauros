@@ -12,6 +12,8 @@
  * `disclosures` via a separate weekly cron.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   parseGoogleNewsRss,
   parseNaverNews,
@@ -35,6 +37,16 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ ticker: string }> },
 ) {
+  // 2026-05-28 — auth + rate limit. Was publicly callable; an attacker
+  // with a session can hammer Naver/Google News via our IPs and trigger
+  // upstream rate limits against the cron pipeline.
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (rateLimit(`news-ticker:${session.user.email}`, { limit: 60, windowMs: 60_000 })) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
   const { ticker: raw } = await params;
   const ticker = decodeURIComponent(raw).toUpperCase();
   if (!TICKER_RE.test(ticker)) {

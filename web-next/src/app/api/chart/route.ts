@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServerClient } from "@/lib/supabase";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,11 @@ export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  // 2026-05-28 — rate limit. Without it, an authed user could iterate
+  // through 2700+ tickers and overwhelm our Naver fallback egress.
+  if (rateLimit(`chart:${session.user.email}`, { limit: 60, windowMs: 60_000 })) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
   const url = new URL(req.url);
   const ticker = (url.searchParams.get("ticker") ?? "").toUpperCase();

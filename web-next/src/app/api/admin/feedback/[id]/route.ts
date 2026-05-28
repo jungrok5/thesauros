@@ -24,7 +24,16 @@ export async function PATCH(
   if (!u?.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (u.role !== "admin") {
+  // 2026-05-28 — re-read role from DB, not just session JWT. A user
+  // demoted from admin would otherwise retain admin powers until their
+  // JWT refreshes (NextAuth caches role in the session token).
+  const sbCheck = getServerClient();
+  const { data: live } = await sbCheck
+    .from("users")
+    .select("role")
+    .eq("email", u.email.toLowerCase())
+    .maybeSingle();
+  if (live?.role !== "admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

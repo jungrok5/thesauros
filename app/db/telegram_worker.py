@@ -335,8 +335,21 @@ def _signal_label(signal_type: str) -> Dict[str, str]:
     })
 
 
+_ANALYZE_BLOB_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+
+
 def _analyze_blob(ticker: str) -> Optional[Dict[str, Any]]:
-    """Pull the analyze_results.result blob for a ticker, or None."""
+    """Pull the analyze_results.result blob for a ticker, or None.
+
+    2026-05-28 — process-local memoization. run_once() loops per user
+    and per signal: the same ticker is asked for blob 2× in the same
+    invocation (eligibility gate at the alert filter + format_message
+    body). Multiplied by M users × N tickers this was a measurable
+    fraction of telegram_worker time. Cache is cleared at run_once
+    entry so stale data never crosses cron boundaries.
+    """
+    if ticker in _ANALYZE_BLOB_CACHE:
+        return _ANALYZE_BLOB_CACHE[ticker]
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -344,7 +357,9 @@ def _analyze_blob(ticker: str) -> Optional[Dict[str, Any]]:
                 (ticker,),
             )
             r = cur.fetchone()
-            return r[0] if r and r[0] else None
+            blob = r[0] if r and r[0] else None
+    _ANALYZE_BLOB_CACHE[ticker] = blob
+    return blob
 
 
 def _freshness_of(blob: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -814,6 +829,11 @@ def run_once(dry_run: bool = False) -> Dict[str, int]:
 
 
 def _run_once_locked(stats: Dict[str, int], dry_run: bool) -> Dict[str, int]:
+    # Clear the per-process analyze blob cache so a fresh cron run sees
+    # fresh data. Cache is intentionally process-local + un-bounded by
+    # row count — typical run touches ~100s of tickers, well below any
+    # heap concern, and dies with the worker process anyway.
+    _ANALYZE_BLOB_CACHE.clear()
     users = _users_with_alerts()
     stats["users"] = len(users)
     if not users:

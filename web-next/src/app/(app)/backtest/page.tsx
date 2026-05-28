@@ -51,7 +51,10 @@ async function loadEquity(): Promise<EquityData | null> {
   }
 }
 
-export const dynamic = "force-dynamic";
+// 2026-05-28 — equity-production.json only refreshes when a human
+// re-runs the L2 backtest script + commits the result. Daily ISR is
+// plenty.
+export const revalidate = 86400;
 
 export default async function BacktestPage() {
   const data = await loadEquity();

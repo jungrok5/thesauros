@@ -11,6 +11,8 @@
  * most once per 5-min window per region.
  */
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const revalidate = 300;
 
@@ -110,6 +112,14 @@ async function fetchFeed(source: string, url: string): Promise<Item[]> {
 
 
 export async function GET() {
+  // 2026-05-28 — auth + rate limit (same rationale as /api/news/[ticker]).
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (rateLimit(`news-global:${session.user.email}`, { limit: 20, windowMs: 60_000 })) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
   const results = await Promise.all(
     FEEDS.map((f) => fetchFeed(f.source, f.url)),
   );
