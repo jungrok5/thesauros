@@ -33,18 +33,28 @@ export type LatestPrice = {
  *  650 rows stays under PostgREST's 1000-row cap. */
 export const SPARKLINE_BARS = 13;
 
+export interface FetchLatestPricesOptions {
+  /** 2026-05-28 — callers that don't render a sparkline (e.g. the
+   *  watchlist row strip which only needs close + return %) can opt
+   *  into a 2-bar fetch (latest + prev). With 50 tickers this cuts
+   *  the payload from 650 → 100 rows + leaves more headroom under
+   *  the PostgREST 1000-row cap. */
+  withSparkline?: boolean;
+}
+
 export async function fetchLatestPrices(
   tickers: string[],
+  opts: FetchLatestPricesOptions = {},
 ): Promise<Map<string, LatestPrice>> {
   const out = new Map<string, LatestPrice>();
   if (tickers.length === 0) return out;
 
   const sb = getServerClient();
-  // Fetch the most recent SPARKLINE_BARS rows per ticker. PostgREST's
-  // flat .order() + .limit() can't do "top-N per group", so we over-
-  // fetch up to the 1000-row cap and group in JS. 50 tickers × 13 =
-  // 650 rows comfortably fits; we cap defensively below.
-  const limit = Math.min(1000, tickers.length * SPARKLINE_BARS);
+  const bars = opts.withSparkline === false ? 2 : SPARKLINE_BARS;
+  // Fetch the most recent `bars` rows per ticker. PostgREST's flat
+  // .order() + .limit() can't do "top-N per group", so we over-fetch
+  // up to the 1000-row cap and group in JS.
+  const limit = Math.min(1000, tickers.length * bars);
   const { data, error } = await sb
     .from("bars")
     .select("ticker, bar_date, close")
@@ -61,7 +71,7 @@ export async function fetchLatestPrices(
   const grouped = new Map<string, Row[]>();
   for (const r of data as unknown as Row[]) {
     const arr = grouped.get(r.ticker) ?? [];
-    if (arr.length < SPARKLINE_BARS) {
+    if (arr.length < bars) {
       arr.push(r);
       grouped.set(r.ticker, arr);
     }

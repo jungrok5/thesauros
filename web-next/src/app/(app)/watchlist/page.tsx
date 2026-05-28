@@ -122,9 +122,10 @@ async function fetchAll(email: string, name: string | null) {
   // 2026-05-28 — pull latest weekly close per ticker so each row can
   // show "현재가" and compute the return % vs entry_price (the
   // snapshot we take at watchlist add time). Single-batch fetch via
-  // the shared latest-prices helper.
+  // the shared latest-prices helper. Sparkline is not rendered on
+  // this surface, so use skinny mode (2 bars vs 13 default).
   const priceMap = tickers.length > 0
-    ? await fetchLatestPrices(tickers)
+    ? await fetchLatestPrices(tickers, { withSparkline: false })
     : new Map();
 
   const enriched = rows.map((r) => {

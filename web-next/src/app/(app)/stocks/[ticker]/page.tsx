@@ -71,50 +71,56 @@ type TickerInfo = { ticker: string; name: string | null; market: string | null }
 async function resolveTicker(raw: string): Promise<TickerInfo | null> {
   const sb = getServerClient();
   const upper = raw.toUpperCase();
+  const isKrCode = /^\d{6}$/.test(raw);
 
-  // 1) Exact match on ticker (covers "AAPL", "005930.KS").
-  {
-    const { data } = await sb
-      .from("tickers")
-      .select("ticker, name, market")
-      .eq("ticker", upper)
-      .maybeSingle();
-    if (data) return data as TickerInfo;
-  }
-
-  // 2) 6-digit Korean code without suffix → try both .KS and .KQ.
-  if (/^\d{6}$/.test(raw)) {
-    const { data } = await sb
-      .from("tickers")
-      .select("ticker, name, market")
-      .in("ticker", [`${raw}.KS`, `${raw}.KQ`])
-      .limit(1)
-      .maybeSingle();
-    if (data) return data as TickerInfo;
-  }
-
-  // 3) Exact Korean-name match.
-  {
-    const { data } = await sb
-      .from("tickers")
-      .select("ticker, name, market")
-      .ilike("name", raw)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-    if (data) return data as TickerInfo;
-  }
-
-  // 4) Fuzzy name match (one substring hit wins).
-  {
-    const { data } = await sb
-      .from("tickers")
-      .select("ticker, name, market")
-      .ilike("name", `%${raw}%`)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-    if (data) return data as TickerInfo;
+  // 2026-05-28 — was 5 sequential await chain (up to 4 DB roundtrips +
+  // 1 Naver fetch BEFORE the page's data Promise.all could even start).
+  // Now: fire all DB candidate queries in parallel + Naver-fallback only
+  // after the cheap ones miss. Total worst-case latency cut from
+  // ~4×RTT + Naver to 1×RTT + Naver.
+  const dbCandidates: Array<Promise<TickerInfo | null>> = [
+    // 1) Exact match on ticker.
+    (async () => {
+      const { data } = await sb.from("tickers")
+        .select("ticker, name, market")
+        .eq("ticker", upper)
+        .maybeSingle();
+      return (data as TickerInfo) ?? null;
+    })(),
+    // 2) 6-digit Korean code without suffix → try both .KS and .KQ.
+    (async () => {
+      if (!isKrCode) return null;
+      const { data } = await sb.from("tickers")
+        .select("ticker, name, market")
+        .in("ticker", [`${raw}.KS`, `${raw}.KQ`])
+        .limit(1)
+        .maybeSingle();
+      return (data as TickerInfo) ?? null;
+    })(),
+    // 3) Exact Korean-name match.
+    (async () => {
+      const { data } = await sb.from("tickers")
+        .select("ticker, name, market")
+        .ilike("name", raw)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      return (data as TickerInfo) ?? null;
+    })(),
+    // 4) Fuzzy name match.
+    (async () => {
+      const { data } = await sb.from("tickers")
+        .select("ticker, name, market")
+        .ilike("name", `%${raw}%`)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      return (data as TickerInfo) ?? null;
+    })(),
+  ];
+  const dbResults = await Promise.all(dbCandidates);
+  for (const r of dbResults) {
+    if (r) return r;
   }
 
   // 5) Naver integrated search fallback — handles Korean brand names

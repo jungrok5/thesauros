@@ -84,6 +84,62 @@ def _latest_weekly_close(ticker: str) -> Optional[Tuple[float, str]]:
             return float(r[0]), str(r[1])
 
 
+def _bulk_latest_weekly_close(tickers: List[str]) -> Dict[str, Tuple[float, str]]:
+    """2026-05-28 — bulk variant. Returns {ticker: (close, bar_date)}.
+
+    Single round-trip vs N (one per holding) — meaningful for N>5 watchlist
+    holdings. Uses DISTINCT ON to pick the latest bar per ticker.
+    """
+    if not tickers:
+        return {}
+    out: Dict[str, Tuple[float, str]] = {}
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (ticker) ticker, close, bar_date
+                  FROM bars
+                 WHERE ticker = ANY(%s) AND granularity = 'W'
+              ORDER BY ticker, bar_date DESC
+                """,
+                (tickers,),
+            )
+            for ticker, close, bar_date in cur.fetchall():
+                if close is None:
+                    continue
+                out[ticker] = (float(close), str(bar_date))
+    return out
+
+
+def _bulk_already_seen(
+    pairs: List[Tuple[str, str, str]],
+) -> set[Tuple[str, str, str]]:
+    """2026-05-28 — bulk dedup lookup. Input list of (user_id, ticker, bar_date).
+    Returns the subset already in stop_loss_alert_seen."""
+    if not pairs:
+        return set()
+    seen: set[Tuple[str, str, str]] = set()
+    with get_conn(autocommit=True) as conn:
+        with conn.cursor() as cur:
+            # Build the IN list as ROW values for a clean single query.
+            user_ids = [p[0] for p in pairs]
+            tickers = [p[1] for p in pairs]
+            dates = [p[2] for p in pairs]
+            cur.execute(
+                """
+                SELECT user_id, ticker, alerted_at_bar_date
+                  FROM stop_loss_alert_seen
+                 WHERE user_id::text = ANY(%s)
+                   AND ticker = ANY(%s)
+                   AND alerted_at_bar_date::text = ANY(%s)
+                """,
+                (user_ids, tickers, dates),
+            )
+            for u, t, d in cur.fetchall():
+                seen.add((str(u), str(t), str(d)))
+    return seen
+
+
 def _already_seen(user_id: str, ticker: str, bar_date: str) -> bool:
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
@@ -185,17 +241,34 @@ def main(argv: Optional[List[str]] = None) -> int:
     skipped_seen = 0
     skipped_no_bar = 0
     above_threshold = 0
+
+    # 2026-05-28 — bulk-fetch latest weekly close + dedup state in two
+    # round-trips instead of 2N. With N watchlist holdings this cut
+    # ~50-100ms × N off the cron path.
+    distinct_tickers = sorted({h[1] for h in holdings})
+    bars_by_ticker = _bulk_latest_weekly_close(distinct_tickers)
+    # First pass: figure out which (user, ticker, bar_date) tuples
+    # actually need a dedup check — i.e. those whose drop is below
+    # threshold. Avoids querying stop_loss_alert_seen for holdings
+    # that aren't going to fire anyway.
+    pending: List[Tuple[str, str, str, float, str, str, float, float]] = []
     for user_id, ticker, name, entry_price, chat_id in holdings:
-        latest = _latest_weekly_close(ticker)
-        if not latest:
+        bar = bars_by_ticker.get(ticker)
+        if not bar:
             skipped_no_bar += 1
             continue
-        close, bar_date = latest
+        close, bar_date = bar
         drop_pct = (close - entry_price) / entry_price * 100.0
         if drop_pct > -args.threshold:
             above_threshold += 1
             continue
-        if _already_seen(user_id, ticker, bar_date):
+        pending.append((user_id, ticker, name, entry_price, chat_id,
+                        bar_date, close, drop_pct))
+    already_seen = _bulk_already_seen(
+        [(p[0], p[1], p[5]) for p in pending],
+    )
+    for user_id, ticker, name, entry_price, chat_id, bar_date, close, drop_pct in pending:
+        if (user_id, ticker, bar_date) in already_seen:
             skipped_seen += 1
             continue
         message = format_sl_message(
