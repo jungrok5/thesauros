@@ -782,50 +782,74 @@ def _check_price_targets(
     return out
 
 
+_LEASE_NAME = "telegram_worker"
+_LEASE_TTL_SEC = 300   # 5 min — typical run is <60s, TTL buffers crash recovery
+
+
 def run_once(dry_run: bool = False) -> Dict[str, int]:
     stats = {"users": 0, "watched_tickers": 0, "new_alerts": 0, "sent": 0,
              "pushed": 0, "skipped_existing": 0, "bedrest_skipped": 0,
              "skipped_locked": 0}
 
-    # 2026-05-28 — postgres advisory lock guards against the race where
-    # multiple Analyze-Single-Ticker workflows (dispatched in parallel
-    # by watchlist API on consecutive adds) each kick off telegram_worker
-    # simultaneously. Each instance reads `alerts` before any has had a
-    # chance to insert → dedup window misses → every active signal sends
-    # twice (or more). Pinning a single global slot for telegram_worker
-    # makes the "already alerted" check a hard serialization point.
+    # 2026-05-28 v2 — row-based worker lease (worker_lease table) replaces
+    # the v1 pg_try_advisory_lock approach. v1 was Supavisor-pool unsafe:
+    # session-scoped locks can outlive the client conn when the pool
+    # keeps the upstream session alive, silently freezing the worker
+    # for hours (see migration 059 header).
     #
-    # The lock is session-scoped (auto-released on conn close), so we
-    # hold the conn open for the entire run. pg_try_advisory_lock
-    # returns False immediately if held by another session — that
-    # invocation just exits as no-op.
-    _TG_WORKER_LOCK_KEY = 0x7E1E_670A_C001  # arbitrary bigint constant
-    from contextlib import contextmanager
+    # Guards the same race: multiple Analyze-Single-Ticker workflows
+    # dispatched in parallel each kick off telegram_worker, all read
+    # `alerts` before any insert lands → dedup misses → duplicate sends.
+    # The atomic upsert here serializes them — only one acquires per
+    # 5-min window; the rest no-op.
+    import uuid
+    holder_id = uuid.uuid4().hex
 
-    @contextmanager
-    def _exclusive_lock():
-        with get_conn(autocommit=True) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT pg_try_advisory_lock(%s)",
-                            (_TG_WORKER_LOCK_KEY,))
-                acquired = bool(cur.fetchone()[0])
-            try:
-                yield acquired
-            finally:
-                if acquired:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT pg_advisory_unlock(%s)",
-                                    (_TG_WORKER_LOCK_KEY,))
-
-    with _exclusive_lock() as acquired:
-        if not acquired:
-            log.info(
-                "telegram_worker advisory lock held by another session — "
-                "skipping (concurrent dispatch detected)",
-            )
-            stats["skipped_locked"] = 1
-            return stats
+    if not _acquire_lease(holder_id):
+        log.info("telegram_worker lease held — skipping (concurrent dispatch)")
+        stats["skipped_locked"] = 1
+        return stats
+    try:
         return _run_once_locked(stats, dry_run)
+    finally:
+        _release_lease(holder_id)
+
+
+def _acquire_lease(holder_id: str) -> bool:
+    """Try to claim the worker lease. Returns True if acquired.
+
+    Atomic via INSERT ... ON CONFLICT WHERE expired. If the row exists
+    and hasn't expired, the UPDATE WHERE clause fails to match and the
+    upsert is a no-op — we detect that by comparing holder_id afterward.
+    """
+    sql = """
+        INSERT INTO worker_lease (name, holder_id, acquired_at, expires_at)
+        VALUES (%s, %s, now(), now() + (%s || ' seconds')::interval)
+        ON CONFLICT (name) DO UPDATE
+          SET holder_id   = EXCLUDED.holder_id,
+              acquired_at = EXCLUDED.acquired_at,
+              expires_at  = EXCLUDED.expires_at
+          WHERE worker_lease.expires_at < now()
+        RETURNING holder_id
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (_LEASE_NAME, holder_id, _LEASE_TTL_SEC))
+            row = cur.fetchone()
+            return bool(row) and row[0] == holder_id
+
+
+def _release_lease(holder_id: str) -> None:
+    """Release the lease if (and only if) we still hold it. Safe to call
+    even if the lease has already expired and been claimed by someone
+    else — the holder_id guard prevents stomping."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM worker_lease "
+                "WHERE name = %s AND holder_id = %s",
+                (_LEASE_NAME, holder_id),
+            )
 
 
 def _run_once_locked(stats: Dict[str, int], dry_run: bool) -> Dict[str, int]:

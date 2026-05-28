@@ -75,6 +75,7 @@ _RETENTION_EXEMPT = {
     "us_bars",                # Phase 6 ad-hoc cache, self-evicts via us_ticker_cache (7d cascade in daily-data.yml)
     "us_ticker_cache",        # Phase 6 ad-hoc cache, 7d TTL via app.db.us_bars_cache.evict_stale (daily-data.yml step)
     "stop_loss_alert_seen",   # bounded per (user × ticker × week) — naturally small (active holdings only)
+    "worker_lease",           # bounded by # of worker names (1-2 rows); auto-trimmed by holder release
     # paper_trades / paper_positions / paper_fills / paper_trade_alerts —
     # dropped 2026-05-28 (migration 054). Paper feature replaced by
     # watchlist.entry_price snapshot + 수익률 추적 model.
