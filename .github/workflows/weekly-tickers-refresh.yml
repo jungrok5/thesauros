@@ -2,6 +2,12 @@ name: Weekly Tickers Refresh
 # Refreshes the tickers master from authoritative sources (FDR for KR,
 # Nasdaq Trader for US) once a week. New listings get inserted, removed
 # listings get is_active = false.
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   schedule:
     - cron: "0 1 * * 0"   # Sunday 01:00 UTC = 10:00 KST

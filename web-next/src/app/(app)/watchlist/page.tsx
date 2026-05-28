@@ -84,15 +84,23 @@ async function fetchAll(email: string, name: string | null) {
     { patterns?: FreshnessPatternInput[]; last_close?: number }
   >();
   if (tickers.length > 0) {
+    // 2026-05-28 — explicit .limit() avoids PostgREST's silent 1000-row
+    // cap (CLAUDE.md §5 함정). scan_results active rows per ticker is
+    // typically 1-3 action_* signals, so 5× headroom is safe. analyze_results
+    // is one row per ticker (upsert key) so == tickers.length.
+    const scanLimit = Math.min(10000, tickers.length * 5);
+    const arLimit = tickers.length;
     const [{ data: signals }, { data: ar }] = await Promise.all([
       sb.from("scan_results")
         .select("ticker, signal_type, strength")
         .in("ticker", tickers)
         .eq("is_active", true)
-        .like("signal_type", "action_%"),
+        .like("signal_type", "action_%")
+        .limit(scanLimit),
       sb.from("analyze_results")
         .select("ticker, result")
-        .in("ticker", tickers),
+        .in("ticker", tickers)
+        .limit(arLimit),
     ]);
     for (const s of signals ?? []) {
       const t = (s as { ticker: string }).ticker;

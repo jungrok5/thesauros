@@ -1,5 +1,11 @@
 name: CI
 
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]

@@ -16,6 +16,12 @@ name: Weekly Book-Rule Scan
 # Trigger: Vercel Cron → /api/cron/weekly-scan → workflow_dispatch.
 # 금요일 08:00 UTC = 17:00 KST. KRX 장 마감 (15:30 KST) 후 FDR/Naver
 # 데이터 publish 안정화 후 안전한 분석 타이밍.
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -70,6 +76,9 @@ jobs:
           python -m app.db.scan_daily
 
       - name: Send Telegram + Web Push alerts (decision-grade)
+        # 2026-05-28 — inputs.send_alerts via env (not direct ${{}} into
+        # shell test) to block injection. type=boolean limits GHA UI
+        # to true/false but REST API dispatch can submit arbitrary strings.
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -79,6 +88,8 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_CONTACT_EMAIL: ${{ secrets.VAPID_CONTACT_EMAIL }}
           WEB_BASE_URL: https://thesauros2026.vercel.app
+          EVENT_NAME: ${{ github.event_name }}
+          SEND_ALERTS: ${{ inputs.send_alerts }}
         run: |
           # enter / pyramid / warn / exit / target / stop 알림.
           # 주봉 마감 후만 발사 = 책 정신.
@@ -93,8 +104,7 @@ jobs:
           # 시에만 진짜 발송. Vercel cron (scheduled) trigger 시엔 input
           # 이 없어 진짜 발송 (정상 흐름).
           args=""
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && \
-             [ "${{ inputs.send_alerts }}" != "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SEND_ALERTS" != "true" ]; then
             args="--dry-run"
             echo "::notice::Manual dispatch — alerts in dry-run mode. dispatch with send_alerts=true to actually send."
           fi
@@ -108,10 +118,11 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          SEND_ALERTS: ${{ inputs.send_alerts }}
         run: |
           digest_args="--digest"
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && \
-             [ "${{ inputs.send_alerts }}" != "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SEND_ALERTS" != "true" ]; then
             digest_args="$digest_args --dry-run"
           fi
           python -m app.db.telegram_worker $digest_args
@@ -122,10 +133,11 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          SEND_ALERTS: ${{ inputs.send_alerts }}
         run: |
           sl_args=""
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && \
-             [ "${{ inputs.send_alerts }}" != "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SEND_ALERTS" != "true" ]; then
             sl_args="--dry-run"
           fi
           python -m app.db.notify_stop_loss $sl_args

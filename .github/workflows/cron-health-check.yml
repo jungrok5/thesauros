@@ -7,6 +7,12 @@ name: Cron Health Check
 #
 # Light-weight — single Python script, ~5 sec, one Supabase query.
 
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   schedule:
     # 10:00 UTC = 19:00 KST, weekdays. Two hours after daily-scan slot

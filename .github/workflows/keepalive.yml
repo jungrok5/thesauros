@@ -1,6 +1,12 @@
 name: Supabase Keepalive
 # Pings the Supabase DB once a day to prevent the free-tier inactivity
 # pause (7-day no-query rule).
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   schedule:
     - cron: "30 1 * * *"   # 01:30 UTC = 10:30 KST

@@ -19,6 +19,12 @@ env:
 # quarterly cadence, so weekly is more than enough — we just want a
 # steady refresh signal.
 
+# Lock down GITHUB_TOKEN — defaults to repo read-write; these
+# workflows only need read for checkout (no commits/PRs/issues from
+# them). Defense in depth in case any third-party action gets pwned.
+permissions:
+  contents: read
+
 on:
   schedule:
     - cron: "0 2 * * 6"   # Saturday 02:00 UTC = 11:00 KST
