@@ -769,8 +769,51 @@ def _check_price_targets(
 
 def run_once(dry_run: bool = False) -> Dict[str, int]:
     stats = {"users": 0, "watched_tickers": 0, "new_alerts": 0, "sent": 0,
-             "pushed": 0, "skipped_existing": 0, "bedrest_skipped": 0}
+             "pushed": 0, "skipped_existing": 0, "bedrest_skipped": 0,
+             "skipped_locked": 0}
 
+    # 2026-05-28 — postgres advisory lock guards against the race where
+    # multiple Analyze-Single-Ticker workflows (dispatched in parallel
+    # by watchlist API on consecutive adds) each kick off telegram_worker
+    # simultaneously. Each instance reads `alerts` before any has had a
+    # chance to insert → dedup window misses → every active signal sends
+    # twice (or more). Pinning a single global slot for telegram_worker
+    # makes the "already alerted" check a hard serialization point.
+    #
+    # The lock is session-scoped (auto-released on conn close), so we
+    # hold the conn open for the entire run. pg_try_advisory_lock
+    # returns False immediately if held by another session — that
+    # invocation just exits as no-op.
+    _TG_WORKER_LOCK_KEY = 0x7E1E_670A_C001  # arbitrary bigint constant
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _exclusive_lock():
+        with get_conn(autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_try_advisory_lock(%s)",
+                            (_TG_WORKER_LOCK_KEY,))
+                acquired = bool(cur.fetchone()[0])
+            try:
+                yield acquired
+            finally:
+                if acquired:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT pg_advisory_unlock(%s)",
+                                    (_TG_WORKER_LOCK_KEY,))
+
+    with _exclusive_lock() as acquired:
+        if not acquired:
+            log.info(
+                "telegram_worker advisory lock held by another session — "
+                "skipping (concurrent dispatch detected)",
+            )
+            stats["skipped_locked"] = 1
+            return stats
+        return _run_once_locked(stats, dry_run)
+
+
+def _run_once_locked(stats: Dict[str, int], dry_run: bool) -> Dict[str, int]:
     users = _users_with_alerts()
     stats["users"] = len(users)
     if not users:
