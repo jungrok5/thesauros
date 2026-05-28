@@ -9,6 +9,7 @@ import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { ensureTickerInMaster } from "@/lib/ensure-ticker";
 // dispatchAnalyzeTicker import removed 2026-05-28.
 // See the "Fire-and-forget" comment below for the why.
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -309,5 +310,9 @@ export async function DELETE(req: NextRequest) {
     .eq("user_id", userId)
     .eq("ticker", ticker);
   if (error) return dbError(error);
+  await logAudit({
+    userId, action: "watchlist.delete",
+    targetKind: "ticker", targetId: ticker,
+  });
   return NextResponse.json({ ok: true });
 }

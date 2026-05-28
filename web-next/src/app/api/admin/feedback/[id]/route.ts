@@ -8,7 +8,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getServerClient } from "@/lib/supabase";
+import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -67,5 +68,13 @@ export async function PATCH(
     console.error("admin feedback patch:", error.message);
     return NextResponse.json({ error: "db error" }, { status: 500 });
   }
+  // Re-derive the admin's user_id for the audit row. We already validated
+  // them as admin above; ensureUserId returns the canonical UUID.
+  const adminId = await ensureUserId(u.email.toLowerCase(), null);
+  await logAudit({
+    userId: adminId, action: "feedback.admin_patch",
+    targetKind: "feedback_id", targetId: String(id),
+    payload: patch as Record<string, unknown>,
+  });
   return NextResponse.json({ ok: true });
 }

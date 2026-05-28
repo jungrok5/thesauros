@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -144,5 +145,9 @@ export async function DELETE(req: NextRequest) {
     .eq("id", id)
     .eq("user_id", userId);
   if (error) return dbError(error);
+  await logAudit({
+    userId, action: "watchlist_group.delete",
+    targetKind: "group_id", targetId: String(id),
+  });
   return NextResponse.json({ ok: true });
 }

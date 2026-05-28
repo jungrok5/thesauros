@@ -129,6 +129,15 @@ POLICIES: list[Policy] = [
         "DELETE FROM alerts WHERE created_at < CURRENT_DATE - INTERVAL '60 days'",
         "60 days",
     ),
+    # Append-only audit ledger (migration 057). Tiny row size + low
+    # write rate (only on destructive ops) but unbounded growth → trim
+    # after 1 year. If a security investigation needs deeper history,
+    # the daily db-backup workflow holds 30 days of immutable snapshots.
+    (
+        "user_action_audit",
+        "DELETE FROM user_action_audit WHERE created_at < CURRENT_DATE - INTERVAL '365 days'",
+        "365 days",
+    ),
     # ──────────────────────────────────────────────────────────────────
     # Generated-data TTL via engagement. The `active set` is the union
     # of the default scan universe (KOSPI/KOSDAQ — always kept) and any

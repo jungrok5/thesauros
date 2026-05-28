@@ -1,0 +1,82 @@
+name: DB Backup (daily pg_dump)
+# 2026-05-28 — 5-axis review #22. Supabase free tier has no automatic
+# PITR backups; if the DB is wiped (mis-targeted migration, account
+# closure, deletion event) the user/watchlist/feedback data is lost.
+#
+# Strategy: nightly pg_dump --schema=public against Supabase →
+# gzip-compressed plain SQL → GitHub Actions artifact (30-day retention).
+# Captures the data layer that matters (everything in `public`); skips
+# the 86MB bars table by default since it's reproducible from FDR /
+# Naver re-fetch (run with `inputs.include_bars=true` for full backup).
+#
+# Restore drill (annual): `gh run download` the artifact, gunzip,
+# psql -f restore.sql against a fresh project. Verify watchlist /
+# users / feedback tables come back intact.
+#
+# Trigger: daily schedule at 16:00 UTC (1:00 KST). After daily-data
+# cron (08:00 UTC) so the latest day's data is captured.
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+    inputs:
+      include_bars:
+        description: "Include bars + investor_flow tables (large)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump public schema
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          INCLUDE_BARS: ${{ inputs.include_bars }}
+        run: |
+          mkdir -p backup
+          DATE=$(date -u +%Y%m%d-%H%M%S)
+          OUT="backup/thesauros-public-${DATE}.sql"
+          EXCLUDE=""
+          if [ "$INCLUDE_BARS" != "true" ]; then
+            # Skip the largest reproducible tables to keep the artifact
+            # small. These can be re-ingested from FDR / Naver if needed.
+            EXCLUDE="--exclude-table-data=public.bars \
+                     --exclude-table-data=public.investor_flow \
+                     --exclude-table-data=public.scan_results \
+                     --exclude-table-data=public.analyze_results \
+                     --exclude-table-data=public.fundamentals \
+                     --exclude-table-data=public.disclosures"
+          fi
+          # --no-owner / --no-acl strip role grants so a future restore
+          # against a clean Supabase project (different role tree) just
+          # works.
+          pg_dump "$SUPABASE_DB_URL" \
+            --schema=public \
+            --no-owner --no-acl \
+            $EXCLUDE \
+            -f "$OUT"
+          gzip "$OUT"
+          ls -la backup/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: thesauros-db-backup
+          path: backup/*.sql.gz
+          retention-days: 30
+          if-no-files-found: error
