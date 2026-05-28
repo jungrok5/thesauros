@@ -40,22 +40,52 @@ interface PatternBlock {
   extra?: Record<string, unknown>;
 }
 
-// Short Korean label per pattern kind. Keep ≤ 6 chars so the chart
-// marker text fits next to the bar without overlapping neighbors.
+// Short Korean label per pattern kind. Backend writes Korean strings
+// directly (patterns.py kind="쌍바닥" etc) — these aren't snake_case
+// keys, they ARE the display label. Map kept to (a) normalize long
+// names to chart-friendly short forms, (b) fall through to raw kind
+// for anything not mapped.
 const PATTERN_MARKER_LABEL: Record<string, string> = {
-  pattern_double_bottom:           "쌍바닥",
-  pattern_triple_bottom:           "삼중바닥",
-  pattern_inverse_head_and_shoulders: "역H&S",
-  pattern_cup_and_handle:          "컵핸들",
-  pattern_doulbanji:               "돌반지",
-  pattern_ma240_breakout:          "240돌파",
-  pattern_forking:                 "포킹",
-  pattern_catalyst_candle:         "장대양봉",
-  pattern_double_top:              "쌍천장",
-  pattern_triple_top:              "삼중천장",
-  pattern_head_and_shoulders:      "H&S",
-  pattern_death_messenger:         "사망신호",
-  pattern_ma240_break_down:        "240이탈",
+  "쌍바닥":                    "쌍바닥",
+  "삼중바닥":                  "삼중바닥",
+  "역H&S":                     "역H&S",
+  "원형바닥 (Cup with Handle)": "컵핸들",
+  "240MA 돌파매매":            "240돌파",
+  "포킹":                      "포킹",
+  "장대양봉 catalyst":         "장대양봉",
+  "MA 수렴 매복":              "MA 매복",
+  "쌍봉":                      "쌍천장",
+  "삼고점":                    "삼중천장",
+  "H&S (머리어깨형)":          "H&S",
+};
+
+// One-line plain explanation per pattern kind (2026-05-28). User clicks
+// a chip in the picker → this line tells them what THAT pattern is +
+// what action it implies. "잘 모르겠는데" feedback target.
+// Keys = the raw Korean kind from analyzer (NOT snake_case).
+const PATTERN_EXPLAINER: Record<string, string> = {
+  "쌍바닥":
+    "같은 가격대에서 두 번 바닥 만들고 돌파 시 매수 — 책 정신상 강한 반등 자리.",
+  "삼중바닥":
+    "같은 가격대에서 세 번 바닥 만들고 돌파 시 매수 — 매집 흔적이 더 뚜렷.",
+  "역H&S":
+    "가운데 깊은 바닥 + 양쪽 얕은 바닥. Neckline 위로 돌파 시 매수.",
+  "원형바닥 (Cup with Handle)":
+    "둥근 컵 모양 후 작은 손잡이 조정. 컵 상단 돌파 시 매수.",
+  "240MA 돌파매매":
+    "240일선 위로 올라선 자리 — 장기 추세 전환 신호.",
+  "포킹":
+    "두 트렌드라인이 좁아지며 매집. 돌파 시 강한 매수 신호 (책 핵심 매수 패턴).",
+  "장대양봉 catalyst":
+    "큰 양봉 (장대양봉) 발생. 그 봉의 4등분선 기준으로 매매 자리 설정.",
+  "MA 수렴 매복":
+    "여러 MA 가 좁게 수렴 → 폭발적 돌파 임박 가능성. 돌파 시 매수.",
+  "쌍봉":
+    "같은 가격대 두 번 천장 후 하락 — 청산 신호. 보유 시 매도 검토.",
+  "삼고점":
+    "같은 가격대 세 번 천장 후 하락 — 더 강한 청산 신호.",
+  "H&S (머리어깨형)":
+    "가운데 높은 천장 + 양쪽 낮은 천장. Neckline 이탈 시 청산.",
 };
 
 interface QuarterLines {
@@ -453,6 +483,12 @@ export function BookChart({
       // ✅ marker on the latest bar — "여기가 그 자리" 표시. Sits ABOVE
       // the bar so it doesn't collide with the existing belowBar arrows
       // from bullish pattern markers.
+      // 2026-05-28 v3: ACTIVE pattern (from the picker) renders BIG and
+      // BRIGHT (amber star-arrow + bold label). Others render DIM and
+      // small (gray, no label). The active marker's bar drives a chart-
+      // scroll so the bar is visible — user clicks the chip and the
+      // chart jumps to the right spot.
+      let activeBarIdx: number | null = null;
       if (candleSeries && (data.patterns.length > 0 || eligibilityGrade === "OK")) {
         // Match each pattern's detected_at (ISO date) to the nearest bar.
         // detected_at is a single date, bars[].t is a unix second; we look
@@ -466,25 +502,30 @@ export function BookChart({
           shape: MarkerShape;
           text: string;
         }
-        const markers: ChartMarker[] = data.patterns
+        const visiblePatterns = data.patterns
           .filter((p) => p.detected_at)
-          .slice(0, 6)   // most recent N — chart legibility
-          .map((p) => {
-            const sec = Math.floor(Date.parse(p.detected_at!) / 1000);
-            // bars are sorted ascending → find first bar at or after this date.
-            let matchIdx = barTimes.findIndex((t) => t >= sec);
-            if (matchIdx === -1) matchIdx = barTimes.length - 1;
-            const time = barTimes[matchIdx] as Time;
-            const isBull = p.direction === "bullish";
-            const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind.replace(/^pattern_/, "");
-            return {
-              time,
-              position: isBull ? "belowBar" : "aboveBar",
-              color: isBull ? "#22c55e" : "#ef4444",
-              shape: isBull ? "arrowUp" : "arrowDown",
-              text: `${label} ${(p.confidence * 100).toFixed(0)}%`,
-            };
+          .slice(0, 6);   // most recent N — chart legibility
+        const markers: ChartMarker[] = [];
+        visiblePatterns.forEach((p, i) => {
+          const sec = Math.floor(Date.parse(p.detected_at!) / 1000);
+          let matchIdx = barTimes.findIndex((t) => t >= sec);
+          if (matchIdx === -1) matchIdx = barTimes.length - 1;
+          const isBull = p.direction === "bullish";
+          const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind.replace(/^pattern_/, "");
+          const isActive = i === clampedActiveIdx;
+          if (isActive) activeBarIdx = matchIdx;
+          markers.push({
+            time: barTimes[matchIdx] as Time,
+            position: isBull ? "belowBar" : "aboveBar",
+            color: isActive
+              ? "#f59e0b"                         // active = amber/bright
+              : isBull ? "#22c55e80" : "#ef444480",  // inactive = 50% opacity
+            shape: isBull ? "arrowUp" : "arrowDown",
+            text: isActive
+              ? `★ ${label} ${(p.confidence * 100).toFixed(0)}%`
+              : "",                                // inactive: no text
           });
+        });
         // "매수 자리" 마커: 차트가 결정 보조 surface 가 되도록 — 차트만
         // 봐도 "지금 이 봉이 책 정신상 매수 자리" 표시. eligibility "OK"
         // 일 때만, 최신 봉에 큰 ✅ 부착.
@@ -504,6 +545,20 @@ export function BookChart({
             lwc.createSeriesMarkers(candleSeries, markers);
           } catch (e) {
             console.warn("createSeriesMarkers unavailable:", e);
+          }
+        }
+
+        // Auto-scroll to active pattern's bar so the ★ marker is visible
+        // when the user clicks a chip. Center the bar in the viewport.
+        if (activeBarIdx != null) {
+          const total = data.bars.length;
+          const halfRange = 26;   // ~6 months of weekly bars
+          const from = Math.max(0, activeBarIdx - halfRange);
+          const to = Math.min(total - 1, activeBarIdx + halfRange);
+          try {
+            chart!.timeScale().setVisibleLogicalRange({ from, to });
+          } catch {
+            /* fall back to whatever default range was set above */
           }
         }
       }
@@ -679,38 +734,58 @@ export function BookChart({
       </div>
 
       {/* Pattern picker — chips for every detected pattern. Clicking a
-          chip switches which pattern's entry/stop/target bands draw on
-          the chart. Default = top-sorted (data.patterns[0]). 2026-05-28
-          per user feedback: "라벨 선택하면 패턴이 오버레이돼서 그려져야". */}
+          chip: (1) switches which pattern's entry/stop/target bands
+          draw, (2) makes that pattern's ★ marker bright amber (others
+          dim), (3) scrolls the chart so the bar is visible. The
+          explainer line below tells the user WHAT this pattern is.
+          2026-05-28 per user feedback: "잘 모르겠는데". */}
       {data?.patterns && data.patterns.length > 0 && (
-        <div className="flex items-start gap-2 flex-wrap text-xs">
-          <span className="text-muted-foreground mt-1 shrink-0">📍 패턴 선택:</span>
-          <div className="flex flex-wrap gap-1.5">
-            {data.patterns.slice(0, 8).map((p, i) => {
-              const active = i === clampedActiveIdx;
-              const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind;
-              const isBull = p.direction === "bullish";
-              return (
-                <button
-                  key={`${p.kind}-${p.detected_at}-${i}`}
-                  type="button"
-                  onClick={() => setActivePatternIdx(i)}
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium transition-all ${
-                    active
-                      ? isBull
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/60 shadow-sm"
-                        : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/60 shadow-sm"
-                      : "bg-muted/40 text-muted-foreground border-input hover:bg-muted"
-                  }`}
-                  title={`${label} (${isBull ? "상승" : "하락"}) · 신뢰도 ${(p.confidence * 100).toFixed(0)}%`}
-                >
-                  <span>{isBull ? "🟢" : "🔴"}</span>
-                  <span>{label}</span>
-                  <span className="opacity-70">{(p.confidence * 100).toFixed(0)}%</span>
-                </button>
-              );
-            })}
+        <div className="space-y-1.5">
+          <div className="flex items-start gap-2 flex-wrap text-xs">
+            <span className="text-muted-foreground mt-1 shrink-0">📍 패턴 선택:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {data.patterns.slice(0, 8).map((p, i) => {
+                const active = i === clampedActiveIdx;
+                const label = PATTERN_MARKER_LABEL[p.kind] ?? p.kind;
+                const isBull = p.direction === "bullish";
+                return (
+                  <button
+                    key={`${p.kind}-${p.detected_at}-${i}`}
+                    type="button"
+                    onClick={() => setActivePatternIdx(i)}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium transition-all ${
+                      active
+                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/70 shadow-sm"
+                        : "bg-muted/40 text-muted-foreground border-input hover:bg-muted"
+                    }`}
+                    title={`${label} (${isBull ? "상승" : "하락"}) · 신뢰도 ${(p.confidence * 100).toFixed(0)}% · 클릭하면 차트에 ★ 표시`}
+                  >
+                    <span>{active ? "★" : isBull ? "🟢" : "🔴"}</span>
+                    <span>{label}</span>
+                    <span className="opacity-70">{(p.confidence * 100).toFixed(0)}%</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          {(() => {
+            const ap = data.patterns[clampedActiveIdx];
+            if (!ap) return null;
+            const explainer = PATTERN_EXPLAINER[ap.kind];
+            const label = PATTERN_MARKER_LABEL[ap.kind] ?? ap.kind;
+            if (!explainer) return null;
+            return (
+              <div className="text-[11px] text-muted-foreground leading-relaxed pl-[72px]">
+                <span className="font-medium text-foreground/80">{label}</span>
+                {" — "}
+                {explainer}
+                {" "}
+                <span className="text-amber-600 dark:text-amber-400">
+                  차트의 ★ 가 발생 위치
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
