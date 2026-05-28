@@ -232,18 +232,23 @@ export default async function DashboardPage() {
           못 냄. 결론은 위쪽 MarketActionCard 의 한 줄 평이 함. 거시 카드
           자체는 펼침 토글로 demote — 자세히 알고 싶은 사용자만 펼침. */}
       {core.length > 0 && (
-        <details className="rounded-lg border border-border bg-card">
+        // 2026-05-29 — `open` default. 사용자가 "🇰🇷 국내 경제 한 줄
+        // 안 보인다" 라고 한 이유가 이게 collapsed 였기 때문. 카드 자체가
+        // 안 보이면 그 안의 explainer 도 발견 불가. summary 는 유지해서
+        // 원하면 접을 수 있게 함.
+        <details className="rounded-lg border border-border bg-card" open>
           <summary className="px-4 py-3 cursor-pointer hover:bg-muted/40 flex items-baseline justify-between gap-2">
             <span className="text-sm font-semibold tracking-tight">
               핵심 거시 지표 ({core.length}개)
             </span>
             <span className="text-[11px] text-muted-foreground font-normal">
-              자세히 보고 싶을 때만 펼침 — 결론은 위쪽 카드
+              접으려면 클릭 — 🇰🇷 국내 경제 영향도 함께 노출
             </span>
           </summary>
           <div className="px-4 pb-4 pt-2">
             <p className="text-xs text-muted-foreground mb-3">
               책 정신상 매수/회피 자격에 직접 영향을 주는 지표만.
+              미국 금리·달러·환율 카드 아래 🇰🇷 줄이 국내 경제 영향 설명.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               {core.map((it) => (
