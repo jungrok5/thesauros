@@ -7,7 +7,6 @@ import {
   BookOpen,
   Compass,
   Filter,
-  FlaskConical,
   Map,
   Menu,
   MessageSquare,
@@ -66,7 +65,8 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "⭐ 내 종목",
     items: [
       { href: "/watchlist", label: "관심·보유 종목", icon: Star },
-      { href: "/paper", label: "모의 투자 (Forward Test)", icon: FlaskConical },
+      // 2026-05-28 — 모의 투자 메뉴 제거. paper 기능 폐기 후 watchlist 의
+      // entry_price 스냅샷 + 수익률 추적 모델로 통합.
     ],
   },
   {

@@ -24,6 +24,10 @@ type Row = {
   signal_label?: string | null;
   signal_direction?: "bullish" | "bearish" | "neutral" | null;
   fresh?: { kind: string; runupPct: number } | null;
+  // 2026-05-28 — latest weekly close + bar date. Pair with entry_price
+  // to render "등록가 → 현재가 · 수익률 %".
+  current_price?: number | null;
+  current_price_at?: string | null;
 };
 
 export type GroupOption = { id: number; name: string; color: string | null };
@@ -171,10 +175,45 @@ export function WatchlistRowClient({
             )}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            {row.entry_price != null && (
+            {/* 2026-05-28 — 등록가 → 현재가 · 수익률. entry_price 는 종목을
+                관심에 추가한 시점 (또는 첫 등록일) 의 주봉 종가 스냅샷. */}
+            {row.entry_price != null && row.current_price != null && (() => {
+              const ep = Number(row.entry_price);
+              const cp = Number(row.current_price);
+              const pct = ep > 0 ? (cp / ep - 1) * 100 : null;
+              const tone = pct == null
+                ? "text-muted-foreground"
+                : pct > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : pct < 0
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-muted-foreground";
+              return (
+                <span className="font-mono">
+                  등록 {ep.toLocaleString("ko-KR")}
+                  {row.entry_date && (
+                    <span className="text-muted-foreground/60">
+                      ({row.entry_date})
+                    </span>
+                  )}
+                  {" → "}
+                  현재 {cp.toLocaleString("ko-KR")}
+                  {" · "}
+                  <span className={`font-semibold ${tone}`}>
+                    {pct == null
+                      ? "—"
+                      : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+                  </span>
+                </span>
+              );
+            })()}
+            {/* 등록가가 없으면 (legacy row) — 알림용 메시지 */}
+            {row.entry_price == null && row.current_price != null && (
               <span>
-                진입 {row.entry_price.toLocaleString("ko-KR")}
-                {row.entry_date && ` · ${row.entry_date}`}
+                현재 {Number(row.current_price).toLocaleString("ko-KR")}
+                <span className="text-muted-foreground/60">
+                  {" "}(등록가 없음 — 다시 추가하면 수익률 추적 시작)
+                </span>
               </span>
             )}
             {row.target_price != null && (

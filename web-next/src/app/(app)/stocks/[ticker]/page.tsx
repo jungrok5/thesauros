@@ -20,7 +20,9 @@ import { headers } from "next/headers";
 import { decideBackLink } from "@/lib/back-link";
 import { AnalysisView } from "@/components/analysis-view";
 import { WatchlistButton } from "@/components/watchlist-button";
-import { PaperBuyButton } from "@/components/paper-buy-button";
+// PaperBuyButton removed 2026-05-28 — paper trading replaced by
+// watchlist.entry_price snapshot model. Tracked tickers automatically
+// show "등록가 → 현재가 · 수익률" on /watchlist.
 import { StockContextTabs } from "@/components/stock-context-tabs";
 import { FundamentalVerdicts } from "@/components/fundamental-verdicts";
 import {
@@ -141,37 +143,7 @@ async function resolveTicker(raw: string): Promise<TickerInfo | null> {
   return null;
 }
 
-async function getOpenPaperLots(ticker: string): Promise<number> {
-  // How many BUY fills does the current user's open position on this
-  // ticker have? Each prior 매수/추매 is a buy fill. Used by
-  // PaperBuyButton to surface a "추매 N건째" hint in the modal so
-  // a fat-finger duplicate is obvious.
-  const session = await auth();
-  if (!session?.user?.email) return 0;
-  try {
-    const userId = await ensureUserId(
-      session.user.email.toLowerCase(),
-      session.user.name ?? null,
-    );
-    const sb = getServerClient();
-    const { data: pos } = await sb
-      .from("paper_positions")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("ticker", ticker)
-      .eq("status", "open")
-      .maybeSingle();
-    if (!pos) return 0;
-    const { count } = await sb
-      .from("paper_fills")
-      .select("id", { count: "exact", head: true })
-      .eq("position_id", pos.id)
-      .eq("side", "buy");
-    return count ?? 0;
-  } catch {
-    return 0;
-  }
-}
+// getOpenPaperLots removed 2026-05-28 — paper feature dropped.
 
 async function getWatchlistState(
   ticker: string,
@@ -282,7 +254,7 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
   const ticker = resolved?.ticker ?? raw.toUpperCase();
   const isCanonical = CANONICAL_TICKER_RE.test(ticker);
 
-  const [analysis, watch, flow, ctx, openPaperLots] = await Promise.all([
+  const [analysis, watch, flow, ctx] = await Promise.all([
     isCanonical
       ? getAnalysis(ticker)
       : Promise.resolve<{ result: AnalysisResult | null; updatedAt: string | null }>({ result: null, updatedAt: null }),
@@ -303,7 +275,6 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
           latestBar: null,
           volumeSurge: null,
         }),
-    isCanonical ? getOpenPaperLots(ticker) : Promise.resolve(0),
   ]);
   const result = analysis.result;
   const analyzedAt = analysis.updatedAt;
@@ -338,24 +309,11 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
               initialCategory={watch.category}
               action={result?.action ?? null}
             />
-            {/* 모의 투자 entry point next to 관심·보유 — only when the
-                verdict is actually a buy candidate (entry_plan set +
-                eligibility lets us through). Reads the same entry/
-                stop/target the BookVerdict surfaces below. */}
-            {result?.entry_plan?.entry != null &&
-             (result.action === "STRONG_BUY" || result.action === "BUY") &&
-             (result.eligibility?.grade === "OK" ||
-              result.eligibility?.grade === "CONDITIONAL") && (
-              <PaperBuyButton
-                ticker={ticker}
-                entryPrice={Number(result.entry_plan.entry)}
-                stopLoss={result.entry_plan.stop != null
-                  ? Number(result.entry_plan.stop) : null}
-                target={result.entry_plan.target != null
-                  ? Number(result.entry_plan.target) : null}
-                openLots={openPaperLots}
-              />
-            )}
+            {/* 2026-05-28 — PaperBuyButton 제거. 모의 투자 전면 폐기 후
+                "관심 종목 등록 = entry_price 스냅샷" 로 대체. 사용자가
+                WatchlistButton 으로 관심/보유 등록하면 그 시점 주봉 종가
+                가 entry_price 로 저장되고, /watchlist 페이지에서 "등록가
+                → 현재가 · 수익률" 자동 추적됨. */}
           </div>
         )}
       </div>

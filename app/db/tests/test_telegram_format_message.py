@@ -348,14 +348,16 @@ def test_exit_class_alerts_ignore_eligibility():
 # ---------------------------------------------------------------------
 
 @pytest.mark.parametrize("source,bracket", [
-    ("관심",     "[관심]"),
-    ("보유",     "[보유]"),
-    ("모의투자", "[모의투자]"),
+    ("관심", "[관심]"),
+    ("보유", "[보유]"),
 ])
 def test_source_tag_appears_in_title(source, bracket):
     """The header must tell the user which list this came from so the
-    same body wording works for 관심 / 보유 / 모의투자. Added 2026-05-27
-    when paper-buy was decoupled from watchlist holdings."""
+    same body wording works for 관심 / 보유. Originally also covered
+    [모의투자] when paper-buy used a separate source tag; paper feature
+    was dropped 2026-05-28 (replaced by watchlist.entry_price snapshot)
+    so only 관심/보유 remain. format_message still accepts arbitrary
+    source strings — the renderer doesn't gate."""
     msg = telegram_worker.format_message(
         "005930.KS", "삼성전자", "enter", _enter_sig(), source=source,
     )

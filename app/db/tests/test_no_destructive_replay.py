@@ -85,6 +85,10 @@ ALLOWED_DESTRUCTIVE: set[str] = {
     # 매 INSERT 시 자동 trim 의도. trigger 정의일 뿐 migration replay 시
     # 데이터 손실 X.
     "026_search_history_and_feedback.sql",
+    # 054 — paper feature 폐기 (2026-05-28 user redesign). paper_*
+    # tables 영구 drop, watchlist.entry_price snapshot 모델로 대체.
+    # SQL 헤더에 사유 + 대체 모델 명시. replay 시 IF EXISTS 라 no-op.
+    "054_drop_paper_tables_use_watchlist_entry.sql",
 }
 
 

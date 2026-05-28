@@ -19,9 +19,17 @@ def test_sl_message_includes_drop_pct() -> None:
     assert "005930.KS" in msg
     assert "-11.43%" in msg
     assert "임계 -10" in msg
-    # Signal-based guidance (universe finding: SL is signal-dependent)
-    assert "volume_case_3" in msg
-    assert "action_strong_buy" in msg
+    # [보유] source tag — alignment with 2026-05-27 telegram redesign.
+    assert "[보유]" in msg
+    # 다음 단계 — beginner guide block per the no-jargon UX rule.
+    assert "다음 단계:" in msg
+    # 금요일 종가 reminder — anti panic-trade nudge present on every alert.
+    assert "금요일" in msg and "일중 흔들림" in msg
+    # Raw signal_type names (volume_case_3 / action_strong_buy / etc) must
+    # NOT appear — signal-labels policy (Korean labels only).
+    assert "volume_case_3" not in msg
+    assert "action_strong_buy" not in msg
+    assert "pattern_" not in msg
     assert "/stocks/005930.KS" in msg
 
 

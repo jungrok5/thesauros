@@ -114,22 +114,11 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: timeout 10m python -m app.db.notify_disclosure_alerts
 
-      - name: Paper-trade stop/target alerts (forward test)
-        # 가짜 매수 (paper_trades) 의 손절선/목표가 도달 알림. 매일
-        # weekly close 갱신 후 한 번 check — 책 정신상 매매 결정은
-        # 주봉 종가지만 손절선 hit 는 발견 즉시 사용자 알림이 자연.
-        # Idempotent: stop_alert_sent_at / target_alert_sent_at 컬럼에
-        # 한 번 stamp 되면 같은 trade 의 같은 종류 알림 재발사 X.
-        continue-on-error: true
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
-        run: timeout 5m python -m app.db.notify_paper_alerts
+      # 2026-05-28 — Paper-trade alerts step removed. Paper feature
+      # dropped in favor of "관심 등록 = entry_price 스냅샷 + 수익률
+      # 추적" model. Stop-loss alerts now flow through the existing
+      # notify_stop_loss step (weekly-scan.yml) reading watchlist
+      # category='holding' + entry_price.
 
       - name: Data-quality assertions
         if: always()

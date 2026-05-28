@@ -21,6 +21,7 @@ import {
   type FreshnessPatternInput,
 } from "@/lib/freshness";
 import { labelFor } from "@/lib/signal-labels";
+import { fetchLatestPrices } from "@/lib/latest-prices";
 
 export const dynamic = "force-dynamic";
 
@@ -110,10 +111,20 @@ async function fetchAll(email: string, name: string | null) {
     }
   }
 
+  // 2026-05-28 — pull latest weekly close per ticker so each row can
+  // show "현재가" and compute the return % vs entry_price (the
+  // snapshot we take at watchlist add time). Single-batch fetch via
+  // the shared latest-prices helper.
+  const priceMap = tickers.length > 0
+    ? await fetchLatestPrices(tickers)
+    : new Map();
+
   const enriched = rows.map((r) => {
     const signal = signalByTicker.get(r.ticker) ?? null;
     const analyze = analyzeByTicker.get(r.ticker);
-    const lastClose = analyze?.last_close ?? 0;
+    const lp = priceMap.get(r.ticker);
+    const currentPrice = lp?.close ?? analyze?.last_close ?? null;
+    const lastClose = currentPrice ?? 0;
     const fresh = lastClose > 0 && analyze?.patterns
       ? pickFreshest(analyze.patterns, lastClose)
       : null;
@@ -121,6 +132,8 @@ async function fetchAll(email: string, name: string | null) {
       ...r,
       ticker_name: r.tickers?.name ?? null,
       ticker_market: r.tickers?.market ?? null,
+      current_price: currentPrice,
+      current_price_at: lp?.barDate ?? null,
       signal_label: signal ? labelFor(signal.type).label : null,
       signal_direction: signal ? labelFor(signal.type).direction : null,
       fresh: fresh ? { kind: fresh.kind, runupPct: fresh.runupPct } : null,

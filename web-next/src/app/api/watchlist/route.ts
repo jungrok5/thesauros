@@ -112,11 +112,42 @@ export async function POST(req: NextRequest) {
   // marker would silently suppress alerts at the new level.
   const { data: existing } = await sb
     .from("watchlist")
-    .select("target_price, target_pct_from_entry, stop_price, stop_pct_from_entry")
+    .select("target_price, target_pct_from_entry, stop_price, stop_pct_from_entry, entry_price, entry_date")
     .eq("user_id", userId)
     .eq("ticker", ticker)
     .maybeSingle();
   const wasNewAdd = existing == null;
+
+  // 2026-05-28 — entry_price auto-snapshot. When a user adds a ticker
+  // to the watchlist, snapshot the latest weekly close as the "I
+  // started tracking here" reference price. The watchlist UI then
+  // shows entry_price / current_price / return % so every tracked
+  // ticker is automatically a "what if I had bought when I added it"
+  // experiment. Only snapshots when:
+  //   - first time adding this ticker (wasNewAdd), AND
+  //   - body didn't explicitly provide entry_price (preserves user override).
+  let snappedEntryPrice = entryPrice;
+  let snappedEntryDate = entryDate;
+  if (wasNewAdd && entryPrice == null) {
+    const { data: latestBar } = await sb
+      .from("bars")
+      .select("close, bar_date")
+      .eq("ticker", ticker)
+      .eq("granularity", "W")
+      .order("bar_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestBar?.close != null) {
+      snappedEntryPrice = Number(latestBar.close);
+      snappedEntryDate = String(latestBar.bar_date);
+    }
+  }
+  // For an existing row whose user did not pass entry_price, keep the
+  // already-recorded entry_price (don't reset on category swap etc).
+  if (!wasNewAdd && entryPrice == null && existing?.entry_price != null) {
+    snappedEntryPrice = Number(existing.entry_price);
+    snappedEntryDate = existing.entry_date ? String(existing.entry_date) : null;
+  }
   const resetTarget =
     existing != null &&
     (Number(existing.target_price) !== Number(targetPrice) ||
@@ -129,7 +160,7 @@ export async function POST(req: NextRequest) {
   const payload: Record<string, unknown> = {
     user_id: userId, ticker, category, note,
     group_id: groupId,
-    entry_price: entryPrice, entry_date: entryDate,
+    entry_price: snappedEntryPrice, entry_date: snappedEntryDate,
     target_price: targetPrice,
     target_pct_from_entry: targetPct,
     stop_price: stopPrice,
