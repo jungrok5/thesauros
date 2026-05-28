@@ -46,10 +46,15 @@ export async function GET(req: NextRequest) {
     `name.ilike.%${safeQ}%`,
   ].join(",");
 
+  // 2026-05-28 — KR-only autocomplete. The site is KR market focused;
+  // surfacing US tickers (NASDAQ/NYSE/AMEX) in search was confusing
+  // ("AAPL 검색 가능한데 분석은 안 됨"). The US scan path is feature-
+  // flagged off in this surface — filter at the source.
   const { data, error } = await sb
     .from("tickers")
     .select("ticker, name, market, sector")
     .eq("is_active", true)
+    .in("market", ["KOSPI", "KOSDAQ"])
     .or(orFilters)
     .limit(limit);
 
@@ -90,6 +95,10 @@ export async function GET(req: NextRequest) {
   const seen = new Set(items.map((r) => String(r.ticker).toUpperCase()));
   const merged: unknown[] = [...items];
   for (const h of naverHits) {
+    // 2026-05-28 — KR-only autocomplete (mirrors the local-DB filter
+    // above). searchNaverStocks returns both KR + US hits; we surface
+    // only KR.
+    if (h.nation !== "KR") continue;
     const t = h.ticker.toUpperCase();
     if (seen.has(t)) continue;
     seen.add(t);
