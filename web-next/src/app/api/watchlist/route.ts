@@ -148,6 +148,45 @@ export async function POST(req: NextRequest) {
     snappedEntryPrice = Number(existing.entry_price);
     snappedEntryDate = existing.entry_date ? String(existing.entry_date) : null;
   }
+
+  // 2026-05-28 — target / stop auto-fill on first add. Priority:
+  //   1. body provided → keep (user override always wins)
+  //   2. analyze_results.entry_plan (book-grounded analyzer output)
+  //   3. fallback default: target = entry × 1.20, stop = entry × 0.90
+  // Existing rows preserve their values; only wasNewAdd triggers fill.
+  let autoTargetPrice = targetPrice;
+  let autoStopPrice = stopPrice;
+  if (wasNewAdd && snappedEntryPrice != null && snappedEntryPrice > 0) {
+    if (autoTargetPrice == null || autoStopPrice == null) {
+      const { data: ar } = await sb
+        .from("analyze_results")
+        .select("result")
+        .eq("ticker", ticker)
+        .maybeSingle();
+      const plan = (ar?.result as { entry_plan?: { entry?: number | string;
+        stop?: number | string; target?: number | string } } | null)
+        ?.entry_plan ?? null;
+      if (autoTargetPrice == null) {
+        const planTarget = plan?.target != null ? Number(plan.target) : null;
+        autoTargetPrice = Number.isFinite(planTarget) && (planTarget as number) > 0
+          ? (planTarget as number)
+          : Math.round(snappedEntryPrice * 1.20);
+      }
+      if (autoStopPrice == null) {
+        const planStop = plan?.stop != null ? Number(plan.stop) : null;
+        autoStopPrice = Number.isFinite(planStop) && (planStop as number) > 0
+          ? (planStop as number)
+          : Math.round(snappedEntryPrice * 0.90);
+      }
+    }
+  }
+  // Preserve existing target/stop on category swap (same as entry_price).
+  if (!wasNewAdd && targetPrice == null && existing?.target_price != null) {
+    autoTargetPrice = Number(existing.target_price);
+  }
+  if (!wasNewAdd && stopPrice == null && existing?.stop_price != null) {
+    autoStopPrice = Number(existing.stop_price);
+  }
   const resetTarget =
     existing != null &&
     (Number(existing.target_price) !== Number(targetPrice) ||
@@ -161,9 +200,9 @@ export async function POST(req: NextRequest) {
     user_id: userId, ticker, category, note,
     group_id: groupId,
     entry_price: snappedEntryPrice, entry_date: snappedEntryDate,
-    target_price: targetPrice,
+    target_price: autoTargetPrice,
     target_pct_from_entry: targetPct,
-    stop_price: stopPrice,
+    stop_price: autoStopPrice,
     stop_pct_from_entry: stopPct,
   };
   if (resetTarget) payload.target_hit_at = null;
