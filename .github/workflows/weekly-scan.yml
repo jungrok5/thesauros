@@ -13,9 +13,11 @@ name: Weekly Book-Rule Scan
 #     + scan_results 의 active 신호 갱신)
 #   - telegram_worker (enter / pyramid / warn / exit / target / stop)
 #
-# Trigger: Vercel Cron → /api/cron/weekly-scan → workflow_dispatch.
-# 금요일 08:00 UTC = 17:00 KST. KRX 장 마감 (15:30 KST) 후 FDR/Naver
-# 데이터 publish 안정화 후 안전한 분석 타이밍.
+# Trigger: GH native `on: schedule:` (primary) + Vercel Cron →
+# /api/cron/weekly-scan → workflow_dispatch (fallback). 금요일 08:30
+# UTC = 17:30 KST. KRX 장 마감 (15:30 KST) 후 FDR/Naver 데이터
+# publish 안정화 후 안전한 분석 타이밍. 단 schedule 트리거는
+# inputs.send_alerts 없어서 EVENT_NAME=schedule 분기로 진짜 발송.
 # Lock down GITHUB_TOKEN — defaults to repo read-write; these
 # workflows only need read for checkout (no commits/PRs/issues from
 # them). Defense in depth in case any third-party action gets pwned.
@@ -23,6 +25,14 @@ permissions:
   contents: read
 
 on:
+  # GH native schedule — primary. 금요일 08:30 UTC = 17:30 KST.
+  # 2026-05-28 finding: Vercel cron Hobby tier 가 fire 안 함.
+  # GH 자체 schedule 은 PUBLIC repo 라 무료 + 안정. Vercel chain
+  # (vercel.json /api/cron/weekly-scan) 는 fallback 으로 유지하되
+  # GH 가 single source of truth. schedule 트리거 시 inputs 는
+  # default 적용 (send_alerts=true 가 필요해 schedule 분기 처리).
+  schedule:
+    - cron: "30 8 * * 5"
   workflow_dispatch:
     inputs:
       send_alerts:
@@ -32,6 +42,7 @@ on:
 
 concurrency:
   group: weekly-scan
+  # Vercel + GH 둘 다 fire 시 두번째 대기. scan 작업은 idempotent.
   cancel-in-progress: false
 
 jobs:

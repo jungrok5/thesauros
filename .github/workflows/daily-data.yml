@@ -12,8 +12,9 @@ name: Daily Data Refresh
 #   - disclosure alerts (DART 새 공시 — 이벤트성 정보)
 #   - data-quality assertions
 #
-# Trigger: Vercel Cron → /api/cron/daily-data → workflow_dispatch.
-# 매일 08:00 UTC = 17:00 KST.
+# Trigger: GH native `on: schedule:` (primary) + Vercel Cron →
+# /api/cron/daily-data → workflow_dispatch (fallback). 매일 08:00
+# UTC = 17:00 KST.
 # Lock down GITHUB_TOKEN — defaults to repo read-write; these
 # workflows only need read for checkout (no commits/PRs/issues from
 # them). Defense in depth in case any third-party action gets pwned.
@@ -21,10 +22,20 @@ permissions:
   contents: read
 
 on:
+  # GH native schedule — primary, reliable. 매일 08:00 UTC = 17:00 KST.
+  # 2026-05-28 finding: Vercel cron (vercel.json /api/cron/daily-data)
+  # 가 Hobby tier 에서 실제로는 fire 안 함 (지난 48h Vercel 함수 로그
+  # 에 cron path 호출 0건). GH 자체 schedule 은 PUBLIC repo 라 무료 +
+  # 안정적 (±5-15분 지터). Vercel route 는 fallback 으로 유지하되
+  # GH 가 사실상 single source of truth.
+  schedule:
+    - cron: "0 8 * * 1-5"
   workflow_dispatch:
 
 concurrency:
   group: daily-data
+  # 둘 다 fire 해도 race 없음 — 두번째는 첫번째 끝까지 대기. data
+  # 작업이 idempotent (upsert) 라 재실행 비용은 1회 cron 시간 추가뿐.
   cancel-in-progress: false
 
 jobs:
