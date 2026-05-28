@@ -107,6 +107,17 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: python -m app.db.ingest_investor_flow --pages 2 --workers 12
 
+      - name: Ingest market-wide investor trend (KOSPI/KOSDAQ)
+        # 시장 전체 개인/외국인/기관계 일일 net (Naver m.stock integration).
+        # 2 requests, runs in <1s. Snapshot of today only — history
+        # accumulates one row per day per market from deployment date.
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: python -m app.db.ingest_market_investor_trend
+
       - name: Disclosure alerts (DART 새 공시 → Telegram)
         # 이벤트성 알림 — 새 공시는 발생 시점이 곧 의미. 책 정신상 매매
         # 결정 ≠ 이벤트 인지. 자사주 매입 / 5% 지분 변동 등은 매일

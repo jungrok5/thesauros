@@ -14,6 +14,7 @@ import { HelpTip } from "@/components/help-tip";
 import { GlobalNews } from "@/components/global-news";
 import { MarketTicker } from "@/components/market-ticker";
 import { MarketActionCard } from "@/components/market-action-card";
+import { MarketInvestorTrend } from "@/components/market-investor-trend";
 import { SeasonalBanner } from "@/components/seasonal-banner";
 import { indicatorVerdict } from "@/lib/macro-interpret";
 import { GLOSSARY } from "@/lib/glossary";
@@ -209,6 +210,12 @@ export default async function DashboardPage() {
         mvPqSignal={row.mv_pq_signal}
         updatedAt={updatedAt}
       />
+
+      {/* 시장 전체 매매 동향 — 개인/외국인/기관계 누적. 책 5장: 거래량
+          (수급) 은 선행성. 종목별 investor_flow 와 동일 모델을 시장
+          전체로 확장. 7-type breakdown 은 공개 Naver 엔드포인트 없음
+          → 3-axis 만. 자세히는 migrations/058 헤더. */}
+      <MarketInvestorTrend />
 
       {/* 2026-05-27 — BookEntrySpots ("책 정신 매수 후보 탑 3") 제거.
           사용자 피드백: "맞지도 않고 빼줘". L2 ranking 도입 후 이 카드의
