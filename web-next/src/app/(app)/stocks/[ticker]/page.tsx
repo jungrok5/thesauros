@@ -355,30 +355,23 @@ export default async function StockDetailPage({ params, searchParams }: PageProp
               않습니다. 한국 종목은 정상 동작합니다.
             </div>
           </div>
-        ) : watch.added ? (
-          // User just added this ticker to their watchlist — the POST
-          // handler fired `dispatchAnalyzeTicker` which kicks off an
-          // analyze-ticker.yml workflow on GitHub Actions. Typical
-          // wall-clock to results landing in `analyze_results` is 2-3
-          // min (pip install → scan_daily → telegram_worker).
-          <div className="rounded-lg border border-sky-500/40 bg-sky-500/5 p-4 text-sm">
-            <div className="font-medium text-sky-700 dark:text-sky-300">
-              🔄 분석 중입니다 (최대 3분)
-            </div>
-            <div className="mt-2 text-muted-foreground">
-              {resolved?.name ?? ticker} 을(를) 관심 종목에 추가하면서
-              즉시 분석이 시작되었습니다. 잠시 후 페이지를 새로고침하면
-              17 패턴 + 4 등분선 결과를 볼 수 있습니다.
-            </div>
-          </div>
         ) : (
+          // 2026-05-28 — instant analysis dispatch removed. The book
+          // strategy is weekly-close based; mid-week re-analysis would
+          // produce stale-bar results that flip on Friday. So we tell
+          // the user to wait for the next Friday weekly-scan.
+          // Universe is ~2,700 KR tickers — most have analysis from the
+          // last Friday already; this branch only fires for newly
+          // listed tickers or US/non-KR tickers without data.
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
             <div className="font-medium text-amber-700 dark:text-amber-300">
               {resolved?.name ?? ticker} 분석 데이터가 아직 없습니다.
             </div>
             <div className="mt-2 text-muted-foreground">
-              관심 종목에 추가하면 즉시 분석이 시작됩니다 (~3분).
-              혹은 다음 주간 스캔 (매주 금요일 17시 KST) 에 자동으로 분석됩니다.
+              매주 금요일 17:30 KST 의 전체 스캔에서 자동으로 분석됩니다.
+              책 정신상 매매 결정은 주봉 종가 (금요일) 기준이며, 평일에
+              일부 종목만 즉시 재분석하면 미완성 주봉으로 다른 결과가
+              나오기 때문에 의도적으로 통일된 시점에만 갱신합니다.
             </div>
           </div>
         )

@@ -11,8 +11,11 @@
  *   - "캐시된 분석" 문자열 (banner UI)
  *   - cached.stale 분기 (logic)
  *   - isAnalysisStale import (dependency)
- *   - 페이지 내 dispatchAnalyzeTicker 자동 호출 (watchlist add 시점은
- *     api/watchlist/route.ts 가 별도로 dispatch 하므로 OK).
+ *   - 페이지 내 dispatchAnalyzeTicker 자동 호출
+ *
+ * 2026-05-28 — api/watchlist/route.ts 의 dispatchAnalyzeTicker 도
+ * 제거됨 (mid-week 재분석이 site-wide stamp 일관성을 깨뜨려서). 분석
+ * 갱신은 금요일 17:30 weekly-scan 만이 source of truth.
  */
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
@@ -43,9 +46,22 @@ describe("/stocks/[ticker] no stale-cache banner regression guard", () => {
     expect(src).not.toMatch(/isAnalysisStale/);
   });
 
-  it("page does not auto-dispatch analyze-ticker (watchlist route does it)", () => {
-    // The watchlist POST route still imports dispatchAnalyzeTicker — that's
-    // fine and necessary. The /stocks/[ticker] page itself must not.
+  it("page does not auto-dispatch analyze-ticker", () => {
+    // 2026-05-28 — neither the stocks page nor the watchlist POST route
+    // dispatches analyze-ticker anymore. Friday 17:30 weekly-scan is the
+    // single source of truth for analysis stamps + book signal data.
+    expect(src).not.toMatch(/dispatchAnalyzeTicker\s*\(/);
+  });
+});
+
+describe("/api/watchlist no auto-dispatch", () => {
+  // Sister contract — the dispatch was removed from BOTH surfaces in
+  // 2026-05-28 to keep the "분석 시각" stamp consistent site-wide.
+  it("route.ts does not call dispatchAnalyzeTicker on add", () => {
+    const ROUTE = path.resolve(
+      __dirname, "..", "app", "api", "watchlist", "route.ts",
+    );
+    const src = fs.readFileSync(ROUTE, "utf8");
     expect(src).not.toMatch(/dispatchAnalyzeTicker\s*\(/);
   });
 });

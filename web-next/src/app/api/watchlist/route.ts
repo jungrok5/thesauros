@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureUserId, getServerClient } from "@/lib/supabase";
 import { ensureTickerInMaster } from "@/lib/ensure-ticker";
-import { dispatchAnalyzeTicker } from "@/lib/github-dispatch";
+// dispatchAnalyzeTicker import removed 2026-05-28.
+// See the "Fire-and-forget" comment below for the why.
 
 export const dynamic = "force-dynamic";
 
@@ -215,13 +216,30 @@ export async function POST(req: NextRequest) {
     .single();
   if (error) return dbError(error);
 
-  // Fire-and-forget: only on first add, kick off a single-ticker
-  // analyze run so the user sees results in ~2-3 min instead of
-  // waiting up to 24h for the next 17:00 KST cron. Edits to an
-  // existing watchlist row don't trigger — the data is already there.
-  if (wasNewAdd) {
-    void dispatchAnalyzeTicker(ticker);
-  }
+  // 2026-05-28 — Analyze Single Ticker dispatch removed.
+  //
+  // Was: on wasNewAdd we'd workflow_dispatch analyze-ticker.yml so the
+  //   new ticker got "instant analysis" (~2-3 min) instead of waiting
+  //   for Friday 17:30 weekly-scan.
+  // Problems this created (user feedback 2026-05-28):
+  //   1. analyze_results for that one ticker stamped with mid-week
+  //      time, breaking the site-wide "분석 시각: 5/24" consistency.
+  //   2. Mid-week incomplete weekly bar produced different results
+  //      than Friday weekly-close would — same ticker flipped from
+  //      #1 to outside top-10 after a Thursday re-analysis.
+  //   3. The workflow's last step ran telegram_worker which scanned
+  //      ALL active signals, causing concurrent-dispatch race
+  //      duplicates (mitigated by pg_try_advisory_lock in cd2fe5c
+  //      but still wasted work).
+  // The book strategy is weekly-close based; users acting on mid-week
+  // snapshots is the anti-pattern the book warns against. Removing
+  // the dispatch makes everything consistent: site-wide analysis
+  // refresh happens once on Friday 17:30 KST, period. Newly-added
+  // tickers display the existing Friday snapshot (already analyzed
+  // as part of the full ~2700-ticker universe).
+  //
+  // analyze-ticker.yml workflow file kept — still useful for
+  // operator-initiated manual re-analysis.
 
   return NextResponse.json({ item: data });
 }
