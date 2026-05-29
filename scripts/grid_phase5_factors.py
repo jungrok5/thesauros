@@ -59,15 +59,21 @@ BOOK_W = 0.8
 CAP_W = 0.2
 
 
-def cap_q(mc: Optional[float]) -> float:
+def cap_q(mc: Optional[float], peak_krw: Optional[float] = None) -> float:
+    """Tent quality. peak_krw=None uses the L2 default (5,480억). Phase
+    9B reuses this with explicit peaks for PIT-aware peak sweep."""
     if mc is None or mc <= 0:
         return 0.0
     lc = math.log10(mc)
     if lc <= LOG_LO or lc >= LOG_HI:
         return 0.0
-    if lc <= LOG_PEAK:
-        return (lc - LOG_LO) / (LOG_PEAK - LOG_LO)
-    return (LOG_HI - lc) / (LOG_HI - LOG_PEAK)
+    peak = math.log10(peak_krw) if peak_krw and peak_krw > 0 else LOG_PEAK
+    # Clamp peak inside the tent so a misconfigured value degrades
+    # gracefully rather than producing negative q.
+    peak = max(LOG_LO + 1e-6, min(LOG_HI - 1e-6, peak))
+    if lc <= peak:
+        return (lc - LOG_LO) / (peak - LOG_LO)
+    return (LOG_HI - lc) / (LOG_HI - peak)
 
 
 def load_cap_map() -> Dict[str, float]:
@@ -238,6 +244,8 @@ def apply_variant(
     pit_cap_index: Optional[Dict[str, List[Tuple[date, float]]]] = None,
     # When pit_cap_index is provided, look up cap at each fire's
     # entry_date instead of using the static today snapshot.
+    cap_peak_krw: Optional[float] = None,
+    # Tent peak override for cap_q. None = L2 default (~5,480억).
 ) -> List[Dict[str, Any]]:
     """Return a new list of re-ranked, gate-filtered candidates."""
     # 1. liquidity gate
@@ -273,7 +281,7 @@ def apply_variant(
                             date.fromisoformat(f["entry_date"]))
         else:
             mc = cap_map.get(f["ticker"])
-        q = cap_q(mc) if cw > 0 else 0.0
+        q = cap_q(mc, peak_krw=cap_peak_krw) if cw > 0 else 0.0
         score = bw * s_n + cw * q
         if multitf_bonus > 0:
             k = (f["ticker"], week_bucket(f["entry_date"]))
@@ -413,6 +421,32 @@ VARIANTS: Dict[str, Dict[str, Any]] = {
     "C_cap1_book1":
         dict(sector_cap_per_week=1, book_weight=1.0),
 }
+
+# ───────────────────────────────────────────────────────────────────
+# Phase 9B — PIT-aware cap_q retune over (book_weight × tent peak).
+# Built programmatically so the matrix size stays explicit.
+# ───────────────────────────────────────────────────────────────────
+_PHASE_9B_BOOK_WEIGHTS = [0.6, 0.7, 0.8, 0.9, 1.0]
+_PHASE_9B_PEAKS = {
+    "1000억": 1e11,
+    "2000억": 2e11,
+    "5480억": 5.48e11,    # L2 default tent peak
+    "7500억": 7.5e11,
+    "1조":     1e12,
+}
+for _bw in _PHASE_9B_BOOK_WEIGHTS:
+    for _pk_label, _pk_v in _PHASE_9B_PEAKS.items():
+        # Skip the pure book_weight=1.0 variants per peak — cap weight
+        # is zero, so peak choice does not matter (only one run needed).
+        if _bw == 1.0 and _pk_label != "5480억":
+            continue
+        _key = f"9B_bw{int(_bw*100):03d}_peak{_pk_label}_PIT"
+        VARIANTS[_key] = dict(
+            sector_cap_per_week=1,
+            book_weight=_bw,
+            cap_peak_krw=_pk_v,
+            use_pit_cap=True,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────
