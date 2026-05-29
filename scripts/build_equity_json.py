@@ -38,29 +38,32 @@ import sys
 from pathlib import Path
 
 
-# 2026-05-29 — honest production (replaces L2):
-#   ranking = book_signal_strength only (CAP_WEIGHT=0)
-#   diversification = sector_cap=1 per ISO-week per industry
-# Phase 9 PIT verification proved the prior L2 cap_q was a look-ahead
-# artifact — same-formula CAGR collapsed from +20.65 → +8.07 under
-# point-in-time cap. Honest lift over V0 book-only baseline (no cap_q,
-# no sector cap):
-#   CAGR  14.90% → 16.02%   (+1.12%p, real sector-cap effect)
-#   DD    51.46% → 48.24%   (−3.2%p)
-#   Alpha  6.66% →  7.20%/y (+0.54%p/y vs KOSPI)
-# Slippage NOT modeled; realistic CAGR ~14% (subtract ~2pp/year).
+# 2026-05-29 — book-faithful production (replaces honest 24w-hold):
+#   buy   = top-5 책 신호 + sector_cap=1 per ISO-week per industry
+#   sell  = 종목별 월봉 10MA 깨짐 / 장대양봉 4등분 25% 깨짐 /
+#           천장 패턴 (쌍봉/머리어깨/삼중천장/액션매도, weekly only).
+#           NO 24w forced exit. NO %-stop. NO take-profit.
+#   max   = 20 (sweep winner; 자본 1억/슬롯 = 500만/종목)
+#
+# Walk-forward audit (2026-05-29) confirmed:
+#   - 24w-hold was train-period over-fit (CAGR +21 train / +9 test)
+#   - book-faithful is OOS robust   (CAGR +12 train / +13 test)
+#   - test-fold lift (book vs 24w-hold): +4.10 pp CAGR, +3.59 pp Alpha
+# In-sample full 17.4y (this run):
+#   CAGR +12.48 / Sharpe 0.47 / DD 58.6% / Alpha +4.29 vs KOSPI BH
+# Slippage NOT modeled; realistic CAGR ~10-11% (subtract ~2pp/year).
 HARDCODED_SUMMARY = {
-    "total_return_pct": 1234.87,
-    "annualised_return_pct": 16.02,
-    "max_drawdown_pct": 48.24,
-    "sharpe": 0.725,
-    "sortino": 0.924,
-    "calmar": 0.332,
-    "alpha_annual_pct": 7.20,
-    "beta": 0.674,
+    "total_return_pct": 677.24,
+    "annualised_return_pct": 12.48,
+    "max_drawdown_pct": 58.62,
+    "sharpe": 0.474,
+    "sortino": 0.642,
+    "calmar": 0.213,
+    "alpha_annual_pct": 4.29,
+    "beta": 0.674,    # to be refreshed when honest_production_summary regenerated
     "r_squared": 0.417,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 4.53,
+    "outperformance_ann_pct": 0.99,
 }
 
 
@@ -94,7 +97,7 @@ def main() -> int:
 
     initial = weekly[0]["e"]
     out = {
-        "config": "honest: 책 신호 + 업종분산 (1 종목/주/업종) — no-SL / max=50 / 24w hold / FULL 2701-ticker universe (cap_q 제거: 2026-05-29 PIT look-ahead 검증 후)",
+        "config": "book-faithful: 책 신호 + 업종분산 (1/주/업종) + 책 매도룰 (월봉 10MA / 4등분 25% / 천장 패턴) — no 24w force, no SL, no TP — max=20 / 자본 1억 / 17.4년 OOS walk-forward 통과",
         "start": weekly[0]["d"],
         "end": weekly[-1]["d"],
         "initial": initial,

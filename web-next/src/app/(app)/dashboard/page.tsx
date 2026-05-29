@@ -290,10 +290,10 @@ export default async function DashboardPage() {
           "이 시스템 신뢰해도 돼?" so we surface it as a one-liner here
           with the link for users who want to dig in. */}
       <div className="pt-2 mt-2 border-t border-border/60 text-xs text-muted-foreground leading-relaxed">
-        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 2701 종목 universe — 책 신호
-        + 업종 분산) —{" "}
-        <span className="text-foreground">CAGR 16.0% · Sharpe 0.73 · DD 48.2%</span>
-        {" "}(KOSPI BH 대비 +4.5%p/y, 슬리피지 보정 시 실현 ~14%).
+        이 시스템 17년 백테스트 + walk-forward OOS 통과 (KOSPI/KOSDAQ 2701
+        종목, 책 신호 + 업종 분산 + 책 매도룰) —{" "}
+        <span className="text-foreground">CAGR 12.5% · Sharpe 0.47 · DD 58.6%</span>
+        {" "}(KOSPI BH 대비 +1.0%p/y, 슬리피지 보정 시 ~10-11%).
         {" "}
         <Link
           href="/backtest"

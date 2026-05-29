@@ -149,15 +149,17 @@ export default async function BacktestPage() {
             pattern_forking, volume_case_7, action_strong_buy, pattern_ma240_breakout.
           </li>
           <li>
-            <strong>Hold</strong>: 24주 (약 5.5개월). 책 정신 추세는 길게.
+            <strong>Hold</strong>: 책 매도 신호 발생 시까지 보유 (고정 기간 X).
+            평균 hold 약 14주 (책 추세 살아있으면 길게, 깨지면 짧게).
           </li>
           <li>
-            <strong>포지션</strong>: 최대 50 종목 동시 보유. 강도 desc 우선.
-            (universe scale 에서 slot 회전 필요)
+            <strong>포지션</strong>: 최대 20 종목 동시 보유. 강도 desc 우선.
+            (자본 1억 / 20 = 500만/슬롯)
           </li>
           <li>
-            <strong>Stop-loss</strong>: 없음 (universe 검증 시 SL=10/5% 적용은
-            return 감소). 신호별 부분 적용은 별도 분석 중.
+            <strong>매도</strong>: <strong>책 룰 그대로</strong> — (1) 종목별 월봉 10MA
+            깨짐 (2) 장대양봉 4등분 25% 깨짐 (3) 천장 패턴 (쌍봉/머리어깨/
+            삼중천장/액션매도, 주봉). %-stop 없음, 익절 없음.
           </li>
           <li>
             <strong>비용</strong>: 매수 0.015% + 매도 0.18% (브로커 + 거래세).
@@ -165,16 +167,14 @@ export default async function BacktestPage() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          위 숫자는 정직한 production 결과 (2026-05-29 Phase 9 look-ahead
-          검증 후). 공식: <strong>책 신호 + 업종 분산 (1 종목/주/업종)</strong> — cap
-          tilt 제거. 이전 L2 (0.8×책 + 0.2×시총 텐트, CAGR +20.65%) 의 약
-          +12pp 가 today-snapshot cap_q 의 look-ahead bias (현재 중형주 =
-          17년간 small→mid 성장한 winner 다수 포함) 였음을 PIT cap 재테스트로
-          확인. 정직한 lift: book-only baseline (CAGR 14.9% / Sharpe 0.66)
-          위에 sector_cap 으로 <strong>+1.1pp CAGR / +0.07 Sharpe</strong>.
-          KOSPI BH (CAGR 11.5%) 대비 outperformance{" "}
-          <strong>+{s.outperformance_ann_pct.toFixed(1)}%p/year</strong>. 슬리피지
-          미모델 → 실현 가능 CAGR 추정 ~14% (위 표시값 -2pp).
+          위 숫자는 book-faithful production 결과 (2026-05-29 walk-forward
+          OOS 통과 후). 공식: <strong>책 그대로 매수+매도</strong> — 24주 강제 매도 /
+          %-손절 / 익절 모두 제거. 이전 honest spec (24w-hold, CAGR +16.02%)
+          은 walk-forward 결과 train (2009-2017) 에 over-fit 임이 드러남 —
+          test fold (2018-2026 OOS) 에서 Alpha -0.51% 로 KOSPI BH 에 패배.
+          Book-faithful 은 test fold 에서 CAGR +13.38 / Alpha <strong>+3.08%/y
+          </strong> 로 KOSPI BH 능가, 모든 metric 24w-hold 보다 우수 (lift
+          +4.10 pp CAGR). 슬리피지 미모델 → 실현 가능 CAGR 추정 ~10-11%.
         </p>
       </section>
     </div>

@@ -5,38 +5,40 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * Compares 책 전략 (honest spec — book 신호 단독 + 업종 분산 1/주/업종,
- * no-SL / max=50 / 24w / top-5 / FULL 2701-ticker universe) against
- * passive alternatives using point-estimate CAGRs from the 17-year
- * backtest.
+ * 2026-05-29 — replaced "24w-hold honest" numbers with book-faithful
+ * simulator after walk-forward audit proved 24w was train-period
+ * over-fit (train CAGR +21 → test CAGR +9, Alpha flipped to -0.51).
+ * Book-faithful generalizes: test CAGR +13.38 / Alpha +3.08.
  *
- * 2026-05-29 — replaced L2 (0.8×book + 0.2×cap_q) numbers with honest
- * run after Phase 9 PIT verification confirmed prior L2 was driven by
- * look-ahead bias (CAGR collapsed from +20.65 → +8.07 under PIT cap).
+ * Compares 책 전략 (book-faithful spec — 책 신호 + 업종 분산 1/주/업종 +
+ * 책 매도룰: 종목별 월봉 10MA / 장대양봉 4등분 25% / 천장 패턴; no 24w
+ * force, no SL, no TP; max=20 / 1억 자본 / 2701-ticker universe)
+ * against passive alternatives using point-estimate CAGRs.
  *
- * CAGR sources (universe-honest, 2026-05-29 honest production run):
- *   - 책 (이상):  16.02% — sector_cap=1 + book-only, sweep_all_24w
- *   - 책 (현실): ~14.0% — assume ~2pp slippage drag (0.2%/side ×
+ * CAGR sources (universe-honest, 2026-05-29 book-faithful run):
+ *   - 책 (이상):  12.48% — full 17.4y in-sample (앞으로 sweep_all 재생성 후
+ *                          OOS walk-forward 통과 검증 완료)
+ *   - 책 (현실): ~10.5% — assume ~2pp slippage drag (0.2%/side ×
  *                          ~5 portfolio rotations/year)
  *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct
  *   - 정기예금:  3.0%   — Q1 2026 평균
  *   - 채권:      4.5%   — 우량 회사채 평균
  *
- * Alpha vs KOSPI: +4.53%/y (outperformance_ann_pct, no-slip basis).
+ * Alpha vs KOSPI: +0.99%/y in-sample, +3.08%/y OOS test fold.
  */
 
 const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.1602,
-    hint: "honest: 책 신호 + 업종 분산 (1/주/업종), 2701-ticker universe, 슬리피지 0",
+    cagr: 0.1248,
+    hint: "book-faithful: 책 매수+매도룰 그대로, 2701-ticker universe, OOS 검증 통과, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.140,
+    cagr: 0.105,
     hint: "+슬리피지 0.2%/side × 회전율 보정 (-2pp 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
