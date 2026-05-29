@@ -218,7 +218,7 @@ export default async function DashboardPage() {
       <MarketInvestorTrend />
 
       {/* 2026-05-27 — BookEntrySpots ("책 정신 매수 후보 탑 3") 제거.
-          사용자 피드백: "맞지도 않고 빼줘". L2 ranking 도입 후 이 카드의
+          사용자 피드백: "맞지도 않고 빼줘". 이전 L2 ranking 도입 후 이 카드의
           후보 선정 로직과 /screener 의 sortByBookSpirit 사이에 일관성
           깨짐 + 카드의 좁은 컨텍스트 (책 신호 만점 + 정배열 정도) 만으로
           진짜 매수 자리 판단 부족 — 사용자가 클릭해서 종목 detail 확인할
@@ -290,9 +290,10 @@ export default async function DashboardPage() {
           "이 시스템 신뢰해도 돼?" so we surface it as a one-liner here
           with the link for users who want to dig in. */}
       <div className="pt-2 mt-2 border-t border-border/60 text-xs text-muted-foreground leading-relaxed">
-        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 2701 종목 universe, L2 ranking) —{" "}
-        <span className="text-foreground">CAGR 20.65% · Sharpe 0.83 · DD 37.3%</span>
-        {" "}(KOSPI BH 대비 +9.17%p/y).
+        이 시스템 17년 백테스트 (KOSPI/KOSDAQ 2701 종목 universe — 책 신호
+        + 업종 분산) —{" "}
+        <span className="text-foreground">CAGR 16.0% · Sharpe 0.73 · DD 48.2%</span>
+        {" "}(KOSPI BH 대비 +4.5%p/y, 슬리피지 보정 시 실현 ~14%).
         {" "}
         <Link
           href="/backtest"

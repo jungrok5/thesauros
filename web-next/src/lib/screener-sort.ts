@@ -1,25 +1,29 @@
 /**
  * Book-spirit sort for screener rows.
  *
- * 2026-05-27 — replaced the secondary "book_score only" tier with the
- * L2 mid-cap sweet score (winner of the 14-variant Phase 1-4 grid:
- * CAGR +20.65%, DD 37.3%, Calmar 0.55, alpha +11.36%/y vs KOSPI).
- * Formula lives in [[book-spirit-ranking]].
+ * 2026-05-27 → 2026-05-29 history:
+ *   - L2: 0.8 × book + 0.2 × cap_q (today snapshot). Backtest reported
+ *     CAGR +20.65 / Sharpe 0.83 / Alpha +11.36 — Phase 9 PIT verification
+ *     proved ~+12 pp of that CAGR was look-ahead bias (today's "mid-cap"
+ *     correlates with "winner over hold period" by construction).
+ *   - Honest: drop cap_q (CAP_WEIGHT=0), keep book_score only. Sector
+ *     diversification handled via sector_cap=1/ISO-week in the
+ *     production backtest, NOT here — screener sort is per-snapshot, no
+ *     concept of "weeks".
+ *
+ * Honest 17.4y backtest (sector_cap=1 + book-only):
+ *   CAGR +16.02% / Sharpe 0.73 / DD 48.2% / Alpha +7.20%/y vs KOSPI BH.
+ *   Slippage-adjusted realistic CAGR ~14%.
  *
  * Priority:
  *   1. eligibility grade   OK > CONDITIONAL > WATCH > AVOID > unknown
- *   2. bookSpiritScore     DESC (= 0.8×book_score + 0.2×cap_tent_q)
+ *   2. book_score          DESC (cap is no longer reweighted)
  *   3. catalyst freshness  ASC  (catalyst_bars_since, null = oldest)
  *   4. ROE                 DESC (final tie-break)
  *   5. ticker              ASC  (stable)
  *
- * Why eligibility still outranks the L2 score: signal strength + mid-cap
- * tilt say "good buy candidate"; eligibility (F7-F14 gates) say "we are
- * actually at a buy spot". A 1.0 score at the wrong moment is still not
- * a buy. Order = safety gate first, then ranking.
- *
- * Unknown grade ranks AS OK so legacy rows aren't punished; once
- * everything is re-scanned this is moot.
+ * bookSpiritScore signature kept for call-site compatibility; the cap
+ * argument is now ignored.
  */
 
 import { bookSpiritScore } from "@/lib/book-spirit-ranking";

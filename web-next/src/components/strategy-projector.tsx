@@ -5,38 +5,39 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * Compares 책 전략 (L2 mid-cap sweet — 0.8×book + 0.2×cap_tent, no-SL
- * / max=50 / 24w / top-5 / FULL 2701-ticker universe) against passive
- * alternatives using point-estimate CAGRs from the 17-year backtest.
+ * Compares 책 전략 (honest spec — book 신호 단독 + 업종 분산 1/주/업종,
+ * no-SL / max=50 / 24w / top-5 / FULL 2701-ticker universe) against
+ * passive alternatives using point-estimate CAGRs from the 17-year
+ * backtest.
  *
- * CAGR sources (universe-honest, 2026-05-27 L2 production run):
- *   - 책 (이상):  20.65% — L2 winner from 14-variant grid (sweep_all_24w)
- *   - 책 (보수): ~17.2% — assume 3.4%p cost drag (slip 0.2~0.4%)
- *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct (alpha-beta calc base)
- *   - 정기예금:  3.0%  — Q1 2026 평균
- *   - 채권:      4.5%  — 우량 회사채 평균
+ * 2026-05-29 — replaced L2 (0.8×book + 0.2×cap_q) numbers with honest
+ * run after Phase 9 PIT verification confirmed prior L2 was driven by
+ * look-ahead bias (CAGR collapsed from +20.65 → +8.07 under PIT cap).
  *
- * Alpha vs KOSPI: +9.17%/y (outperformance_ann_pct from L2 run).
+ * CAGR sources (universe-honest, 2026-05-29 honest production run):
+ *   - 책 (이상):  16.02% — sector_cap=1 + book-only, sweep_all_24w
+ *   - 책 (현실): ~14.0% — assume ~2pp slippage drag (0.2%/side ×
+ *                          ~5 portfolio rotations/year)
+ *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct
+ *   - 정기예금:  3.0%   — Q1 2026 평균
+ *   - 채권:      4.5%   — 우량 회사채 평균
  *
- * History: 2026-05-24 honest revision dropped a 100-tic seed=42 +27%
- * sample-bias claim to 14.9% (V0 book-only baseline). 2026-05-27 the
- * L2 mid-cap sweet ranking (grid winner) replaced V0 — CAGR +5.75%p,
- * DD -14.2%p, alpha +4.7%p over the baseline.
+ * Alpha vs KOSPI: +4.53%/y (outperformance_ann_pct, no-slip basis).
  */
 
 const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.2065,
-    hint: "L2 mid-cap sweet (0.8×책 + 0.2×시총) — 2701-ticker universe, 슬리피지 0",
+    cagr: 0.1602,
+    hint: "honest: 책 신호 + 업종 분산 (1/주/업종), 2701-ticker universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.172,
-    hint: "+거래 비용 0.2~0.4% 슬리피지 가정 (-3~4%p 차감)",
+    cagr: 0.140,
+    hint: "+슬리피지 0.2%/side × 회전율 보정 (-2pp 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
   {

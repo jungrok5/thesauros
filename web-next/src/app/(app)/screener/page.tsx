@@ -357,23 +357,24 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
               </span>
             </div>
 
-            {/* 한 줄 평 — 2026-05-27 L2 mid-cap sweet 채택 (17년 백테스트
-                14변형 grid winner: CAGR +20.65%, DD 37.3%, alpha +11.4%/y
-                vs KOSPI). 정렬 순서를 평문으로 설명 — 옵션 토글 없음. */}
+            {/* 한 줄 평 — 2026-05-29 honest (PIT look-ahead 검증 후):
+                책 신호 단독 + 업종 분산 (1 종목/주/업종). 이전 L2 의
+                "중형주 가산" 은 today-snapshot cap 의 look-ahead 였음이
+                Phase 9 PIT 재실험으로 확인 (CAGR 20.65 → 8.07).
+                Honest 17년 백테스트: CAGR +16.0% / Sharpe 0.73 / Alpha
+                +7.20%/y vs KOSPI. 정렬 순서를 평문 설명 — 토글 없음. */}
             <div
               data-testid="screener-verdict"
               className="rounded-md bg-emerald-500/10 border border-emerald-500/30 p-3 text-sm leading-relaxed"
             >
               🥇 <strong>1위 = 책에 가장 부합</strong> — 책에서 가르치는
-              매수 자리에 든 종목 중에서, <strong>시가총액 5,000억 안팎의
-              중형주</strong>를 우선 매수. 작전주 위험이 큰 동전주
-              (시총 &lt; 500억) 와 이미 기관이 다 들어가 있는 대형주
-              (시총 &gt; 10조) 는 제외.
+              매수 자리에 든 종목 (책 신호 점수가 가장 높은 순) 으로 정렬.
+              매수 후보가 같은 업종에 몰리지 않도록 <strong>업종당 1 종목</strong>
+              까지만 상위에 노출.
               <span className="block text-xs text-muted-foreground mt-1">
-                17년 백테스트 기준 가장 좋은 결과를 낸 공식. 매수 자리
-                안전 등급 (🟢 OK) → 책 신호 × 80% + 중형주 점수 × 20%
-                → 신선도 → ROE 순. 조건부 / 관망 / 회피 chip 종목은
-                시스템 만점이라도 진입 자리 아님.
+                17년 백테스트 결과 정직한 winner. 매수 자리 안전 등급
+                (🟢 OK) → 책 신호 점수 → 신선도 → ROE 순. 조건부 / 관망 /
+                회피 chip 종목은 시스템 만점이라도 진입 자리 아님.
               </span>
             </div>
 

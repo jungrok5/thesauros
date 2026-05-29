@@ -83,68 +83,67 @@ describe("sortByBookSpirit", () => {
     expect(input.map((h) => h.ticker)).toEqual(snapshot);
   });
 
-  it("L2 mid-cap sweet — same book_score, mid-cap beats microcap (2026-05-27)", () => {
-    // Two OK rows, identical book_score, but A is microcap-floor (cap_q=0)
-    // and B is at the tent peak (cap_q≈1). New ranking gives B a 0.2 bonus.
+  it("honest — same book_score, market_cap no longer matters (PIT audit 2026-05-29)", () => {
+    // Prior L2 ranked mid-cap higher via cap_q. Honest spec: cap is
+    // ignored. Ties resolve via catalyst freshness, then ROE, then
+    // ticker alphabetical.
     const out = sortByBookSpirit([
-      hit("MICRO.KQ", { book_score: 1.0, market_cap: 1e10 }),    // 100억 — below floor
-      hit("MIDCAP.KS", { book_score: 1.0, market_cap: 5.48e11 }), // ~peak
+      hit("ZMICRO.KQ", { book_score: 1.0, market_cap: 1e10, catalyst_bars_since: 5 }),
+      hit("AMIDCAP.KS", { book_score: 1.0, market_cap: 5.48e11, catalyst_bars_since: 2 }),
     ]);
-    expect(out.map((h) => h.ticker)).toEqual(["MIDCAP.KS", "MICRO.KQ"]);
+    // catalyst freshness wins (2 < 5).
+    expect(out[0].ticker).toBe("AMIDCAP.KS");
   });
 
-  it("L2 — lower book_score with mid-cap can still beat higher book with microcap", () => {
-    // book 0.85 + cap 1.0 = 0.88 vs book 1.0 + cap 0 = 0.80 → mid-cap wins.
+  it("honest — higher book_score wins regardless of cap (no more cap bonus)", () => {
+    // Prior L2: book 0.85 + cap_q 1.0 → 0.88 could beat book 1.0 + cap_q 0 → 0.80.
+    // Honest: book wins on raw score; cap field ignored.
     const out = sortByBookSpirit([
       hit("HIGH_BOOK_MICRO.KQ", { book_score: 1.0, market_cap: 1e10 }),
-      hit("MID_BOOK_MIDCAP.KS", { book_score: 0.85, market_cap: 5.48e11 }),
+      hit("LOW_BOOK_MIDCAP.KS", { book_score: 0.85, market_cap: 5.48e11 }),
     ]);
-    expect(out[0].ticker).toBe("MID_BOOK_MIDCAP.KS");
+    expect(out[0].ticker).toBe("HIGH_BOOK_MICRO.KQ");
   });
 
-  it("L2 — eligibility still trumps the L2 score (OK micro beats CONDITIONAL mid-cap)", () => {
-    // Even if MICRO has worse L2 score, its OK grade ranks first.
+  it("eligibility still trumps the score (OK low-book beats CONDITIONAL high-book)", () => {
     const out = sortByBookSpirit([
-      hit("MID_COND.KQ", { book_score: 1.0, market_cap: 5.48e11, eligibility_grade: "CONDITIONAL" }),
-      hit("OK_MICRO.KS", { book_score: 0.6, market_cap: 1e10, eligibility_grade: "OK" }),
+      hit("HIGH_COND.KQ", { book_score: 1.0, market_cap: 5.48e11, eligibility_grade: "CONDITIONAL" }),
+      hit("OK_LOW.KS", { book_score: 0.6, market_cap: 1e10, eligibility_grade: "OK" }),
     ]);
-    expect(out[0].ticker).toBe("OK_MICRO.KS");
+    expect(out[0].ticker).toBe("OK_LOW.KS");
   });
 
-  it("L2 — sort+slice(50) picks true top by L2 even when input > 50 (RPC limit-50 bug, 2026-05-27)", () => {
-    // Regression: page.tsx originally called RPC with p_limit=50. When
-    // ~177 rows saturate at book_score=1.0, the RPC's secondary sort
-    // (ROE tiebreak) silently picks 50 candidates *before* the JS L2
-    // sort ever sees the true winner. Dev-server dump (2026-05-27)
-    // showed LX홀딩스 (L2=0.984) missing from the page, with
-    // 인터로조 (L2=0.933) at rank 1. Fix: raise RPC limit + slice
-    // top-50 in JS *after* L2 sort.
+  it("sort+slice(50) picks the true top-50 by book_score (RPC limit-50 bug pinned)", () => {
+    // Regression: page.tsx originally called RPC with p_limit=50. The
+    // RPC's secondary sort (ROE tiebreak) silently filtered 50 rows
+    // *before* the JS sort saw the true winner. Fix: raise RPC limit
+    // and slice top-50 in JS *after* the JS sort.
     //
-    // This test pins the JS-side guarantee: given a pool > 50 with the
-    // true L2 winner at position 60, sort+slice(50) must include it
-    // and rank it first.
-    const peak = 5.48e11; // tent peak
+    // Honest-spec adaptation: ties on book_score break on
+    // catalyst_bars_since (lower wins). The WINNER has the freshest
+    // catalyst among book_score=1.0 rows; it must surface to rank 1
+    // even when placed at input position 60.
     const pool: SortableHit[] = [];
-    // 55 OK-tier filler rows: same book=1.0, microcap (cap_q=0)
     for (let i = 0; i < 55; i++) {
       pool.push(hit(`F${i.toString().padStart(2, "0")}.KS`, {
         book_score: 1.0,
-        market_cap: 1e10, // 100억 → cap_q=0 → L2=0.8
+        market_cap: 1e10,
         roe: 0.1,
+        catalyst_bars_since: 10,
       }));
     }
-    // The true L2 winner — placed at position 60 in input order.
     pool.push(hit("WINNER.KS", {
       book_score: 1.0,
-      market_cap: peak,    // cap_q=1.0 → L2=1.0
+      market_cap: 5.48e11,        // ignored under honest spec
       roe: 0.05,
+      catalyst_bars_since: 0,     // freshest — wins tiebreak
     }));
-    // 5 more filler rows.
     for (let i = 55; i < 60; i++) {
       pool.push(hit(`F${i.toString().padStart(2, "0")}.KS`, {
         book_score: 1.0,
         market_cap: 1e10,
         roe: 0.1,
+        catalyst_bars_since: 10,
       }));
     }
     const sortedTop50 = sortByBookSpirit(pool).slice(0, 50);

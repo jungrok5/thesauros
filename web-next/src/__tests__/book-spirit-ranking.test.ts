@@ -1,13 +1,18 @@
 /**
- * book-spirit-ranking — pins the L2 mid-cap sweet formula picked from
- * the 2026-05-27 14-variant grid (CAGR +20.65% / DD 37.3% / Calmar 0.55).
+ * book-spirit-ranking — honest spec after 2026-05-29 Phase 9 PIT audit.
+ *
+ * The prior L2 formula (0.8×book + 0.2×cap_q) was retired when point-
+ * in-time cap re-tests showed the cap_q contribution was a look-ahead
+ * artifact (CAGR collapsed +20.65 → +8.07 under PIT). Honest score is
+ * book_score alone; the capQuality tent is retained for diagnostic
+ * display but CAP_WEIGHT is 0.
  *
  * Guard against:
- *  • Threshold drift — changing CAP_LOW / CAP_HIGH / peak silently
- *    moves the entire screener ranking. Pin the math.
- *  • Null cap regression — backfill is one-shot; until ingest_factors
- *    re-runs the column may be null on some rows. Score must degrade
- *    to 0.8 × book_score, not NaN / undefined.
+ *  • Re-introducing CAP_WEIGHT > 0 without an explicit PIT-valid
+ *    justification.
+ *  • Null book_score regression (must degrade to 0, not NaN).
+ *  • capQuality threshold drift — preserved for sites that still
+ *    render mid-cap context tooltips.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -58,34 +63,35 @@ describe("capQuality (tent shape on log10 cap)", () => {
   });
 });
 
-describe("bookSpiritScore", () => {
-  it("with null cap, score = BOOK_WEIGHT × book (graceful pre-backfill)", () => {
-    expect(bookSpiritScore(1.0, null)).toBeCloseTo(BOOK_WEIGHT, 6);
-    expect(bookSpiritScore(0.5, null)).toBeCloseTo(BOOK_WEIGHT * 0.5, 6);
+describe("bookSpiritScore (honest spec — book-only after PIT audit)", () => {
+  it("returns book_score directly when book_weight=1.0", () => {
+    expect(bookSpiritScore(1.0, null)).toBeCloseTo(1.0, 6);
+    expect(bookSpiritScore(0.5, null)).toBeCloseTo(0.5, 6);
   });
 
-  it("at peak cap with book=1, returns BOOK_WEIGHT + CAP_WEIGHT = 1", () => {
+  it("cap argument is ignored (CAP_WEIGHT=0 after PIT audit)", () => {
     const peak = Math.sqrt(3e11 * 1e12);
-    expect(bookSpiritScore(1.0, peak)).toBeCloseTo(1.0, 6);
+    expect(bookSpiritScore(0.7, peak)).toBeCloseTo(0.7, 6);
+    expect(bookSpiritScore(0.7, 1e10)).toBeCloseTo(0.7, 6);
+    expect(bookSpiritScore(0.7, 5e13)).toBeCloseTo(0.7, 6);
   });
 
-  it("same book, mid-cap beats microcap and megacap", () => {
-    const micro = bookSpiritScore(1.0, 3e10);     // 300억 — below floor
-    const mid   = bookSpiritScore(1.0, 5.5e11);   // ~peak
-    const mega  = bookSpiritScore(1.0, 5e13);     // 50조 — above ceiling
-    expect(mid).toBeGreaterThan(micro);
-    expect(mid).toBeGreaterThan(mega);
-    expect(micro).toBe(BOOK_WEIGHT); // both zeros on cap_q
-    expect(mega).toBe(BOOK_WEIGHT);
+  it("weights remain in [0, 1] with book_weight=1, cap_weight=0", () => {
+    expect(BOOK_WEIGHT).toBe(1.0);
+    expect(CAP_WEIGHT).toBe(0.0);
   });
 
-  it("weights sum to 1.0", () => {
-    expect(BOOK_WEIGHT + CAP_WEIGHT).toBeCloseTo(1.0, 6);
-  });
-
-  it("null book_score falls back to 0 (not NaN)", () => {
-    const peak = Math.sqrt(3e11 * 1e12);
-    expect(bookSpiritScore(null, peak)).toBeCloseTo(CAP_WEIGHT, 6);
+  it("null/undefined book_score falls back to 0 (not NaN)", () => {
+    expect(bookSpiritScore(null, null)).toBe(0);
     expect(bookSpiritScore(undefined, null)).toBe(0);
+    expect(bookSpiritScore(null, 5.5e11)).toBe(0);
+  });
+
+  it("regression guard: do NOT re-introduce CAP_WEIGHT > 0 without PIT proof", () => {
+    // The 2026-05-27 → 2026-05-29 chapter proved CAP_WEIGHT>0 against a
+    // today-snapshot cap inflates backtest CAGR by ~+12 pp via
+    // look-ahead. If someone reintroduces cap weighting, this test
+    // forces them to update the proof trail in book-spirit-ranking.ts.
+    expect(CAP_WEIGHT).toBe(0.0);
   });
 });

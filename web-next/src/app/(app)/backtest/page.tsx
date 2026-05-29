@@ -165,15 +165,16 @@ export default async function BacktestPage() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          위 숫자가 honest production result (2026-05-27 L2 mid-cap sweet
-          ranking — 14변형 그리드 winner). 공식: 0.8×책 신호 + 0.2×시총 텐트
-          (peak ~5,480억 KRW, 마이크로캡 &lt; 500억 / 메가캡 &gt; 10조 제외).
-          KOSPI BH (CAGR 11.5%) 대비 outperformance <strong>+9.17%p/year</strong>.
-          {" "}V0 baseline (책 신호만, CAGR 14.9%) 대비 CAGR +5.75%p / DD -14.2%p /
-          alpha +4.7%p — 책 전략의 진가는 Sharpe (0.83) + Sortino (1.13) +
-          Calmar (0.55) + 낮은 DD (37.3%) 의 risk-adjusted profile.
-          ⚠️ 2026-05-23 의 100-ticker random sample (+6380%) 은 sample bias
-          로 over-fit 이었음을 full universe 검증으로 확인.
+          위 숫자는 정직한 production 결과 (2026-05-29 Phase 9 look-ahead
+          검증 후). 공식: <strong>책 신호 + 업종 분산 (1 종목/주/업종)</strong> — cap
+          tilt 제거. 이전 L2 (0.8×책 + 0.2×시총 텐트, CAGR +20.65%) 의 약
+          +12pp 가 today-snapshot cap_q 의 look-ahead bias (현재 중형주 =
+          17년간 small→mid 성장한 winner 다수 포함) 였음을 PIT cap 재테스트로
+          확인. 정직한 lift: book-only baseline (CAGR 14.9% / Sharpe 0.66)
+          위에 sector_cap 으로 <strong>+1.1pp CAGR / +0.07 Sharpe</strong>.
+          KOSPI BH (CAGR 11.5%) 대비 outperformance{" "}
+          <strong>+{s.outperformance_ann_pct.toFixed(1)}%p/year</strong>. 슬리피지
+          미모델 → 실현 가능 CAGR 추정 ~14% (위 표시값 -2pp).
         </p>
       </section>
     </div>

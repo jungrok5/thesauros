@@ -121,11 +121,26 @@ def weekly_equity_series(
     return df
 
 
+_BARS_CACHE: Dict[str, "pd.DataFrame"] = {}
+
+
+def _cached_bars_W(ticker: str):
+    """One DuckDB roundtrip per ticker per process. Comment in the
+    pre-2026-05-29 implementation claimed lru_cache; there was none
+    — each weekly_equity_series call hit DuckDB ~45k times for a
+    50-position 17-year run, taking 10-30+ minutes."""
+    df = _BARS_CACHE.get(ticker)
+    if df is None:
+        from app.backtest.local_store import load_bars
+        df = load_bars(ticker, "W")
+        _BARS_CACHE[ticker] = df
+    return df
+
+
 def _default_get_close(ticker: str, on_date: date) -> Optional[float]:
-    """Lookup ticker's last weekly close ≤ on_date. Cached per-process
-    via lru_cache on load_bars."""
-    from app.backtest.local_store import load_bars
-    df = load_bars(ticker, "W")
+    """Lookup ticker's last weekly close ≤ on_date. DuckDB load is
+    cached per-process via _BARS_CACHE."""
+    df = _cached_bars_W(ticker)
     if df.empty:
         return None
     mask = df["date"].dt.date <= on_date

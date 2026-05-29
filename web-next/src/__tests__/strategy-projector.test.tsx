@@ -23,14 +23,15 @@ describe("StrategyProjector", () => {
     expect(screen.getByText(/우량 회사채/)).toBeInTheDocument();
   });
 
-  it("compounds 1000만원 × (1.172)^10 ≈ 4.89x (책 현실 비용, L2)", () => {
-    // 2026-05-27 L2 production: 책 이상 20.65%, 책 현실 17.2%.
-    // 1000만 × (1.172)^10 ≈ 4,889만 → 4.89x multiplier
+  it("compounds 1000만원 × (1.140)^10 ≈ 3.71x (책 현실 비용, honest)", () => {
+    // 2026-05-29 honest production: 책 이상 16.02%, 책 현실 14.0%
+    // (cap_q removed after Phase 9 PIT audit; slippage drag baked in).
+    // 1000만 × (1.140)^10 ≈ 3,707만 → 3.71x multiplier
     const { container } = render(
       <StrategyProjector defaultAmountManwon={1000} defaultYears={10} />,
     );
     const row = container.querySelector("tbody")!;
-    expect(row.textContent).toMatch(/4\.89x/);
+    expect(row.textContent).toMatch(/3\.71x/);
   });
 
   it("year slider updates the displayed years label", () => {
