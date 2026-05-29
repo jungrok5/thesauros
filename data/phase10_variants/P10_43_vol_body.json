@@ -1,0 +1,18 @@
+{
+  "key": "P10_43_vol_body",
+  "config": {
+    "w_volume_rel": 0.1,
+    "w_body_strength": 0.1
+  },
+  "n_trades": 1575,
+  "metrics": {
+    "annualised_return_pct": 1.1782197668546823,
+    "sharpe": 0.09943056723087584,
+    "sortino": 0.15253154185719908,
+    "calmar": 0.01437930945038316,
+    "max_drawdown_mtm_pct": 81.93855003400645,
+    "alpha_annual_pct": -3.484512430090889,
+    "outperformance_ann_pct": -10.304601556375825,
+    "total_return_pct": 22.66752627936752
+  }
+}

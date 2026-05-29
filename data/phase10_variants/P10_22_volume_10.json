@@ -1,0 +1,17 @@
+{
+  "key": "P10_22_volume_10",
+  "config": {
+    "w_volume_rel": 0.1
+  },
+  "n_trades": 1509,
+  "metrics": {
+    "annualised_return_pct": -0.4964776203306154,
+    "sharpe": 0.034492878692307716,
+    "sortino": 0.05342782354412173,
+    "calmar": -0.005813583377185659,
+    "max_drawdown_mtm_pct": 85.39958715978008,
+    "alpha_annual_pct": -6.20594704921177,
+    "outperformance_ann_pct": -11.979298943561123,
+    "total_return_pct": -8.315131942942976
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "key": "P10_12_sig_count_10",
+  "config": {
+    "w_signal_count": 0.1
+  },
+  "n_trades": 1219,
+  "metrics": {
+    "annualised_return_pct": 4.304502161755819,
+    "sharpe": 0.1723499756221171,
+    "sortino": 0.2231726521923693,
+    "calmar": 0.0668294956724728,
+    "max_drawdown_mtm_pct": 64.41021465808923,
+    "alpha_annual_pct": -2.7114107915042327,
+    "outperformance_ann_pct": -7.178319161474689,
+    "total_return_pct": 108.56791967180568
+  }
+}

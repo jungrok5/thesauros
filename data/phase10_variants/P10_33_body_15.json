@@ -1,0 +1,17 @@
+{
+  "key": "P10_33_body_15",
+  "config": {
+    "w_body_strength": 0.15
+  },
+  "n_trades": 1435,
+  "metrics": {
+    "annualised_return_pct": -0.38644693750528036,
+    "sharpe": 0.004628189121671404,
+    "sortino": 0.006668408751644793,
+    "calmar": -0.005235452802900666,
+    "max_drawdown_mtm_pct": 73.81346982846874,
+    "alpha_annual_pct": -6.312688770785002,
+    "outperformance_ann_pct": -11.869268260735788,
+    "total_return_pct": -6.530578243294682
+  }
+}

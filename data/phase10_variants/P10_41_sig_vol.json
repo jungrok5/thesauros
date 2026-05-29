@@ -1,0 +1,18 @@
+{
+  "key": "P10_41_sig_vol",
+  "config": {
+    "w_signal_count": 0.1,
+    "w_volume_rel": 0.1
+  },
+  "n_trades": 1526,
+  "metrics": {
+    "annualised_return_pct": -1.4609585333648312,
+    "sharpe": -0.01588670228418381,
+    "sortino": -0.023308219954187463,
+    "calmar": -0.017480153078037002,
+    "max_drawdown_mtm_pct": 83.57813154396555,
+    "alpha_annual_pct": -7.881008463756964,
+    "outperformance_ann_pct": -12.943779856595338,
+    "total_return_pct": -22.640334324499122
+  }
+}

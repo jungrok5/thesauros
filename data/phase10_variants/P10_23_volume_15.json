@@ -1,0 +1,17 @@
+{
+  "key": "P10_23_volume_15",
+  "config": {
+    "w_volume_rel": 0.15
+  },
+  "n_trades": 1520,
+  "metrics": {
+    "annualised_return_pct": -1.7416340739763503,
+    "sharpe": -0.015583147960062185,
+    "sortino": -0.02354995939814409,
+    "calmar": -0.01995841875995009,
+    "max_drawdown_mtm_pct": 87.26312915486224,
+    "alpha_annual_pct": -7.8841316817031855,
+    "outperformance_ann_pct": -13.224455397206858,
+    "total_return_pct": -26.39503287093382
+  }
+}

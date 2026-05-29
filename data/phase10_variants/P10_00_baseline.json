@@ -1,0 +1,15 @@
+{
+  "key": "P10_00_baseline",
+  "config": {},
+  "n_trades": 1242,
+  "metrics": {
+    "annualised_return_pct": 12.475289801820843,
+    "sharpe": 0.47422515369426355,
+    "sortino": 0.6423698961527053,
+    "calmar": 0.2128307888301512,
+    "max_drawdown_mtm_pct": 58.61600133323145,
+    "alpha_annual_pct": 4.286796516587217,
+    "outperformance_ann_pct": 0.9924684785903359,
+    "total_return_pct": 677.2379747793565
+  }
+}

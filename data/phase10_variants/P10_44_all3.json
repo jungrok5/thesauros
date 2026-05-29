@@ -1,0 +1,19 @@
+{
+  "key": "P10_44_all3",
+  "config": {
+    "w_signal_count": 0.1,
+    "w_volume_rel": 0.1,
+    "w_body_strength": 0.1
+  },
+  "n_trades": 1516,
+  "metrics": {
+    "annualised_return_pct": -1.4171357475511015,
+    "sharpe": -0.000570960463482658,
+    "sortino": -0.000837413818462666,
+    "calmar": -0.01678565361172002,
+    "max_drawdown_mtm_pct": 84.42541353061367,
+    "alpha_annual_pct": -6.974135706532035,
+    "outperformance_ann_pct": -12.899957070781609,
+    "total_return_pct": -22.03805388930904
+  }
+}

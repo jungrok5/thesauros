@@ -1,0 +1,17 @@
+{
+  "key": "P10_21_volume_05",
+  "config": {
+    "w_volume_rel": 0.05
+  },
+  "n_trades": 1496,
+  "metrics": {
+    "annualised_return_pct": 2.03902659016304,
+    "sharpe": 0.1180694713925474,
+    "sortino": 0.18396095473947424,
+    "calmar": 0.024252693886073703,
+    "max_drawdown_mtm_pct": 84.07423108300075,
+    "alpha_annual_pct": -3.34942575041699,
+    "outperformance_ann_pct": -9.443794733067467,
+    "total_return_pct": 42.20164601550853
+  }
+}

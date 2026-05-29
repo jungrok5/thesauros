@@ -1,0 +1,17 @@
+{
+  "key": "P10_32_body_10",
+  "config": {
+    "w_body_strength": 0.1
+  },
+  "n_trades": 1438,
+  "metrics": {
+    "annualised_return_pct": -1.496463296965378,
+    "sharpe": -0.0362678137113967,
+    "sortino": -0.05264956420865904,
+    "calmar": -0.01817513982960271,
+    "max_drawdown_mtm_pct": 82.33572401616506,
+    "alpha_annual_pct": -7.694044472219687,
+    "outperformance_ann_pct": -12.979284620195886,
+    "total_return_pct": -23.125076539601242
+  }
+}
