@@ -147,6 +147,15 @@ POLICIES: list[Policy] = [
         "DELETE FROM market_investor_trend WHERE day < CURRENT_DATE - INTERVAL '180 days'",
         "180 days",
     ),
+    # Book exit alert dedup ledger (migration 060). Holdings rarely
+    # number above 100 per user × 2 kinds × weekly cron = bounded but
+    # accumulates over years. 365 days keeps a year of triage history
+    # available without bloating.
+    (
+        "book_exit_alert_seen",
+        "DELETE FROM book_exit_alert_seen WHERE inserted_at < CURRENT_DATE - INTERVAL '365 days'",
+        "365 days",
+    ),
     # ──────────────────────────────────────────────────────────────────
     # Generated-data TTL via engagement. The `active set` is the union
     # of the default scan universe (KOSPI/KOSDAQ — always kept) and any

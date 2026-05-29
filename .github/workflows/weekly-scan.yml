@@ -138,7 +138,13 @@ jobs:
           fi
           python -m app.db.telegram_worker $digest_args
 
-      - name: Stop-loss alerts (holdings -10% weekly close)
+      - name: Book exit alerts (월봉 10MA / 4등분 25% — holdings)
+        # 2026-05-29 — replaces the legacy -10% % stop alert with the
+        # book's actual two %-free exits (월봉 10MA break + 장대양봉
+        # 4등분 25% break). 천장 패턴 exit is already handled by the
+        # telegram_worker step above. notify_stop_loss.py + the
+        # stop_loss_alert_seen table remain for historical reads only —
+        # no new rows after this change.
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -147,11 +153,11 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SEND_ALERTS: ${{ inputs.send_alerts }}
         run: |
-          sl_args=""
+          book_args=""
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SEND_ALERTS" != "true" ]; then
-            sl_args="--dry-run"
+            book_args="--dry-run"
           fi
-          python -m app.db.notify_stop_loss $sl_args
+          python -m app.db.notify_book_exits $book_args
 
       - name: Data-quality assertions
         if: always()

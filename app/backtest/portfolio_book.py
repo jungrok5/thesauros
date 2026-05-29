@@ -40,7 +40,13 @@ from app.backtest.portfolio import (
 log = logging.getLogger("backtest.portfolio_book")
 
 
-_MONTHLY_MA_WINDOW = 10
+from app.book.exits import (
+    is_jangdae_yangbong,
+    quartile_25_level,
+    LONG_BULLISH_BODY_MULT as _BOOK_BODY_MULT,    # imported for clarity
+    LONG_BULLISH_AVG_WINDOW as _BOOK_AVG_WINDOW,
+    MONTHLY_MA_WINDOW as _MONTHLY_MA_WINDOW,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -118,9 +124,8 @@ def _build_monthly_10ma_exit_events(
     return out
 
 
-_LONG_BULLISH_BODY_MULT = 2.0    # 책 엔진 (app/book/candles.py:172):
-                                  # body >= 최근 평균 body × 2 + 양봉
-_LONG_BULLISH_AVG_WINDOW = 20    # 평균 body 추정 윈도우 (책 엔진 동일 컨벤션)
+# 장대양봉 정의 + 25% level 계산은 app.book.exits 가 single source.
+# backtest 와 telegram alerter 가 같은 정의를 공유한다.
 
 
 def _build_quartile_exit_events(
@@ -158,24 +163,19 @@ def _build_quartile_exit_events(
         anchor = bars.iloc[anchor_idx]
         a_open = float(anchor["open"])
         a_close = float(anchor["close"])
-        if a_close <= a_open or a_open <= 0:
-            continue
-        body = a_close - a_open
         # Rolling avg body on PRIOR bars only (no peek at entry bar).
-        lo = max(0, anchor_idx - _LONG_BULLISH_AVG_WINDOW)
+        lo = max(0, anchor_idx - _BOOK_AVG_WINDOW)
         prior = bars.iloc[lo:anchor_idx]
         if prior.empty:
             continue
         avg_body = float((prior["close"] - prior["open"]).abs().mean())
-        if avg_body <= 0:
+        if not is_jangdae_yangbong(a_open, a_close, avg_body):
             continue
-        if body < avg_body * _LONG_BULLISH_BODY_MULT:
-            continue
-        q25_level = a_open + 0.25 * body
+        q25 = quartile_25_level(a_open, a_close)
         window = bars.loc[(bars_dates > entry_d) & (bars_dates <= end_date)]
         if window.empty:
             continue
-        breach = window["close"] < q25_level
+        breach = window["close"] < q25
         if not breach.any():
             continue
         first = window.loc[breach].iloc[0]

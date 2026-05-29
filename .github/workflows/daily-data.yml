@@ -144,9 +144,10 @@ jobs:
 
       # 2026-05-28 — Paper-trade alerts step removed. Paper feature
       # dropped in favor of "관심 등록 = entry_price 스냅샷 + 수익률
-      # 추적" model. Stop-loss alerts now flow through the existing
-      # notify_stop_loss step (weekly-scan.yml) reading watchlist
-      # category='holding' + entry_price.
+      # 추적" model.
+      # 2026-05-29 — Legacy -10% stop alert (notify_stop_loss.py) also
+      # retired; replaced by book-faithful exits (월봉 10MA / 4등분 25%)
+      # in weekly-scan.yml's "Book exit alerts" step.
 
       - name: Data-quality assertions
         if: always()
