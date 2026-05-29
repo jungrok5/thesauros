@@ -46,14 +46,11 @@ log = logging.getLogger("telegram_worker")
 
 ALERT_RULES: List[Tuple[str, str, str]] = [
     # (signal_type_prefix_or_exact, alert_type, severity)
+    # ── 진입 신호 ── 백테스트의 DEFAULT_ENTRY_SIGNALS 와 정확히 일치하는
+    # 5개만 'enter' 등급. 2026-05-29 audit 에서 action_buy 가 backtest set
+    # 에 없는데 텔레그램만 알림 보내고 있던 점 발견 → 제거.
+    # 알고리즘 = 백테스트 = 알림 = 스크리너 한 set 원칙 유지.
     ("action_strong_buy",       "enter",    "info"),
-    ("action_buy",              "enter",    "info"),
-    # Universe-winner book-spirit entries (sweep_per_signal_sl + production
-    # backtest top-5). Added 2026-05-26 so Telegram alerts ≡ /screener
-    # signal set. Previously these fired in scan_results and were visible
-    # on the dashboard, but never reached subscribed users.
-    # (2026-05-27: BookEntrySpots removed; /screener is the only candidate
-    # surface, alignment goal unchanged.)
     ("volume_case_3",           "enter",    "info"),
     ("volume_case_7",           "enter",    "info"),
     ("pattern_forking",         "enter",    "info"),

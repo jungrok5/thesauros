@@ -90,6 +90,9 @@ type Hit = {
   market_cap: number | null;
   quality_score: number | null;
   safety_score: number | null;
+  // Industry — for sector_cap=1 post-processing (migration 062, 2026-05-29).
+  // Comes from tickers.industry (161 categories, backfilled from FDR).
+  industry: string | null;
 };
 
 async function fetchEligibilityMap(
@@ -170,6 +173,10 @@ async function runPreset(
     p_quarter_zone: sub.zone,
     p_volume_surge: sub.volSurge ? true : null,
     p_catalyst_max_weeks: sub.catalystMax,
+    // 2026-05-29 (migration 062): align screener with backtest's
+    // DEFAULT_ENTRY_SIGNALS — only return tickers with at least one
+    // active scan_results row in the top-5 entry signal set.
+    p_book_entry_only: true,
   });
   if (error || !data) {
     console.error("screener_results rpc:", error?.message);
@@ -194,6 +201,7 @@ async function runPreset(
     market_cap: string | number | null;
     quality_score: number | null;
     safety_score: number | null;
+    industry: string | null;
   };
   const rpcRows = data as unknown as RpcRow[];
   return rpcRows.map((r) => ({
@@ -214,7 +222,32 @@ async function runPreset(
     market_cap: numOrNull(r.market_cap),
     quality_score: r.quality_score,
     safety_score: r.safety_score,
+    industry: r.industry,
   }));
+}
+
+
+/**
+ * Sector cap = 1 per industry — mirrors the backtest's
+ * sector_cap_per_week=1 logic. Walks the already-sorted (by
+ * sortByBookSpirit) list and keeps at most one ticker per industry.
+ * Tickers with NULL/empty industry pass through (treated as their own
+ * single-member bucket via the "_unknown_<ticker>" key) so the legacy
+ * 4% of tickers without FDR industry data aren't all dropped.
+ */
+function applySectorCap<T extends { ticker: string; industry: string | null }>(
+  rows: T[], capPerIndustry = 1,
+): T[] {
+  const counts: Record<string, number> = {};
+  const out: T[] = [];
+  for (const r of rows) {
+    const key = (r.industry || "").trim() || `_unknown_${r.ticker}`;
+    counts[key] = (counts[key] || 0);
+    if (counts[key] >= capPerIndustry) continue;
+    counts[key]++;
+    out.push(r);
+  }
+  return out;
 }
 
 // sortByBookSpirit moved to @/lib/screener-sort (pure module for vitest).
@@ -312,11 +345,15 @@ export default async function ScreenerPage({ searchParams }: PageProps) {
     distribution.avoid + distribution.none;
   // preset 이 actionIn=[STRONG_BUY,BUY] 강제 → 결과 항상 매수 신호.
   // 별도 buy_only toggle 불필요 (2026-05-25 site-direction reset).
-  // 책정신 단일 정렬 (eligibility > L2 score > catalyst > ROE) —
-  // 2026-05-26 정렬 옵션 제거 reform + 2026-05-27 L2 mid-cap sweet.
-  // RPC returns up to 300 (book_score=1.0 saturates for ~177 rows);
-  // JS L2 sort selects true top-50 across the full candidate set.
-  const hits = sortByBookSpirit(allHits).slice(0, 50);
+  // 책정신 정렬 (eligibility > book_score > catalyst > ROE), then
+  // sector_cap=1 per industry to match the backtest production spec
+  // (memory project_book_faithful_backtest). Walks the sorted list
+  // and keeps at most one ticker per industry — same as the backtest's
+  // sector_cap_per_week=1 logic but applied to the current snapshot.
+  // RPC pre-filters to tickers with active top-5 entry signals
+  // (p_book_entry_only=true), so the candidate pool == backtest's
+  // candidate pool.
+  const hits = applySectorCap(sortByBookSpirit(allHits)).slice(0, 50);
 
   return (
     <div className="space-y-6 max-w-5xl">
