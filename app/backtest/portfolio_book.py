@@ -200,6 +200,10 @@ def simulate_book_faithful(
     exit_fires: Optional[Sequence[Dict[str, Any]]] = None,
     buy_cost_pct: float = _BUY_COST_PCT,
     sell_cost_pct: float = _SELL_COST_PCT,
+    regime_filter: Optional[Any] = None,
+    # Optional callable (date) -> bool. When provided, returning False
+    # blocks the BUY (cash and slot stay open). Used for book's macro
+    # regime gate via app.backtest.market_regime — see Phase 11.
 ) -> PortfolioState:
     """Same event-driven core as portfolio.simulate but without the
     24-week forced SELL. Exits fire only on EXIT_10MA / EXIT_QUARTILE
@@ -287,6 +291,10 @@ def simulate_book_faithful(
             if len(state.positions) >= max_positions:
                 continue
             if ticker in state.positions:
+                continue
+            if regime_filter is not None and not regime_filter(d):
+                # Market regime says no — skip the BUY but keep cash and
+                # slot. Existing positions continue to follow book exits.
                 continue
             open_slots = max_positions - len(state.positions)
             if open_slots <= 0:
