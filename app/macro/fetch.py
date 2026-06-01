@@ -3,9 +3,11 @@
 Cache table is `macro_series` (migration 007):
     series_id VARCHAR(40), date DATE, value NUMERIC, PRIMARY KEY (series_id, date)
 
-The macro state cron (`app.db.publish_macro`) calls `latest_value` / `history`
-which read from Supabase. `ingest_all` is also called from the same cron to
-refresh the cache before publishing.
+The macro state cron (`app.db.publish_macro`) calls `ingest_all` to refresh
+this cache, then publishes the aggregated state to `macro_state`. Wired in
+publish_macro.main() (added 2026-06-01 after the cron failed for 17 days
+because nobody was actually calling ingest_all — the previous version of
+this docstring claimed it was called but no such caller existed).
 
 NB on Yahoo: the `yfinance` Python lib detects + blocks cloud-IP traffic
 (Azure ranges in particular), so the same call from a GH Actions runner

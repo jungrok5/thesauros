@@ -169,6 +169,19 @@ def publish() -> int:
 
 
 def main() -> int:
+    # 2026-06-01 — refresh `macro_series` BEFORE publishing. Without this,
+    # publish() reads stale rows from the cache table and the daily cron's
+    # data-quality assertion fires on macro_series freshness (caught
+    # 2026-06-01: 17d stale because nothing in the codebase was calling
+    # ingest_all despite the fetch.py docstring claiming it). The macro
+    # publish path is now self-contained: refresh + publish in one step.
+    from app.macro.fetch import ingest_all
+    print("refreshing macro_series cache ...", flush=True)
+    counts = ingest_all(years=1, verbose=False)
+    inserted = sum(v for v in counts.values() if v > 0)
+    errors = sum(1 for v in counts.values() if v < 0)
+    print(f"  inserted {inserted} rows across {len(counts)} indicators "
+          f"({errors} errors)", flush=True)
     return publish()
 
 
