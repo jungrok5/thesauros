@@ -1,0 +1,5 @@
+{
+  "R1_bw08_peak1000": {"sector_cap_per_week": 1, "book_weight": 0.8, "cap_peak_krw": 100000000000, "use_pit_cap": true},
+  "R1_bw07_peak1000": {"sector_cap_per_week": 1, "book_weight": 0.7, "cap_peak_krw": 100000000000, "use_pit_cap": true},
+  "R1_bw06_peak1000": {"sector_cap_per_week": 1, "book_weight": 0.6, "cap_peak_krw": 100000000000, "use_pit_cap": true}
+}

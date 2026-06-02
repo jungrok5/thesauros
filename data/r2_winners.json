@@ -1,0 +1,5 @@
+{
+  "R2_sector_cap2": {"sector_cap_per_week": 2, "book_weight": 1.0},
+  "R2_sector_cap3": {"sector_cap_per_week": 3, "book_weight": 1.0},
+  "R2_sector_cap4": {"sector_cap_per_week": 4, "book_weight": 1.0}
+}

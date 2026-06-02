@@ -1,0 +1,3 @@
+{
+  "R5_bw08_peak1k_cap4": {"sector_cap_per_week": 4, "book_weight": 0.8, "cap_peak_krw": 100000000000, "use_pit_cap": true}
+}
