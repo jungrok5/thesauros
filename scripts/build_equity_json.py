@@ -38,35 +38,37 @@ import sys
 from pathlib import Path
 
 
-# 2026-06-02 — book-faithful v2: + Phase 12 signal weights (uniform_by_avg).
-#   buy   = top-5 책 신호 + sector_cap=1/주/업종 + 신호별 가중치
-#           (action_strong_buy 1.43 / volume_case_3 0.86 / 240MA 0.71,
-#           grand-avg 대비 비율, clip [0.5, 1.5])
+# 2026-06-02 — REVERTED v2 to v1 after 4-fold robustness audit failed.
+# v2 (Phase 12 signal weights) lifted in-sample by +3.07 pp but the
+# multi-fold walk-forward revealed 1 of 4 folds FAILED (F1 2015-18:
+# ΔCAGR -1.03) and 2 of 4 folds were outliers from COVID/AI super-
+# cycle leverage (F3 +13.42, F4 +10.57). Only F2 (the original
+# single-fold) showed a modest +1.83. Not robust enough for honest
+# production display — reverted.
+#
+# v1 spec (locked):
+#   buy   = top-5 책 신호 + sector_cap=1/주/업종
 #   sell  = 종목별 월봉 10MA / 4등분 25% / 천장 패턴 (weekly only)
 #   max   = 20 / 자본 1억 / no 24w force / no SL / no TP
 #
-# Walk-forward (Phase 12, 2026-06-02) confirmed methodology — weights
-# estimated on train fold 2009-2017, applied OOS to test fold 2018-26:
-#   ΔCAGR +1.08 pp / ΔSharpe +0.028 / ΔAlpha +1.20 pp vs v1 baseline.
-# Production weights below are derived from FULL history (2009-2026)
-# for a more accurate point estimate; in-sample lift is larger
-# (+3.07 pp CAGR) but the *honest* lift is the +1.08 from walk-forward.
+# Walk-forward (2026-05-29, F2 split): TEST fold CAGR +13.38 / Alpha
+# +3.08 — modest but real lift over the discarded 24w-hold spec.
 #
-# Full 17.4y in-sample v2:
-#   CAGR +15.55 / Sharpe 0.54 / DD 60.4% / Alpha +7.76 vs KOSPI BH
-# Slippage NOT modeled; realistic CAGR ~13-14% (subtract ~2pp/year).
+# Full 17.4y in-sample v1:
+#   CAGR +12.48 / Sharpe 0.47 / DD 58.6% / Alpha +4.29 vs KOSPI BH
+# Slippage NOT modeled; realistic CAGR ~10-11% (subtract ~2pp/year).
 HARDCODED_SUMMARY = {
-    "total_return_pct": 1143.19,
-    "annualised_return_pct": 15.55,
-    "max_drawdown_pct": 60.38,
-    "sharpe": 0.544,
-    "sortino": 0.787,
-    "calmar": 0.257,
-    "alpha_annual_pct": 7.76,
-    "beta": 0.799,
-    "r_squared": 0.259,
+    "total_return_pct": 677.24,
+    "annualised_return_pct": 12.48,
+    "max_drawdown_pct": 58.62,
+    "sharpe": 0.474,
+    "sortino": 0.642,
+    "calmar": 0.213,
+    "alpha_annual_pct": 4.29,
+    "beta": 0.674,
+    "r_squared": 0.417,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 4.06,
+    "outperformance_ann_pct": 0.99,
 }
 
 
@@ -100,7 +102,7 @@ def main() -> int:
 
     initial = weekly[0]["e"]
     out = {
-        "config": "book-faithful v2: 책 신호 + 업종분산 + 신호별 가중치 (Phase 12 OOS PASS) + 책 매도룰 (월봉 10MA / 4등분 25% / 천장 패턴) — no 24w force, no SL, no TP — max=20 / 자본 1억",
+        "config": "book-faithful v1 (locked baseline after Phase 12 v2 4-fold audit): 책 신호 + 업종분산 + 책 매도룰 (월봉 10MA / 4등분 25% / 천장 패턴) — no 24w force, no SL, no TP — max=20 / 자본 1억",
         "start": weekly[0]["d"],
         "end": weekly[-1]["d"],
         "initial": initial,

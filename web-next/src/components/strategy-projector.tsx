@@ -31,14 +31,14 @@ const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.1555,
-    hint: "book-faithful v2: 책 매수+매도룰 + 신호별 가중 (Phase 12 OOS PASS), 2701-ticker universe, 슬리피지 0",
+    cagr: 0.1248,
+    hint: "book-faithful (locked baseline): 책 매수+매도룰, 2701-ticker universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.135,
+    cagr: 0.105,
     hint: "+슬리피지 0.2%/side × 회전율 보정 (-2pp 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },

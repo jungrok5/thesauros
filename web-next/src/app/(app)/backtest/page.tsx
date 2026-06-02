@@ -167,16 +167,16 @@ export default async function BacktestPage() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          위 숫자는 book-faithful <strong>v2</strong> production 결과
-          (2026-06-02 Phase 12 signal weights 도입 후). v1 → v2 lift:
-          CAGR +12.48 → +15.55, Sharpe 0.47 → 0.54, Alpha +4.29 → +7.76.
-          Phase 12 walk-forward 가 methodology 검증함 (train 2009-2017
-          fold 에서 신호별 평균수익률 추정 → test 2018-2026 fold OOS 에
-          적용 시 ΔCAGR +1.08 pp / ΔAlpha +1.20 pp). production weights
-          는 전체 17년 데이터로 산출 (더 정확한 추정 → in-sample lift
-          +3.07 pp), <strong>정직한 OOS-validated lift 는 +1.08 pp</strong>.
-          이전 24w-hold spec 은 train 에 over-fit (test Alpha -0.51 KOSPI
-          패배). 슬리피지 미모델 → 실현 가능 CAGR 추정 ~13-14%.
+          위 숫자는 book-faithful (locked baseline) — 17년 backtest +
+          walk-forward OOS 통과. 2026-06-02 에 Phase 12 signal weights
+          (v2, in-sample CAGR +15.55) 를 시도했으나 <strong>4-fold
+          robustness 검증에서 F1 (2015-18) fail + F3/F4 코로나
+          super-cycle outlier</strong> 가 드러나 v1 으로 revert. 이전
+          24w-hold spec 도 train (2009-2017) 에 over-fit 임이 test
+          fold 에서 Alpha -0.51 KOSPI 패배로 드러남. 정직성을 위해
+          단일-fold pass 만으로 production 변경하지 않는 룰을 메모리에
+          박음 (project_production_change_protocol). 슬리피지 미모델 →
+          실현 가능 CAGR 추정 ~10-11%.
         </p>
       </section>
     </div>
