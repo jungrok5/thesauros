@@ -1,0 +1,16 @@
+{
+  "derived_on": "2026-05-22",
+  "weight_min": 0.5,
+  "weight_max": 1.5,
+  "per_signal_avg_return_pct": {
+    "volume_case_3": 3.97394336480821,
+    "action_strong_buy": 6.624916410481292,
+    "pattern_ma240_breakout": 3.305798501708714
+  },
+  "weights": {
+    "volume_case_3": 0.8573982802688737,
+    "action_strong_buy": 1.4293590561892258,
+    "pattern_ma240_breakout": 0.7132426635419006
+  },
+  "notes": "Computed from FULL 2009-2026 baseline (uniform allocation). Walk-forward audit (Phase 12) verified the methodology: weights derived from train fold lift the held-out test fold by \u0394CAGR +1.08 / \u0394Sharpe +0.028 / \u0394Alpha +1.20 pp."
+}

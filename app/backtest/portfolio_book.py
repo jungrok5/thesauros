@@ -204,6 +204,13 @@ def simulate_book_faithful(
     # Optional callable (date) -> bool. When provided, returning False
     # blocks the BUY (cash and slot stay open). Used for book's macro
     # regime gate via app.backtest.market_regime — see Phase 11.
+    signal_weight_map: Optional[Dict[str, float]] = None,
+    weight_cap: float = 1.5,
+    # Phase 12 winner — multiplies per-BUY allocation by a per-signal
+    # weight (clipped to [0, weight_cap]). When the map is None, every
+    # BUY uses the uniform max/N split (book-faithful baseline). When
+    # provided, weights derived from historical avg-return per signal
+    # nudge capital toward higher-edge signals.
 ) -> PortfolioState:
     """Same event-driven core as portfolio.simulate but without the
     24-week forced SELL. Exits fire only on EXIT_10MA / EXIT_QUARTILE
@@ -300,6 +307,11 @@ def simulate_book_faithful(
             if open_slots <= 0:
                 continue
             allocation = state.cash / open_slots
+            if signal_weight_map is not None:
+                cand_for_weight = cand_lookup[cand_idx]
+                sig = cand_for_weight.get("signal_type", "?")
+                weight = signal_weight_map.get(sig, 1.0)
+                allocation *= max(0.0, min(weight_cap, weight))
             if allocation <= 0 or price <= 0:
                 continue
             net = allocation / (1 + buy_cost_pct)

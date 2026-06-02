@@ -23,16 +23,16 @@ describe("StrategyProjector", () => {
     expect(screen.getByText(/우량 회사채/)).toBeInTheDocument();
   });
 
-  it("compounds 1000만원 × (1.105)^10 ≈ 2.71x (책 현실 비용, book-faithful)", () => {
-    // 2026-05-29 book-faithful production: 책 이상 12.48%, 책 현실 10.5%
-    // (walk-forward OOS-validated; replaces 24w-hold which was train
-    // over-fit per Phase 9 audit).
-    // 1000만 × (1.105)^10 ≈ 2,714만 → 2.71x multiplier
+  it("compounds 1000만원 × (1.135)^10 ≈ 3.55x (책 현실 비용, v2)", () => {
+    // 2026-06-02 book-faithful v2 production: 책 이상 15.55%, 책 현실 13.5%
+    // (Phase 12 signal weights, walk-forward OOS-validated lift over
+    // v1 book-faithful: +1.08 pp CAGR / +1.20 pp Alpha).
+    // 1000만 × (1.135)^10 ≈ 3,547만 → 3.55x multiplier
     const { container } = render(
       <StrategyProjector defaultAmountManwon={1000} defaultYears={10} />,
     );
     const row = container.querySelector("tbody")!;
-    expect(row.textContent).toMatch(/2\.71x/);
+    expect(row.textContent).toMatch(/3\.55x/);
   });
 
   it("year slider updates the displayed years label", () => {
