@@ -9,7 +9,7 @@
 # No FastAPI/uvicorn/lightgbm/scikit-learn — site runs on Vercel + Supabase.
 
 # Data + analysis
-pandas==2.2.0
+pandas>=2.3.0,<3.0
 numpy==1.26.4
 scipy>=1.10
 requests==2.31.0
