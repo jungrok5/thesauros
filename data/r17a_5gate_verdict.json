@@ -1,0 +1,31 @@
+{
+  "in_sample_R17a": {
+    "annualised_return_pct": 14.765447714735558,
+    "sharpe": 0.5577890905849188,
+    "max_drawdown_mtm_pct": 58.17402081918461,
+    "alpha_annual_pct": 6.749729638179967,
+    "outperformance_ann_pct": 3.28262639150505
+  },
+  "in_sample_base": {
+    "annualised_return_pct": 11.194949182992753,
+    "sharpe": 0.4338851455883973,
+    "max_drawdown_mtm_pct": 63.07730232603138,
+    "alpha_annual_pct": 3.3562686046242143,
+    "outperformance_ann_pct": -0.28787214023775487
+  },
+  "gate3_normal_lift": 4.636199052927272,
+  "gate3_pass": true,
+  "gate4_sharpe_p": 0.076,
+  "gate4_cagr_p": 0.083,
+  "gate4_pass": false,
+  "gate5_max_signal_pct": 0.9504405286343612,
+  "gate5_signal_dist": {
+    "volume_case_3": 535,
+    "action_strong_buy": 33657,
+    "volume_case_7": 294,
+    "pattern_forking": 1,
+    "pattern_ma240_breakout": 925
+  },
+  "gate5_pass": false,
+  "overall_approved": false
+}
