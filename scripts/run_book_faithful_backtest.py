@@ -66,6 +66,16 @@ def run(max_positions: int = 20, start=date(2009, 1, 1), end=date(2026, 5, 22)) 
     print(f"  exit fires (천장 patterns, weekly only): {len(exit_fires):,}",
           flush=True)
 
+    from app.db import get_conn
+    with get_conn() as con:
+        cur = con.cursor()
+        cur.execute(
+            "SELECT ticker, delisted_at FROM tickers "
+            "WHERE delisted_at IS NOT NULL"
+        )
+        delisting_dates = {t: d for t, d in cur.fetchall()}
+    print(f"  delisting map: {len(delisting_dates):,} tickers", flush=True)
+
     reset_caches()
     t0 = time.time()
     state = simulate_book_faithful(
@@ -73,6 +83,7 @@ def run(max_positions: int = 20, start=date(2009, 1, 1), end=date(2026, 5, 22)) 
         initial_cash=100_000_000.0,
         max_positions=max_positions,
         exit_fires=exit_fires,
+        delisting_dates=delisting_dates,
     )
     print(f"  sim done: {len(state.trades):,} trades "
           f"in {time.time()-t0:.1f}s", flush=True)

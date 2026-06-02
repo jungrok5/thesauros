@@ -206,6 +206,11 @@ def simulate_book_faithful(
     # regime gate via app.backtest.market_regime — see Phase 11.
     signal_weight_map: Optional[Dict[str, float]] = None,
     weight_cap: float = 1.5,
+    delisting_dates: Optional[Dict[str, date]] = None,
+    # Maps ticker → delisted_at. When provided, any open position in a
+    # delisted ticker is auto-closed at the last available close on or
+    # before delisted_at. Without this, delisted positions would stay
+    # "stuck" in the portfolio until end_date (slot occupation bias).
     # Phase 12 winner — multiplies per-BUY allocation by a per-signal
     # weight (clipped to [0, weight_cap]). When the map is None, every
     # BUY uses the uniform max/N split (book-faithful baseline). When
@@ -245,6 +250,21 @@ def simulate_book_faithful(
             exit_sig_lookup[(f["ticker"], f["entry_date"])] = f.get(
                 "signal_type", "exit"
             )
+
+    if delisting_dates:
+        from app.backtest.portfolio import _last_close_or_na
+        seen_tickers = {c["ticker"] for c in candidates}
+        for ticker, dl_date in delisting_dates.items():
+            if ticker not in seen_tickers:
+                continue
+            if dl_date < start_date or dl_date > end_date:
+                continue
+            last_close = _last_close_or_na(ticker, dl_date)
+            if last_close is None or last_close <= 0:
+                continue
+            events.append((dl_date, "ACTIVE_EXIT", ticker,
+                          float(last_close), -1, 0.0))
+            exit_sig_lookup[(ticker, dl_date.isoformat())] = "delisting"
 
     # Event ordering on same date:
     #   ACTIVE_EXIT (천장) → EXIT_10MA → EXIT_QUARTILE → BUY (strength desc)
