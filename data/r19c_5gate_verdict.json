@@ -1,0 +1,25 @@
+{
+  "in_sample_R19c": {
+    "annualised_return_pct": 12.82642672242682,
+    "sharpe": 0.48016942194488327,
+    "max_drawdown_mtm_pct": 64.4525165438642,
+    "alpha_annual_pct": 5.465942694333129,
+    "outperformance_ann_pct": 1.3436053991963126
+  },
+  "in_sample_base": {
+    "annualised_return_pct": 11.194949182992753,
+    "sharpe": 0.4338851455883973,
+    "max_drawdown_mtm_pct": 63.07730232603138,
+    "alpha_annual_pct": 3.3562686046242143,
+    "outperformance_ann_pct": -0.28787214023775487
+  },
+  "gate2_pass": false,
+  "gate3_pass": false,
+  "gate3_normal_lift": -1.5286988500335859,
+  "gate4_pass": false,
+  "gate4_sharpe_p": 0.16,
+  "gate4_cagr_p": 0.16,
+  "gate5_pass": false,
+  "gate5_max_signal_pct": 0.8235361130097972,
+  "overall_approved": false
+}
