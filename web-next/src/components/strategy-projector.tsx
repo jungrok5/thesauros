@@ -5,41 +5,46 @@ import { useMemo, useState } from "react";
 /**
  * "이대로 유지하면 N년 후 얼마" projection panel.
  *
- * 2026-05-29 — replaced "24w-hold honest" numbers with book-faithful
- * simulator after walk-forward audit proved 24w was train-period
- * over-fit (train CAGR +21 → test CAGR +9, Alpha flipped to -0.51).
- * Book-faithful generalizes: test CAGR +13.38 / Alpha +3.08.
+ * 2026-06-03 — v1.1 survivorship-corrected locked baseline.
+ * Universe = 3,465 ticker (KR active 2,599 + FDR delisted 866).
+ * Simulator auto-closes positions on delisted_at. Prior v1
+ * (CAGR 12.48 / Outperf +0.99) was survivorship-inflated by ~1.3 pp.
  *
- * Compares 책 전략 (book-faithful spec — 책 신호 + 업종 분산 1/주/업종 +
- * 책 매도룰: 종목별 월봉 10MA / 장대양봉 4등분 25% / 천장 패턴; no 24w
- * force, no SL, no TP; max=20 / 1억 자본 / 2701-ticker universe)
- * against passive alternatives using point-estimate CAGRs.
+ * 2026-06-02/03 사이클: v1.1 위에서 24 ranking-factor (R1-R20: cap_q PIT,
+ * sector_cap, momentum, entry-bar quality, US lead-lag, 52w position,
+ * Naver 17y 외국인/기관 flow contrarian 등) 모두 5-gate 룰 미달 →
+ * v1.1 production locked.
  *
- * CAGR sources (universe-honest, 2026-05-29 book-faithful run):
- *   - 책 (이상):  12.48% — full 17.4y in-sample (앞으로 sweep_all 재생성 후
- *                          OOS walk-forward 통과 검증 완료)
- *   - 책 (현실): ~10.5% — assume ~2pp slippage drag (0.2%/side ×
- *                          ~5 portfolio rotations/year)
- *   - KOSPI BH:  11.48% — metrics.kospi_ann_ret_pct
- *   - 정기예금:  3.0%   — Q1 2026 평균
- *   - 채권:      4.5%   — 우량 회사채 평균
+ * Compares 책 전략 (book-faithful v1.1 — 책 신호 + 업종 분산 1/주/업종 +
+ * 책 매도룰: 종목별 월봉 10MA / 장대양봉 4등분 25% / 천장 패턴 + 폐지일
+ * 자동 청산; no 24w force, no SL, no TP; max=20 / 1억 자본 / 3,465-ticker
+ * survivorship-corrected universe) against passive alternatives.
  *
- * Alpha vs KOSPI: +0.99%/y in-sample, +3.08%/y OOS test fold.
+ * CAGR sources (2026-06-03 v1.1 run):
+ *   - 책 (이상):  11.19% — full 17.4y in-sample
+ *   - 책 (현실):  ~9.5% — assume ~1.7pp slippage drag (0.2%/side ×
+ *                          ~4 portfolio rotations/year)
+ *   - KOSPI BH:   11.48% — metrics.kospi_ann_ret_pct
+ *   - 정기예금:   3.0%   — Q1 2026 평균
+ *   - 채권:       4.5%   — 우량 회사채 평균
+ *
+ * Alpha vs KOSPI: +3.36%/y (β-corrected). Raw outperformance -0.29%/y
+ * (KOSPI BH 와 동률) — risk-adjusted 알파만 양수.
  */
 
 const STRATEGIES = [
   {
     key: "book_ideal",
     label: "책 전략 (이상적)",
-    cagr: 0.1248,
-    hint: "book-faithful (locked baseline): 책 매수+매도룰, 2701-ticker universe, 슬리피지 0",
+    cagr: 0.1119,
+    hint: "book-faithful v1.1: 책 매수+매도룰 + 폐지일 자동청산, 3,465-ticker survivorship-corrected universe, 슬리피지 0",
     accent: "text-emerald-600 dark:text-emerald-400 font-semibold",
   },
   {
     key: "book_real",
     label: "책 전략 (현실 비용)",
-    cagr: 0.105,
-    hint: "+슬리피지 0.2%/side × 회전율 보정 (-2pp 차감)",
+    cagr: 0.095,
+    hint: "+슬리피지 0.2%/side × 회전율 보정 (-1.7pp 차감)",
     accent: "text-emerald-700 dark:text-emerald-300 font-semibold",
   },
   {
@@ -201,14 +206,13 @@ export function StrategyProjector({
 
       {kospi && (
         <div className="text-xs text-muted-foreground leading-relaxed">
-          책 전략 (현실 비용 ~17.2%/년) 으로 {amountManwon.toLocaleString()}만원을
-          {" "}{years}년 유지하면 KOSPI BH 대비 차이는 점점 벌어집니다 — 실제
-          outperformance 는 17년 데이터로 검증 시 <strong>+9.17%p/year</strong>{" "}
-          수준 (full 2701-ticker universe, 2026-05-27 L2 mid-cap sweet ranking
-          production run). L2 = 0.8×책 신호 + 0.2×시총 텐트 (peak ~5,480억) —
-          14변형 그리드 winner. 책 전략의 가치는 절대 return 뿐 아니라 risk-
-          adjusted profile — Sharpe 0.83, Sortino 1.13, Calmar 0.55,
-          DD 37.3% (V0 baseline 51.5% 대비 -14.2%p).
+          책 전략은 17년 백테스트 기준 KOSPI BH 와 절대 수익률이 거의 동률 (raw
+          outperformance <strong>-0.29 pp/y</strong>) — 그러나 market-beta-
+          corrected 알파는 <strong>+3.36 pp/y</strong> (β = 0.61 로 KOSPI 변동성의
+          약 61% 만 부담). 즉 같은 수익을 더 적은 시장 리스크로 얻음.
+          Sharpe 0.43 / Sortino 0.61 / DD 63.1% / 슬리피지 0.
+          Universe 3,465 ticker (active 2,599 + delisted 866) — 폐지 시점 자동
+          청산으로 survivorship bias 제거. 미래 보장 X.
         </div>
       )}
     </section>

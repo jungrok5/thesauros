@@ -23,17 +23,19 @@ describe("StrategyProjector", () => {
     expect(screen.getByText(/우량 회사채/)).toBeInTheDocument();
   });
 
-  it("compounds 1000만원 × (1.105)^10 ≈ 2.71x (책 현실 비용, v1 locked)", () => {
-    // 2026-06-02 — reverted v2 (Phase 12 weights) to v1 after 4-fold
-    // robustness audit failed (F1 -1.03 / F2 +1.83 / F3 +13.42 outlier
-    // / F4 +10.57 outlier — not robust enough). v1 stays as the
-    // locked baseline: CAGR 12.48% ideal, ~10.5% realistic.
-    // 1000만 × (1.105)^10 ≈ 2,714만 → 2.71x multiplier
+  it("compounds 1000만원 × (1.095)^10 ≈ 2.48x (책 현실 비용, v1.1 locked)", () => {
+    // 2026-06-03 — v1.1 survivorship-corrected locked baseline.
+    // Universe = 3,465 ticker (active 2,599 + delisted 866) with
+    // delisting-aware simulator. Prior v1 (CAGR 12.48) was inflated
+    // by ~1.3 pp from survivorship bias. 2026-06-02/03 cycle: 24
+    // factor variants (R1-R20) all REJECTED by 5-gate rule.
+    // v1.1 honest: CAGR 11.19% ideal, ~9.5% realistic.
+    // 1000만 × (1.095)^10 ≈ 2,478만 → 2.48x multiplier
     const { container } = render(
       <StrategyProjector defaultAmountManwon={1000} defaultYears={10} />,
     );
     const row = container.querySelector("tbody")!;
-    expect(row.textContent).toMatch(/2\.71x/);
+    expect(row.textContent).toMatch(/2\.48x/);
   });
 
   it("year slider updates the displayed years label", () => {

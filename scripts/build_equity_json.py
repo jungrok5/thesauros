@@ -38,37 +38,39 @@ import sys
 from pathlib import Path
 
 
-# 2026-06-02 — REVERTED v2 to v1 after 4-fold robustness audit failed.
-# v2 (Phase 12 signal weights) lifted in-sample by +3.07 pp but the
-# multi-fold walk-forward revealed 1 of 4 folds FAILED (F1 2015-18:
-# ΔCAGR -1.03) and 2 of 4 folds were outliers from COVID/AI super-
-# cycle leverage (F3 +13.42, F4 +10.57). Only F2 (the original
-# single-fold) showed a modest +1.83. Not robust enough for honest
-# production display — reverted.
+# 2026-06-03 — v1.1 survivorship-corrected production locked baseline.
+# Universe = 3,465 ticker (KR 2,599 active + 883 FDR-ingested delisted).
+# Simulator auto-closes positions on delisted_at to avoid slot-occupation
+# bias. Prior v1 (CAGR 12.48 / Outperf +0.99) was inflated by ~1.3 pp from
+# survivorship bias — corrected here.
 #
-# v1 spec (locked):
+# 2026-06-02/03 사이클: v1.1 위에서 24 ranking-factor 시도 (R1-R20)
+# 모두 5-gate 룰 (PIT/4-fold ≥3/4/outlier-excl/bootstrap p<0.05/signal
+# <70%) 미달 → REJECT. v1.1 가 honest production baseline.
+#
+# v1.1 spec (locked):
 #   buy   = top-5 책 신호 + sector_cap=1/주/업종
 #   sell  = 종목별 월봉 10MA / 4등분 25% / 천장 패턴 (weekly only)
+#         + 폐지일 자동 청산 (FDR delisted_at)
 #   max   = 20 / 자본 1억 / no 24w force / no SL / no TP
 #
-# Walk-forward (2026-05-29, F2 split): TEST fold CAGR +13.38 / Alpha
-# +3.08 — modest but real lift over the discarded 24w-hold spec.
-#
-# Full 17.4y in-sample v1:
-#   CAGR +12.48 / Sharpe 0.47 / DD 58.6% / Alpha +4.29 vs KOSPI BH
-# Slippage NOT modeled; realistic CAGR ~10-11% (subtract ~2pp/year).
+# Full 17.4y in-sample v1.1:
+#   CAGR +11.19 / Sharpe 0.43 / DD 63.1% / Alpha +3.36 vs KOSPI BH
+#   Outperf -0.29 pp/y (KOSPI BH 와 동률, β-corrected alpha 만 양수)
+#   β=0.61 R²=0.29 → KOSPI 변동성의 61% 만 부담
+# Slippage NOT modeled; realistic CAGR ~9-10% (subtract ~1-2pp/year).
 HARDCODED_SUMMARY = {
-    "total_return_pct": 677.24,
-    "annualised_return_pct": 12.48,
-    "max_drawdown_pct": 58.62,
-    "sharpe": 0.474,
-    "sortino": 0.642,
-    "calmar": 0.213,
-    "alpha_annual_pct": 4.29,
-    "beta": 0.674,
-    "r_squared": 0.417,
+    "total_return_pct": 536.55,
+    "annualised_return_pct": 11.19,
+    "max_drawdown_pct": 63.08,
+    "sharpe": 0.434,
+    "sortino": 0.611,
+    "calmar": 0.177,
+    "alpha_annual_pct": 3.36,
+    "beta": 0.608,
+    "r_squared": 0.290,
     "kospi_ann_ret_pct": 11.48,
-    "outperformance_ann_pct": 0.99,
+    "outperformance_ann_pct": -0.29,
 }
 
 
@@ -102,7 +104,7 @@ def main() -> int:
 
     initial = weekly[0]["e"]
     out = {
-        "config": "book-faithful v1 (locked baseline after Phase 12 v2 4-fold audit): 책 신호 + 업종분산 + 책 매도룰 (월봉 10MA / 4등분 25% / 천장 패턴) — no 24w force, no SL, no TP — max=20 / 자본 1억",
+        "config": "book-faithful v1.1 (survivorship-corrected locked baseline; 24 ranking-factor 시도 모두 5-gate REJECT): 책 신호 + 업종분산 + 책 매도룰 (월봉 10MA / 4등분 25% / 천장 패턴) + 폐지일 자동청산 — no 24w force, no SL, no TP — max=20 / 자본 1억 / universe 3,465 (active 2,599 + delisted 866)",
         "start": weekly[0]["d"],
         "end": weekly[-1]["d"],
         "initial": initial,
