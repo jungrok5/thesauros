@@ -569,15 +569,36 @@ def main(argv: list[str] | None = None) -> int:
                     "consider tightening retention windows", pct * 100)
         return 0
 
-    # HARD_LIMIT crossed — run VACUUM FULL on bars (biggest table) to
-    # reclaim disk. VACUUM FULL locks the table for the duration but
-    # bars writes only happen during the cron itself (we're at the
-    # retention step which runs LAST), so the lock is safe here.
-    log.error("DB size %.1f%% — running emergency VACUUM FULL bars", pct * 100)
+    # HARD_LIMIT crossed — run VACUUM FULL on every table > 50 MB so dead
+    # tuple bloat from any large DELETE is fully reclaimed in one pass.
+    # VACUUM FULL locks each table for the duration; retention runs LAST
+    # in the cron, after all writers, so the lock is safe here.
+    #
+    # 2026-06-03 expansion: previous behavior only VACUUM-FULL'd `bars`.
+    # When a backfill (Naver investor_flow 9.3M rows) blew the table to
+    # 1.7 GB then retention DELETE'd 9.3M rows back to 24k, `bars`-only
+    # VACUUM FULL couldn't recover the 1.7 GB dead bloat in investor_flow
+    # → DB still at 2.1 GB → CI assert tripped. Now we VACUUM FULL every
+    # heavy table.
+    log.error("DB size %.1f%% — running emergency VACUUM FULL on tables > 50 MB",
+              pct * 100)
     with get_conn(autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute("VACUUM FULL bars")
-            log.info("VACUUM FULL bars done")
+            cur.execute(
+                "SELECT relname, pg_total_relation_size('public.' || relname) AS sz "
+                "FROM pg_stat_user_tables "
+                "WHERE pg_total_relation_size('public.' || relname) > 50 * 1024 * 1024 "
+                "ORDER BY sz DESC"
+            )
+            heavies = [(r[0], r[1]) for r in cur.fetchall()]
+            log.error("emergency VACUUM FULL targets: %s",
+                      [(t, _human(b)) for t, b in heavies])
+            for tbl, _ in heavies:
+                try:
+                    cur.execute(f"VACUUM FULL {tbl}")
+                    log.info("VACUUM FULL %s done", tbl)
+                except Exception as e:
+                    log.error("VACUUM FULL %s FAILED: %s", tbl, e)
             cur.execute("SELECT pg_database_size(current_database())")
             size_after = cur.fetchone()[0]
     pct_after = size_after / SUPABASE_FREE_BYTES

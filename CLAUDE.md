@@ -35,6 +35,19 @@ Post-flight : 합리성 · 일관성 · bias 5종 · bootstrap p · sub-period �
 
 자세히는 `~/.claude/projects/c--Project-finance/memory/feedback_test_verify_always.md` 참조.
 
+## 3-bis. Backfill 정책 (Supabase 500MB 절대 회피)
+
+**Historical backfill (1년+ scope) 은 절대 Supabase 가 아니라 local DuckDB**:
+- `data/backtest.duckdb` (KR bars / liquidity)
+- `data/us_leadlag.duckdb` (US bars)
+- 새 historical 데이터 → 새 `.duckdb` 또는 `.parquet`
+
+Supabase 는 운영 only (retention 14일 ~ 5년). Naver/DART/KRX/yfinance/FDR 등 historical ingest 는 무조건 local.
+
+**위반 비용**: Naver 17y 외국인 backfill Supabase 박은 사고 (2026-06-03) — DB 2.1GB / Free 500MB 4배 초과 + dead tuple 1.7GB → CI 2번 fail → 긴급 VACUUM FULL 사용자 승인 후 회복. Pro $25/월 전환 위기.
+
+새 ingest 스크립트 작성 시 row 수 추정 (tickers × periods). **> 100k rows 면 무조건 local**. 자세히는 `~/.claude/projects/c--Project-finance/memory/feedback_backfill_to_duckdb.md`.
+
 ## 4. 코드/UX 작성 원칙
 
 - 책 정신: 매매는 안 할수록 좋고, 좋은 자리에서만. 시스템이 1.00 만점을 주는 종목 중 stale 패턴 (돌파 후 +30%↑) 은 진짜 매수 자리 아님 — UX 에서 명시.
