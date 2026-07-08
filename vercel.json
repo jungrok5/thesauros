@@ -14,16 +14,6 @@
       "includeFiles": "app/**/*.py"
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/daily-data",
-      "schedule": "0 8 * * 1-5"
-    },
-    {
-      "path": "/api/cron/weekly-scan",
-      "schedule": "30 8 * * 5"
-    }
-  ],
   "headers": [
     {
       "source": "/sw.js",

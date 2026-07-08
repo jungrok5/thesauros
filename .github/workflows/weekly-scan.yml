@@ -31,8 +31,11 @@ on:
   # (vercel.json /api/cron/weekly-scan) 는 fallback 으로 유지하되
   # GH 가 single source of truth. schedule 트리거 시 inputs 는
   # default 적용 (send_alerts=true 가 필요해 schedule 분기 처리).
-  schedule:
-    - cron: "30 8 * * 5"
+  # DISABLED 2026-07-08 — scheduled cron paused per request. Re-enable by
+  # uncommenting the `schedule:` block below. Manual runs still work via
+  # workflow_dispatch.
+  # schedule:
+  #   - cron: "30 8 * * 5"
   workflow_dispatch:
     inputs:
       send_alerts:

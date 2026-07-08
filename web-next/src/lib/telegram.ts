@@ -81,10 +81,29 @@ export function escapeTgHtml(s: string): string {
 
 export type SendResult = { ok: true } | { ok: false; reason: string };
 
+/**
+ * Master kill switch for all outbound Telegram messages sent from the
+ * site (alerts, admin notifications, webhook replies). Telegram is
+ * DISABLED by default (paused 2026-07-08); set TELEGRAM_ALERTS_ENABLED
+ * to 1/true/yes/on in the Vercel env to turn it back on.
+ */
+export function telegramAlertsEnabled(): boolean {
+  return ["1", "true", "yes", "on"].includes(
+    (process.env.TELEGRAM_ALERTS_ENABLED ?? "").trim().toLowerCase(),
+  );
+}
+
 export async function sendTelegram(
   chatId: number | string,
   text: string,
 ): Promise<SendResult> {
+  if (!telegramAlertsEnabled()) {
+    console.warn(
+      "[telegram] alerts disabled (set TELEGRAM_ALERTS_ENABLED=1 to " +
+      "re-enable) — skipping send",
+    );
+    return { ok: false, reason: "disabled" };
+  }
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     // Loud, structured log so Vercel function-logs surface the missing-env

@@ -14,10 +14,13 @@ permissions:
   contents: read
 
 on:
-  schedule:
-    # 10:00 UTC = 19:00 KST, weekdays. Two hours after daily-scan slot
-    # gives the pipeline plenty of headroom even on slow runs.
-    - cron: "0 10 * * 1-5"
+  # DISABLED 2026-07-08 — scheduled cron paused per request. Re-enable by
+  # uncommenting the `schedule:` block below. Manual runs still work via
+  # workflow_dispatch.
+  # schedule:
+  #   # 10:00 UTC = 19:00 KST, weekdays. Two hours after daily-scan slot
+  #   # gives the pipeline plenty of headroom even on slow runs.
+  #   - cron: "0 10 * * 1-5"
   workflow_dispatch:
 
 jobs:

@@ -9,8 +9,11 @@ permissions:
   contents: read
 
 on:
-  schedule:
-    - cron: "0 1 * * 0"   # Sunday 01:00 UTC = 10:00 KST
+  # DISABLED 2026-07-08 — scheduled cron paused per request. Re-enable by
+  # uncommenting the `schedule:` block below. Manual runs still work via
+  # workflow_dispatch.
+  # schedule:
+  #   - cron: "0 1 * * 0"   # Sunday 01:00 UTC = 10:00 KST
   workflow_dispatch:
 
 jobs:

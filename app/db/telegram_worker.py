@@ -86,6 +86,19 @@ def classify(signal_type: str) -> Optional[Tuple[str, str]]:
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def telegram_alerts_enabled() -> bool:
+    """Master kill switch for all outbound Telegram alerts.
+
+    Telegram notifications are DISABLED by default (paused 2026-07-08).
+    Set the env var ``TELEGRAM_ALERTS_ENABLED`` to one of 1/true/yes/on
+    to turn sending back on. Every low-level Telegram send in the repo
+    funnels through this guard so a single flag pauses the whole thing.
+    """
+    return os.environ.get("TELEGRAM_ALERTS_ENABLED", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def send_telegram(chat_id: str, text: str, *, token: Optional[str] = None,
                   max_retries: int = 3) -> bool:
     """Send a Telegram message with proper 429 backoff.
@@ -94,6 +107,10 @@ def send_telegram(chat_id: str, text: str, *, token: Optional[str] = None,
     On 429 the response includes `parameters.retry_after` (seconds). We
     respect that and retry up to `max_retries` times.
     """
+    if not telegram_alerts_enabled():
+        log.info("telegram alerts disabled (set TELEGRAM_ALERTS_ENABLED=1 "
+                 "to re-enable) — skipping send")
+        return False
     token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         log.error("TELEGRAM_BOT_TOKEN missing")

@@ -92,6 +92,13 @@ def send_telegram(chat_id: str, text: str) -> bool:
     """Bypass app.db.telegram_worker so we don't pull alert formatting
     overhead. Returns True on HTTP 200."""
     import requests
+    # Master kill switch — Telegram alerts are disabled by default
+    # (paused 2026-07-08). Re-enable with TELEGRAM_ALERTS_ENABLED=1.
+    from app.db.telegram_worker import telegram_alerts_enabled
+    if not telegram_alerts_enabled():
+        log.info("telegram alerts disabled (set TELEGRAM_ALERTS_ENABLED=1 "
+                 "to re-enable) — skipping send")
+        return False
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         log.error("TELEGRAM_BOT_TOKEN missing — can't alert")
