@@ -316,3 +316,10 @@ python -m scripts.setup_telegram_webhook https://<your-vercel-domain>
 
 학습/연구 도구입니다. 실거래 결과를 보장하지 않습니다.
 모든 매매 판단과 손익은 본인 책임입니다.
+
+---
+
+## 만든 사람
+
+**오정록** (Jeongrok Oh) — Technical Director · MMO Server Architect
+[이력서](https://jungrok5.github.io/resume/) · [GitHub](https://github.com/jungrok5) · [LinkedIn](https://www.linkedin.com/in/jungrok5)
